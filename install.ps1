@@ -184,5 +184,5 @@ try {
     $ver = & "$BinDir\artemis.exe" --version 2>&1 | Select-Object -First 1
     Write-OK "$ver is ready."
 } catch {
-    Write-Info "Installation complete. Open a new terminal to use artemis."
+    Write-Info "Installation complete. Welcome to Artemis."
 }
