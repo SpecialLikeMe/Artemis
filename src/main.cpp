@@ -60,6 +60,7 @@ static void print_usage(std::string_view prog) {
         "  arc     <file.arc> -m <output>     Target macOS\n"
         "  artemis <file.arc> [options]       Full compiler (same as arc)\n"
         "  atc     <file.arc> -o <output>     Alias for arc -o\n"
+        "  atc run <file.arc>                 Compile and run (alias for arc run)\n"
         "  atx run <file.arc>                 Alias for arc run\n"
         "\n"
         "Options:\n"
@@ -405,6 +406,11 @@ int main(int argc, char** argv) {
         bool run_mode = (argc >= 2 && std::string_view(argv[1]) == "run");
         is_atx = run_mode;
         is_atc = !run_mode;
+    }
+    // atc run <file>  → same as atx run
+    if (is_atc && argc >= 2 && std::string_view(argv[1]) == "run") {
+        is_atx = true;
+        is_atc = false;
     }
 
     cli_opts opts;

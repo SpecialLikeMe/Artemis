@@ -39,6 +39,7 @@ inline void visit_local_var_decl(var_decl* d, ir_context* ctx) {
 
     if (d->init.has_value()) {
         LLVMValueRef init_val = visit_expr(d->init.value(), ctx);
+        init_val = coerce_int_val(init_val, alloca_t, ctx->llvm_builder);
         LLVMBuildStore(ctx->llvm_builder, init_val, alloca);
     } else {
         LLVMBuildStore(ctx->llvm_builder, LLVMConstNull(alloca_t), alloca);

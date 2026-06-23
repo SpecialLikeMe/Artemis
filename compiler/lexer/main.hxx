@@ -102,6 +102,7 @@ enum class token_type {
     kw_null,
 
     //kw types
+    kw_char,
     kw_i8, kw_i16, kw_i32, kw_i64, kw_i128, kw_i256, kw_i512,
     kw_u8, kw_u16, kw_u32, kw_u64, kw_u128, kw_u256, kw_u512,
     kw_f8, kw_f16, kw_f32, kw_f64, kw_f128, kw_f256, kw_f512,
@@ -224,7 +225,7 @@ private:
             {"volatile",   token_type::kw_volatile},
             {"void",       token_type::kw_void},
             {"null",       token_type::kw_null},
-            {"char",       token_type::kw_i8},
+            {"char",       token_type::kw_char},
             {"i8",         token_type::kw_i8},
             {"i16",        token_type::kw_i16},
             {"i32",        token_type::kw_i32},

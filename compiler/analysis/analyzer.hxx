@@ -395,11 +395,12 @@ private:
     type_node* visit_bool_lit(expr_node* /*e*/)  { return prim(prim_type_t::boolean); }
 
     type_node* visit_string_lit(expr_node* /*e*/) {
-        type_node t; t.is_primitive = true; t.prim = prim_type_t::u8; t.pointer_depth = 1;
+        type_node t; t.is_primitive = true; t.prim = prim_type_t::char_t;
+        t.pointer_depth = 1; t.is_const = true;
         return make_type(t);
     }
 
-    type_node* visit_char_lit(expr_node* /*e*/) { return prim(prim_type_t::u8); }
+    type_node* visit_char_lit(expr_node* /*e*/) { return prim(prim_type_t::char_t); }
 
     type_node* visit_identifier(expr_node* e) {
         var_decl* vd = scope.lookup_var(e->str_val);

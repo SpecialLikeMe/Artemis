@@ -9,6 +9,7 @@
 //   b*  -> iN  (bool variants are plain integer types of matching width)
 inline LLVMTypeRef llvm_type_of_prim(prim_type_t p, LLVMContextRef ctx) {
     switch (p) {
+        case prim_type_t::char_t:
         case prim_type_t::i8:
         case prim_type_t::u8:
         case prim_type_t::b8:

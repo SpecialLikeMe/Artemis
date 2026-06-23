@@ -6,7 +6,8 @@ Artemis is a compiled, statically-typed, C-like language that targets LLVM IR. I
 
 ## Language Features
 
-- **Rich integer types:** `i8`, `i16`, `i32`/`int`, `i64`, `i128`, `i256`, `i512` and unsigned equivalents `u8` … `u512`
+- **Character type:** `char` (alias for `i8`); `char*` is the canonical string pointer type
+- **Rich integer types:** `i8`, `i16`, `i32`/`int`, `i64`, `i128`, `i256`, `i512` and unsigned equivalents `u8` … `u512`; implicit integer conversion between all integer widths
 - **Floating-point types:** `f32`, `f64`, `f128`, `f256`, `f512`
 - **Boolean types:** `bool`, `b1` (1-bit), `b8`, `b16`, `b32`, `b64`, `b128`, `b256`, `b512`
 - **Derived types:** pointers (`*`), fixed-size arrays (`[N]`), structs, unions, enums, typedefs
@@ -93,6 +94,7 @@ atc hello.art -o hello          # host target
 atc hello.art -l hello_linux    # Linux x86-64
 atc hello.art -w hello.exe      # Windows x86-64
 atc hello.art -m hello_mac      # macOS x86-64
+atc run hello.art               # compile and run immediately
 ```
 
 ### Compile and run immediately

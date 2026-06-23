@@ -82,11 +82,11 @@ inline std::string apply_one_macro(const std::string& text, const macro_def& def
 inline std::string parse_arg(const std::string& line, size_t& pos) {
     while (pos < line.size() && line[pos] == ' ') ++pos;
     if (pos >= line.size()) return {};
-    if (line[pos] == '<') {
+    if (line[pos] == '<' || line[pos] == '(') {
         size_t start = ++pos;
-        while (pos < line.size() && line[pos] != '>') ++pos;
+        while (pos < line.size() && (line[pos] != '>' || line[pos] != ')')) ++pos;
         std::string arg = line.substr(start, pos - start);
-        if (pos < line.size()) ++pos; // consume '>'
+        if (pos < line.size()) ++pos; // consume '>'||')'
         return arg;
     }
     size_t start = pos;

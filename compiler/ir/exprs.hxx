@@ -6,6 +6,33 @@ inline LLVMValueRef visit_expr(expr_node* e, ir_context* ctx);
 // Forward declare lvalue helper used by assign/unary addr_of.
 inline LLVMValueRef visit_lvalue(expr_node* e, ir_context* ctx);
 
+// ------------------------------------------------------------------ integer coercion helpers
+
+// Truncate or sign-extend an integer value to match dst_t's width.
+// No-op if either side is not an integer type, or widths already match.
+inline LLVMValueRef coerce_int_val(LLVMValueRef val, LLVMTypeRef dst_t, LLVMBuilderRef b) {
+    LLVMTypeRef src_t = LLVMTypeOf(val);
+    if (LLVMGetTypeKind(src_t) != LLVMIntegerTypeKind ||
+        LLVMGetTypeKind(dst_t) != LLVMIntegerTypeKind) return val;
+    unsigned sw = LLVMGetIntTypeWidth(src_t), dw = LLVMGetIntTypeWidth(dst_t);
+    if (sw == dw) return val;
+    if (dw < sw)  return LLVMBuildTrunc(b, val, dst_t, "itrunc");
+    return LLVMBuildSExt(b, val, dst_t, "isext");
+}
+
+// Widen the narrower of two integer operands to the wider type (ZExt).
+// Required before any binary integer instruction that needs matching types.
+// No-op if either operand is not an integer or they already match.
+inline void homogenize_int_widths(LLVMValueRef& a, LLVMValueRef& b, LLVMBuilderRef builder) {
+    LLVMTypeRef ta = LLVMTypeOf(a), tb = LLVMTypeOf(b);
+    if (LLVMGetTypeKind(ta) != LLVMIntegerTypeKind ||
+        LLVMGetTypeKind(tb) != LLVMIntegerTypeKind) return;
+    unsigned wa = LLVMGetIntTypeWidth(ta), wb = LLVMGetIntTypeWidth(tb);
+    if (wa == wb) return;
+    if (wa < wb) a = LLVMBuildZExt(builder, a, tb, "zext");
+    else         b = LLVMBuildZExt(builder, b, ta, "zext");
+}
+
 // ------------------------------------------------------------------ literals
 
 inline LLVMValueRef visit_int_lit(expr_node* e, ir_context* ctx) {
@@ -259,6 +286,7 @@ inline LLVMValueRef visit_binary_expr(expr_node* e, ir_context* ctx) {
     // Evaluate both sides (left-to-right) for all other operators.
     LLVMValueRef lv = visit_expr(e->lhs, ctx);
     LLVMValueRef rv = visit_expr(e->rhs, ctx);
+    homogenize_int_widths(lv, rv, ctx->llvm_builder);
     bool is_fp = llvm_is_float(LLVMTypeOf(lv));
 
     switch (e->bop) {
@@ -319,6 +347,9 @@ inline LLVMValueRef visit_assign_expr(expr_node* e, ir_context* ctx) {
     bool is_fp = llvm_is_float(LLVMTypeOf(rhs));
 
     if (e->bop == binary_op::assign) {
+        LLVMTypeRef elem_t = ctx->lookup_local_type(
+            e->lhs->kind == expr_kind::identifier ? e->lhs->str_val : "");
+        if (elem_t) rhs = coerce_int_val(rhs, elem_t, ctx->llvm_builder);
         LLVMBuildStore(ctx->llvm_builder, rhs, ptr);
         return rhs;
     }

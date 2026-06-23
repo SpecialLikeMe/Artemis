@@ -178,6 +178,7 @@ private:
         if (match(token_type::kw_unsigned)) t->is_signed = false;
 
         static const std::vector<std::pair<token_type, prim_type_t>> prim_map = {
+            {token_type::kw_char, prim_type_t::char_t},
             {token_type::kw_i8,   prim_type_t::i8},
             {token_type::kw_i16,  prim_type_t::i16},
             {token_type::kw_i32,  prim_type_t::i32},
@@ -403,6 +404,7 @@ private:
             token_type::kw_signed, token_type::kw_unsigned,
             token_type::kw_extern, token_type::kw_extern_std,
             token_type::kw_inline, token_type::kw_register,
+            token_type::kw_char,
             token_type::kw_i8,   token_type::kw_i16,  token_type::kw_i32,
             token_type::kw_i64,  token_type::kw_i128, token_type::kw_i256, token_type::kw_i512,
             token_type::kw_u8,   token_type::kw_u16,  token_type::kw_u32,

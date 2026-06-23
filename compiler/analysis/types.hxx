@@ -6,6 +6,7 @@
 
 inline std::string prim_to_str(prim_type_t p) {
     switch (p) {
+        case prim_type_t::char_t:  return "char";
         case prim_type_t::i8:      return "i8";
         case prim_type_t::i16:     return "i16";
         case prim_type_t::i32:     return "i32";
@@ -59,6 +60,7 @@ inline std::string type_to_str(const type_node* t) {
 
 inline bool is_int_prim(prim_type_t p) {
     switch (p) {
+        case prim_type_t::char_t:
         case prim_type_t::i8:   case prim_type_t::i16:  case prim_type_t::i32:
         case prim_type_t::i64:  case prim_type_t::i128: case prim_type_t::i256:
         case prim_type_t::i512:
@@ -103,6 +105,7 @@ inline bool is_unsigned_int(prim_type_t p) {
 
 inline int int_rank(prim_type_t p) {
     switch (p) {
+        case prim_type_t::char_t:
         case prim_type_t::i8:   case prim_type_t::u8:   return 1;
         case prim_type_t::i16:  case prim_type_t::u16:  return 2;
         case prim_type_t::i32:  case prim_type_t::u32:  return 3;

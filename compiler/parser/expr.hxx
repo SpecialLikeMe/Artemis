@@ -11,6 +11,7 @@ struct type_node;
 // ---------- Type representation ----------
 
 enum class prim_type_t {
+    char_t,
     i8, i16, i32, i64, i128, i256, i512,
     u8, u16, u32, u64, u128, u256, u512,
     f8, f16, f32, f64, f128, f256, f512,
