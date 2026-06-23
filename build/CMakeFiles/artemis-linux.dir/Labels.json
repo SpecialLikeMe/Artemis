@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-linux"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-linux.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-linux-complete.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-build.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-configure.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-download.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-install.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-patch.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"artemis-linux"
+		],
+		"name" : "artemis-linux"
+	}
+}

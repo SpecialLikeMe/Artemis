@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / LLVM ${{ matrix.llvm }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        llvm: [17, 18]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LLVM ${{ matrix.llvm }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y wget gnupg lsb-release software-properties-common
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          CODENAME=$(lsb_release -cs)
+          sudo add-apt-repository "deb http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${{ matrix.llvm }} main"
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            clang-${{ matrix.llvm }} \
+            llvm-${{ matrix.llvm }}-dev \
+            libclang-${{ matrix.llvm }}-dev
+
+      - name: Configure (Release)
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-${{ matrix.llvm }} \
+            -DCMAKE_CXX_COMPILER=clang++-${{ matrix.llvm }} \
+            -DLLVM_DIR=$(llvm-config-${{ matrix.llvm }} --cmakedir)
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload binary
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: artemis-llvm${{ matrix.llvm }}-${{ matrix.os }}
+          path: build/artemis
+
+  asan:
+    name: ASan + UBSan (LLVM 18)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LLVM 18
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y wget gnupg lsb-release software-properties-common
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          CODENAME=$(lsb_release -cs)
+          sudo add-apt-repository "deb http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-18 main"
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-18 llvm-18-dev libclang-18-dev
+
+      - name: Configure (ASan)
+        run: |
+          cmake -B build_asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DLLVM_DIR=$(llvm-config-18 --cmakedir) \
+            -DENABLE_ASAN=ON
+
+      - name: Build
+        run: cmake --build build_asan --parallel $(nproc)
+
+      - name: Run tests under ASan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build_asan --output-on-failure

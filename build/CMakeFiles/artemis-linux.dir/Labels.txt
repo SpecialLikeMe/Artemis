@@ -1,0 +1,13 @@
+# Target labels
+ artemis-linux
+# Source files and their labels
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-linux
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-linux.rule
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-linux-complete.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-build.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-configure.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-download.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-install.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-mkdir.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-patch.rule
+C:/Users/devon/Artemis/build/artemis-linux-prefix/src/artemis-linux-stamp/artemis-linux-update.rule

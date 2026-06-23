@@ -1,0 +1,11 @@
+# Target labels
+ artemis-macos
+# Source files and their labels
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-macos-build
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-macos-build.rule
+C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-build.rule
+C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-configure.rule
+C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-patch.rule
+C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-update.rule
+C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-download.rule
+C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-mkdir.rule

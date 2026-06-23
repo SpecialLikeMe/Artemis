@@ -1,0 +1,1 @@
+cmd='C:/Program Files/CMake/bin/cmake.exe;-DCMAKE_BUILD_TYPE=Release;-DLLVM_DIR=C:/msys64/mingw64/lib/cmake/llvm;-DENABLE_ASAN=OFF;-DCMAKE_TOOLCHAIN_FILE=C:/Users/devon/Artemis/cmake/toolchains/linux-x86_64.cmake;-GMinGW Makefiles;-S;<SOURCE_DIR><SOURCE_SUBDIR>;-B;<BINARY_DIR>'

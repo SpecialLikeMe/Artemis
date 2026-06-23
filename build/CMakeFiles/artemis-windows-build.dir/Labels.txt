@@ -1,0 +1,11 @@
+# Target labels
+ artemis-windows
+# Source files and their labels
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-windows-build
+C:/Users/devon/Artemis/build/CMakeFiles/artemis-windows-build.rule
+C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-build.rule
+C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-configure.rule
+C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-patch.rule
+C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-update.rule
+C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-download.rule
+C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-mkdir.rule

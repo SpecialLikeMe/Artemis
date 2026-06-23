@@ -1,0 +1,37 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-macos-build"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-macos-build.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-build.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-configure.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-patch.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-update.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-download.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-macos-prefix/src/artemis-macos-stamp/artemis-macos-mkdir.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"artemis-macos"
+		],
+		"name" : "artemis-macos-build"
+	}
+}

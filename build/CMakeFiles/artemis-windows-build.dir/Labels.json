@@ -1,0 +1,37 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-windows-build"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/CMakeFiles/artemis-windows-build.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-build.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-configure.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-patch.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-update.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-download.rule"
+		},
+		{
+			"file" : "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/artemis-windows-mkdir.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"artemis-windows"
+		],
+		"name" : "artemis-windows-build"
+	}
+}
