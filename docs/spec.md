@@ -41,6 +41,7 @@ Integer types are implicitly convertible to one another in assignments. Narrowin
 | `f128` | quad          |                            |
 | `f256` | —             | Maps to fp128 (LLVM limit) |
 | `f512` | —             | Maps to fp128 (LLVM limit) |
+(use of f256 and f512 is heavily discourage until the map issue has been resolved)
 
 ### 1.3 Boolean Types
 
