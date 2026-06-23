@@ -142,7 +142,7 @@ artemis hello.art --emit-ast
 Save as `hello.art`:
 
 ```c
-extern int puts(const i8* s);
+extern int puts(const char* s);
 
 int main() {
     puts("Hello, Artemis!");
@@ -187,7 +187,7 @@ enum Direction { North, South, East, West }
 // Typedef
 typedef int Score;
 
-extern void printf(const i8* fmt, ...);
+extern void printf(const char* fmt, ...);
 
 int main() {
     Score s = fib(10);
@@ -208,10 +208,10 @@ int main() {
 - No first-class string type; use `i8*` + C stdlib
 - No generics or templates
 - No modules/import system
-- `f256` and `f512` map to LLVM's `fp128` (nearest available hardware type)
+- `f256` and `f512` map to LLVM's `fp128` (nearest available hardware type, usage of these two is not recommended until the issue can be resolved)
 
 ---
 
 ## License
 
-MIT — see `LICENSE.md`.
+MIT — see `LICENSE.md`
