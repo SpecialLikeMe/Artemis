@@ -174,6 +174,16 @@ private:
 
     void visit_func_decl(func_decl* fd) {
         check_type_known(fd->ret_type, fd->line);
+
+        if (fd->name == "main") {
+            bool ok = fd->ret_type && fd->ret_type->is_primitive
+                   && fd->ret_type->prim == prim_type_t::i32
+                   && fd->ret_type->pointer_depth == 0;
+            if (!ok)
+                throw std::runtime_error(err(fd->line,
+                    "Function 'main' must return i32 (the process exit code)"));
+        }
+
         if (!fd->body) return; // forward declaration only
 
         func_decl* prev = current_func;

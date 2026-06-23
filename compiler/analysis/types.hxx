@@ -164,7 +164,12 @@ inline bool assignable(const type_node* lhs, const type_node* rhs) {
         if (lhs->pointer_depth != rhs->pointer_depth) return false;
         bool lv = lhs->is_primitive && lhs->prim == prim_type_t::void_t;
         bool rv = rhs->is_primitive && rhs->prim == prim_type_t::void_t;
-        return lv || rv || types_equal(lhs, rhs);
+        if (lv || rv || types_equal(lhs, rhs)) return true;
+        // Same-rank integer pointer coercion: i8* ↔ u8* (char* interop), etc.
+        if (lhs->is_primitive && rhs->is_primitive &&
+            is_int_prim(lhs->prim.value()) && is_int_prim(rhs->prim.value()) &&
+            int_rank(lhs->prim.value()) == int_rank(rhs->prim.value())) return true;
+        return false;
     }
 
     if (lhs->is_primitive != rhs->is_primitive) return false;
@@ -174,7 +179,7 @@ inline bool assignable(const type_node* lhs, const type_node* rhs) {
     prim_type_t lp = lhs->prim.value(), rp = rhs->prim.value();
     if (lp == rp) return true;
 
-    if (is_int_prim(lp)   && is_int_prim(rp))   return int_rank(lp)   >= int_rank(rp);
+    if (is_int_prim(lp)   && is_int_prim(rp))   return true; // implicit integer conversion
     if (is_float_prim(lp) && is_float_prim(rp)) return float_rank(lp) >= float_rank(rp);
     if (is_float_prim(lp) && is_int_prim(rp))   return true; // int -> float
     if (is_int_prim(lp)   && is_bool_prim(rp))  return true; // bool -> int

@@ -6,7 +6,7 @@ Artemis is a compiled, statically-typed, C-like language that targets LLVM IR. I
 
 ## Language Features
 
-- **Rich integer types:** `i8`, `i16`, `i32`, `i64`, `i128`, `i256`, `i512` and unsigned equivalents `u8` … `u512`
+- **Rich integer types:** `i8`, `i16`, `i32`/`int`, `i64`, `i128`, `i256`, `i512` and unsigned equivalents `u8` … `u512`
 - **Floating-point types:** `f32`, `f64`, `f128`, `f256`, `f512`
 - **Boolean types:** `bool`, `b1` (1-bit), `b8`, `b16`, `b32`, `b64`, `b128`, `b256`, `b512`
 - **Derived types:** pointers (`*`), fixed-size arrays (`[N]`), structs, unions, enums, typedefs
@@ -140,10 +140,11 @@ artemis hello.art --emit-ast
 Save as `hello.art`:
 
 ```c
-extern void puts(const i8* s);
+extern int puts(const i8* s);
 
-void main() {
+int main() {
     puts("Hello, Artemis!");
+    return 0;
 }
 ```
 
@@ -160,13 +161,13 @@ artemis hello.art -o hello && ./hello
 
 ```c
 // Fibonacci — recursive
-i32 fib(i32 n) {
+int fib(int n) {
     if (n <= 1) { return n; }
     return fib(n - 1) + fib(n - 2);
 }
 
 // Generic max via ternary
-i32 max_i32(i32 a, i32 b) { return a > b ? a : b; }
+int max_int(int a, int b) { return a > b ? a : b; }
 
 // Struct and member access
 struct Vec2 {
@@ -182,17 +183,18 @@ f32 dot(Vec2 a, Vec2 b) {
 enum Direction { North, South, East, West }
 
 // Typedef
-typedef i32 Score;
+typedef int Score;
 
 extern void printf(const i8* fmt, ...);
 
-void main() {
+int main() {
     Score s = fib(10);
     printf("fib(10) = %d\n", s);
 
     Vec2 v1; v1.x = 1.0; v1.y = 0.0;
     Vec2 v2; v2.x = 0.0; v2.y = 1.0;
     printf("dot = %f\n", dot(v1, v2));
+    return 0;
 }
 ```
 

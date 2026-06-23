@@ -102,8 +102,8 @@ static exec_result compile(const std::string& art_src,
 TEST(Integration, HelloWorld) {
     // Basic compilation succeeds (exit 0).
     auto r = compile(R"(
-        extern void puts(const i8* s);
-        void main() { puts("hello"); }
+        extern i32 puts(const i8* s);
+        i32 main() { puts("hello"); return 0; }
     )");
     ASSERT_EQ(r.code, 0);
 }

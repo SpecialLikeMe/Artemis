@@ -23,7 +23,7 @@ static void compile_fail(const std::string& src) {
 }
 
 TEST(Analyzer, ValidFunctionCall) {
-    compile_ok("i32 add(i32 a, i32 b) { return a + b; } void main() { add(1, 2); }");
+    compile_ok("i32 add(i32 a, i32 b) { return a + b; } void run() { add(1, 2); }");
 }
 
 TEST(Analyzer, UndeclaredVariable) {
@@ -105,4 +105,32 @@ TEST(Analyzer, ValidIfElse) {
 
 TEST(Analyzer, VariadicFuncAccepted) {
     compile_ok("void myprintf(const i8* fmt, ...); void f() { myprintf(\"hi\"); }");
+}
+
+TEST(Analyzer, ImplicitIntCast) {
+    compile_ok("void f() { u8 a = 2; i16 b = 1000; u32 c = a; }");
+}
+
+TEST(Analyzer, ImplicitIntCastNarrowing) {
+    compile_ok("void f() { u8 x = 300; }"); // allowed; truncation is the caller's problem
+}
+
+TEST(Analyzer, CharType) {
+    compile_ok("void f() { char c = 'a'; }");
+}
+
+TEST(Analyzer, CharPointerString) {
+    compile_ok("void f() { char* s = \"hello\"; }");
+}
+
+TEST(Analyzer, MainMustReturnI32) {
+    ASSERT_THROWS(compile_fail("bool main() { return true; }"), std::runtime_error);
+}
+
+TEST(Analyzer, MainVoidRejected) {
+    ASSERT_THROWS(compile_fail("void main() {}"), std::runtime_error);
+}
+
+TEST(Analyzer, MainI32OK) {
+    compile_ok("i32 main() { return 0; }");
 }

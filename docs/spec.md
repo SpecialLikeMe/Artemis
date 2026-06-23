@@ -9,22 +9,26 @@
 
 ### 1.1 Primitive Integer Types
 
-| Type   | Width | Signed | Notes                |
-|--------|-------|--------|----------------------|
-| `i8`   | 8     | Yes    |                      |
-| `i16`  | 16    | Yes    |                      |
-| `i32`  | 32    | Yes    | Also spelled `int`   |
-| `i64`  | 64    | Yes    |                      |
-| `i128` | 128   | Yes    |                      |
-| `i256` | 256   | Yes    | Software emulation   |
-| `i512` | 512   | Yes    | Software emulation   |
-| `u8`   | 8     | No     |                      |
-| `u16`  | 16    | No     |                      |
-| `u32`  | 32    | No     | Also spelled `uint`  |
-| `u64`  | 64    | No     |                      |
-| `u128` | 128   | No     |                      |
-| `u256` | 256   | No     | Software emulation   |
-| `u512` | 512   | No     | Software emulation   |
+| Type   | Width | Signed | Notes                          |
+|--------|-------|--------|--------------------------------|
+| `i8`   | 8     | Yes    | Also spelled `char`            |
+| `i16`  | 16    | Yes    |                                |
+| `i32`  | 32    | Yes    | Also spelled `int`             |
+| `i64`  | 64    | Yes    |                                |
+| `i128` | 128   | Yes    |                                |
+| `i256` | 256   | Yes    | Software emulation             |
+| `i512` | 512   | Yes    | Software emulation             |
+| `u8`   | 8     | No     |                                |
+| `u16`  | 16    | No     |                                |
+| `u32`  | 32    | No     | Also spelled `uint`            |
+| `u64`  | 64    | No     |                                |
+| `u128` | 128   | No     |                                |
+| `u256` | 256   | No     | Software emulation             |
+| `u512` | 512   | No     | Software emulation             |
+
+`char` is an alias for `i8`. `char*` (pointer to `char`) is the canonical string type, interchangeable with `i8*` and `u8*` when assigning.
+
+Integer types are implicitly convertible to one another in assignments. Narrowing conversions (e.g. assigning an `i32` to a `u8`) are permitted without an explicit cast; the value is truncated to the destination width at runtime.
 
 ### 1.2 Primitive Floating-Point Types
 
@@ -109,6 +113,12 @@ ret_type name ( param_list ) block
 A variadic function appends `...` after the last named parameter:
 ```c
 void printf(const i8* fmt, ...);
+```
+
+The entry-point function **must** be named `main` and **must** return `i32`. The return value is the process exit code. Any other return type for `main` is a compile-time error.
+
+```c
+i32 main() { return 0; }
 ```
 
 ### 2.3 Struct Declarations
@@ -296,16 +306,16 @@ Artemis can call any C-ABI function by declaring it with `extern`. Artemis-compi
 
 Type correspondence:
 
-| Artemis | C                 |
-|---------|-------------------|
-| `i8`    | `int8_t` / `char` |
-| `i32`   | `int32_t` / `int` |
-| `i64`   | `int64_t`         |
-| `u64`   | `uint64_t`        |
-| `f32`   | `float`           |
-| `f64`   | `double`          |
-| `void*` | `void*`           |
-| `i8*`   | `char*`           |
+| Artemis        | C                  |
+|----------------|--------------------|
+| `char` / `i8`  | `char` / `int8_t`  |
+| `i32`          | `int32_t` / `int`  |
+| `i64`          | `int64_t`          |
+| `u64`          | `uint64_t`         |
+| `f32`          | `float`            |
+| `f64`          | `double`           |
+| `void*`        | `void*`            |
+| `char*` / `i8*`| `char*`            |
 
 ---
 
@@ -320,7 +330,7 @@ var_suffix    ::= ( '[' expr ']' )? ( '=' expr )? ';'
 type_spec     ::= storage_class* qualifier* prim_type pointer_stars
 storage_class ::= 'extern' | 'extern std' | 'inline' | 'register'
 qualifier     ::= 'const' | 'volatile' | 'signed' | 'unsigned'
-prim_type     ::= 'void' | 'i8' | 'i16' | ... | 'u8' | ... | 'f32' | ... | 'bool' | 'b1' | ...
+prim_type     ::= 'void' | 'char' | 'i8' | 'i16' | ... | 'u8' | ... | 'f32' | ... | 'bool' | 'b1' | ...
                | identifier  (struct/enum/union/typedef name)
 pointer_stars ::= '*'*
 param_list    ::= (type_spec identifier (',' type_spec identifier)* (',' '...')? )?

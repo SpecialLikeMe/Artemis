@@ -224,6 +224,7 @@ private:
             {"volatile",   token_type::kw_volatile},
             {"void",       token_type::kw_void},
             {"null",       token_type::kw_null},
+            {"char",       token_type::kw_i8},
             {"i8",         token_type::kw_i8},
             {"i16",        token_type::kw_i16},
             {"i32",        token_type::kw_i32},
