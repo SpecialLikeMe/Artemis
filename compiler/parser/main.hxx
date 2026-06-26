@@ -104,6 +104,12 @@ struct struct_decl : ast_node {
     std::vector<var_decl*> fields;
 };
 
+struct memstr_decl : ast_node {
+    std::string            name;
+    var_decl*              ptr;
+    func_decl*             vtable[3];
+};
+
 struct enum_decl : ast_node {
     std::string                                name;
     std::vector<std::pair<std::string, std::optional<expr_node*>>> variants;
@@ -350,6 +356,10 @@ private:
         }
         consume(token_type::cbrace, "Expected '}' after union body");
         return ud;
+    }
+
+    memstr_decl* parse_memstr_decl() {
+        consume(token_type::kw_smem)
     }
 
     typedef_decl* parse_typedef_decl() {

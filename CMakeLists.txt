@@ -26,27 +26,77 @@ target_include_directories(artemis PRIVATE ${CMAKE_SOURCE_DIR}/compiler)
 target_link_libraries(artemis PRIVATE ${LLVM_LIBS})
 target_compile_options(artemis PRIVATE ${WARN_FLAGS})
 
-# ------------------------------------------------------------------ install: artemis + atc/atx aliases
-install(TARGETS artemis DESTINATION bin)
+# ------------------------------------------------------------------ aciso build system / package manager
+set(ACISO_SRCS
+    aciso/main.cxx
+    aciso/cmd_init.cxx
+    aciso/cmd_pkg.cxx
+    aciso/cmd_build.cxx
+    aciso/cmd_targets.cxx
+    aciso/cmd_symbols.cxx
+    aciso/cmd_dev.cxx
+    aciso/cmd_export.cxx
+)
+add_executable(aciso ${ACISO_SRCS})
+target_include_directories(aciso PRIVATE ${CMAKE_SOURCE_DIR}/aciso)
+target_compile_features(aciso PRIVATE cxx_std_20)
+target_compile_options(aciso PRIVATE ${WARN_FLAGS})
+if(WIN32)
+    target_compile_definitions(aciso PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+if(UNIX)
+    target_link_libraries(aciso PRIVATE stdc++fs)
+endif()
+
+# ------------------------------------------------------------------ install: artemis + aciso + aliases
+install(TARGETS artemis aciso DESTINATION bin)
 
 if(WIN32)
-    # On Windows create wrapper batch files alongside the binary.
+    # Create CMD wrapper scripts so aliases work in every shell context.
+    # We normalise the install path to avoid mixed-slash issues on Windows,
+    # then keep all file() calls inside CMake (no shell expansion of spaces).
     install(CODE "
-        set(BIN_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin\")
-        file(WRITE \"\${BIN_DIR}/atc.cmd\" \"@echo off\\r\\nartemis %*\\r\\n\")
-        file(WRITE \"\${BIN_DIR}/atx.cmd\" \"@echo off\\r\\nartemis %*\\r\\n\")
-        file(WRITE \"\${BIN_DIR}/arc.cmd\" \"@echo off\\r\\nartemis %*\\r\\n\")
+        # Build a canonical, forward-slash path safe for CMake file() calls.
+        set(_destdir \"\$ENV{DESTDIR}\")
+        set(_prefix  \"\${CMAKE_INSTALL_PREFIX}\")
+        if(_destdir)
+            file(TO_CMAKE_PATH \"\${_destdir}\" _destdir)
+        endif()
+        file(TO_CMAKE_PATH \"\${_prefix}\" _prefix)
+        set(BIN_DIR \"\${_destdir}\${_prefix}/bin\")
+        cmake_path(NORMAL_PATH BIN_DIR OUTPUT_VARIABLE BIN_DIR)
+
+        # artemis aliases
+        foreach(_alias atc atx arc)
+            file(WRITE \"\${BIN_DIR}/\${_alias}.cmd\"
+                \"@echo off\\r\\n\\\"artemis\\\" %*\\r\\n\")
+        endforeach()
+
+        # aciso alias kept explicit so it survives any future renames
+        file(WRITE \"\${BIN_DIR}/aciso.cmd\"
+            \"@echo off\\r\\n\\\"aciso\\\" %*\\r\\n\")
     ")
 else()
-    # On POSIX create symlinks.
+    # On POSIX create symlinks for the artemis aliases.
+    # aciso is its own binary so no symlink is needed.
     install(CODE "
-        set(BIN_DIR \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin\")
-        foreach(alias atc atx arc)
-            if(EXISTS \"\${BIN_DIR}/\${alias}\")
-                file(REMOVE \"\${BIN_DIR}/\${alias}\")
+        set(_destdir \"\$ENV{DESTDIR}\")
+        set(_prefix  \"\${CMAKE_INSTALL_PREFIX}\")
+        file(TO_CMAKE_PATH \"\${_destdir}\${_prefix}/bin\" BIN_DIR)
+        cmake_path(NORMAL_PATH BIN_DIR OUTPUT_VARIABLE BIN_DIR)
+
+        foreach(_alias atc atx arc)
+            set(_link \"\${BIN_DIR}/\${_alias}\")
+            if(EXISTS \"\${_link}\" OR IS_SYMLINK \"\${_link}\")
+                file(REMOVE \"\${_link}\")
             endif()
-            execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink artemis \${alias}
-                            WORKING_DIRECTORY \"\${BIN_DIR}\")
+            execute_process(
+                COMMAND \"\${CMAKE_COMMAND}\" -E create_symlink artemis \"\${_alias}\"
+                WORKING_DIRECTORY \"\${BIN_DIR}\"
+                RESULT_VARIABLE _rc)
+            if(NOT _rc EQUAL 0)
+                message(WARNING \"aciso installer: failed to create symlink \${_alias}\")
+            endif()
         endforeach()
     ")
 endif()
@@ -148,7 +198,8 @@ set(CPACK_PACKAGE_CONTACT          "noreply@artemis-lang.org")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Artemis compiled language toolchain")
 set(CPACK_PACKAGE_DESCRIPTION
     "Artemis is a compiled, statically-typed, C-like language that targets LLVM IR.\n"
-    "The package includes the 'artemis' compiler driver plus the 'atc' and 'atx' aliases.")
+    "The package includes the 'artemis' compiler driver, the 'atc'/'atx'/'arc' aliases,\n"
+    "and 'aciso', the Artemis package manager and build system.")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Artemis")
 set(CPACK_STRIP_FILES               ON)
 
@@ -168,19 +219,33 @@ set(CPACK_NSIS_MODIFY_PATH        ON)
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MUI_ICON          "${CMAKE_SOURCE_DIR}/cmake/artemis.ico")
 set(CPACK_NSIS_MUI_UNIICON       "${CMAKE_SOURCE_DIR}/cmake/artemis.ico")
-# Add PATH entry so 'artemis', 'atc', 'atx' are available system-wide.
+# Set ARTEMIS_HOME so aciso can locate the artemis compiler at runtime.
+# $INSTDIR is the NSIS install root (e.g. C:\Program Files\Artemis);
+# artemis.exe and aciso.exe both live in $INSTDIR\bin.
+# SendMessage flushes the env change to running processes without a reboot.
 set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
-    "WriteRegStr HKLM 'SYSTEM\\\\CurrentControlSet\\\\Control\\\\Session Manager\\\\Environment' 'ARTEMIS_HOME' '$INSTDIR'")
+    "WriteRegStr HKLM \
+'SYSTEM\\\\CurrentControlSet\\\\Control\\\\Session Manager\\\\Environment' \
+'ARTEMIS_HOME' '$INSTDIR'\n\
+SendMessage \${HWND_BROADCAST} \${WM_WININICHANGE} 0 'STR:Environment' /TIMEOUT=5000")
+
+# Remove ARTEMIS_HOME from the registry when the user uninstalls.
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
+    "DeleteRegValue HKLM \
+'SYSTEM\\\\CurrentControlSet\\\\Control\\\\Session Manager\\\\Environment' \
+'ARTEMIS_HOME'\n\
+SendMessage \${HWND_BROADCAST} \${WM_WININICHANGE} 0 'STR:Environment' /TIMEOUT=5000")
 
 # ---- Linux: DEB + RPM ----
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER  "Artemis Project <noreply@artemis-lang.org>")
 set(CPACK_DEBIAN_PACKAGE_SECTION     "devel")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY    "optional")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS     "libc6 (>= 2.17), libstdc++6 (>= 6)")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS     "libc6 (>= 2.17), libstdc++6 (>= 6), git")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE    "https://github.com/your-org/artemis")
+# git is a runtime dep for 'aciso install' (uses git clone to fetch packages)
 set(CPACK_RPM_PACKAGE_LICENSE        "MIT")
 set(CPACK_RPM_PACKAGE_GROUP          "Development/Tools")
-set(CPACK_RPM_PACKAGE_REQUIRES       "glibc >= 2.17, libstdc++ >= 6")
+set(CPACK_RPM_PACKAGE_REQUIRES       "glibc >= 2.17, libstdc++ >= 6, git")
 set(CPACK_RPM_PACKAGE_URL            "https://github.com/your-org/artemis")
 
 # ---- macOS: drag-and-drop DMG ----

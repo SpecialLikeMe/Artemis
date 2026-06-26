@@ -52,11 +52,40 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "C:/Users/devon/Artemis/build/aciso.exe")
+  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/aciso.exe" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/aciso.exe")
+    if(CMAKE_INSTALL_DO_STRIP)
+      execute_process(COMMAND "C:/msys64/mingw64/bin/strip.exe" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/aciso.exe")
+    endif()
+  endif()
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  include("C:/Users/devon/Artemis/build/CMakeFiles/aciso.dir/install-cxx-module-bmi-Release.cmake" OPTIONAL)
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   
-        set(BIN_DIR "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin")
-        file(WRITE "${BIN_DIR}/atc.cmd" "@echo off\r\nartemis %*\r\n")
-        file(WRITE "${BIN_DIR}/atx.cmd" "@echo off\r\nartemis %*\r\n")
-        file(WRITE "${BIN_DIR}/arc.cmd" "@echo off\r\nartemis %*\r\n")
+        # Build a canonical, forward-slash path safe for CMake file() calls.
+        set(_destdir "$ENV{DESTDIR}")
+        set(_prefix  "${CMAKE_INSTALL_PREFIX}")
+        if(_destdir)
+            file(TO_CMAKE_PATH "${_destdir}" _destdir)
+        endif()
+        file(TO_CMAKE_PATH "${_prefix}" _prefix)
+        set(BIN_DIR "${_destdir}${_prefix}/bin")
+        cmake_path(NORMAL_PATH BIN_DIR OUTPUT_VARIABLE BIN_DIR)
+
+        # artemis aliases
+        foreach(_alias atc atx arc)
+            file(WRITE "${BIN_DIR}/${_alias}.cmd"
+                "@echo off\r\n\"artemis\" %*\r\n")
+        endforeach()
+
+        # aciso alias kept explicit so it survives any future renames
+        file(WRITE "${BIN_DIR}/aciso.cmd"
+            "@echo off\r\n\"aciso\" %*\r\n")
     
 endif()
 

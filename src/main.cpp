@@ -6,9 +6,11 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <unordered_set>
 #include <stdexcept>
 
 // Compiler pipeline
+#include "../compiler/preproc/main.hxx"
 #include "../compiler/lexer/main.hxx"
 #include "../compiler/parser/main.hxx"
 #include "../compiler/analysis/main.hxx"
@@ -47,6 +49,9 @@ struct cli_opts {
     bool         target_linux = false;
     bool         target_win   = false;
     bool         target_mac   = false;
+    // Preprocessor: -D SYMBOL defines, -I path include dirs
+    std::unordered_set<std::string> defines;
+    std::vector<std::string>        include_paths;
 };
 
 static void print_usage(std::string_view prog) {
@@ -70,6 +75,8 @@ static void print_usage(std::string_view prog) {
         "  --emit-ast         Print AST to stdout and exit\n"
         "  -O0/-O1/-O2/-O3    Optimisation level (default: -O0)\n"
         "  --target <triple>  LLVM target triple (default: host)\n"
+        "  -D <name>          Predefine symbol (for @ifdef/@ifndef)\n"
+        "  -I <path>          Add directory to @include search path\n"
         "  -v, --verbose      Verbose output\n"
         "  --version          Print version and exit\n"
         "  -h, --help         Print this message and exit\n",
@@ -121,6 +128,10 @@ static bool parse_args(int argc, char** argv, cli_opts& opts,
         else if (arg == "-O2") { opts.opt_level = 2; }
         else if (arg == "-O3") { opts.opt_level = 3; }
         else if (arg == "--target" && i + 1 < argc) { opts.target_triple = argv[++i]; }
+        else if (arg == "-D" && i + 1 < argc) { opts.defines.insert(argv[++i]); }
+        else if (arg.size() > 2 && arg[0] == '-' && arg[1] == 'D') { opts.defines.insert(std::string(arg.substr(2))); }
+        else if (arg == "-I" && i + 1 < argc) { opts.include_paths.push_back(argv[++i]); }
+        else if (arg.size() > 2 && arg[0] == '-' && arg[1] == 'I') { opts.include_paths.push_back(std::string(arg.substr(2))); }
         else if (is_atc && arg == "-l") { opts.target_linux = true; if (i+1<argc) opts.output = argv[++i]; }
         else if (is_atc && arg == "-w") { opts.target_win   = true; if (i+1<argc) opts.output = argv[++i]; }
         else if (is_atc && arg == "-m") { opts.target_mac   = true; if (i+1<argc) opts.output = argv[++i]; }
@@ -427,6 +438,10 @@ int main(int argc, char** argv) {
     }
 
     diag_engine diag(opts.input);
+
+    // ---- preprocess ----
+    src = preproc::pr_main(src, opts.input, diag, opts.defines);
+    if (diag.has_errors()) { diag.finish(); return 1; }
 
     // ---- lex ----
     std::vector<token_t> tokens;

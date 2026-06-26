@@ -7,6 +7,54 @@
 },
 {
   "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\main.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\main.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/main.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/main.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_init.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_init.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_init.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_init.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_pkg.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_pkg.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_pkg.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_pkg.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_build.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_build.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_build.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_build.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_targets.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_targets.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_targets.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_targets.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_symbols.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_symbols.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_symbols.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_symbols.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_dev.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_dev.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_dev.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_dev.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_CRT_SECURE_NO_WARNINGS -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/aciso.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\aciso.dir\\aciso\\cmd_export.cxx.obj -c C:\\Users\\devon\\Artemis\\aciso\\cmd_export.cxx",
+  "file": "C:/Users/devon/Artemis/aciso/cmd_export.cxx",
+  "output": "CMakeFiles/aciso.dir/aciso/cmd_export.cxx.obj"
+},
+{
+  "directory": "C:/Users/devon/Artemis/build",
   "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/artemis_tests.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\artemis_tests.dir\\test\\runner.cpp.obj -c C:\\Users\\devon\\Artemis\\test\\runner.cpp",
   "file": "C:/Users/devon/Artemis/test/runner.cpp",
   "output": "CMakeFiles/artemis_tests.dir/test/runner.cpp.obj"

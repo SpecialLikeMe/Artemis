@@ -165,33 +165,82 @@ CMakeFiles/artemis.dir/src/main.cpp.obj: \
  C:/msys64/mingw64/include/c++/15.2.0/bits/stl_vector.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/stl_bvector.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/vector.tcc \
- C:/Users/devon/Artemis/compiler/lexer/main.hxx \
- C:/msys64/mingw64/include/c++/15.2.0/cstdint \
- C:/msys64/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdint.h \
- C:/msys64/mingw64/include/stdint.h \
- C:/msys64/mingw64/include/c++/15.2.0/unordered_map \
- C:/msys64/mingw64/include/c++/15.2.0/bits/unordered_map.h \
+ C:/msys64/mingw64/include/c++/15.2.0/unordered_set \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/unordered_set.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/hashtable.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/hashtable_policy.h \
  C:/msys64/mingw64/include/c++/15.2.0/ext/aligned_buffer.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/enable_special_members.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/node_handle.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/erase_if.h \
+ C:/Users/devon/Artemis/compiler/preproc/main.hxx \
+ C:/msys64/mingw64/include/c++/15.2.0/regex \
+ C:/msys64/mingw64/include/c++/15.2.0/bitset \
+ C:/msys64/mingw64/include/c++/15.2.0/locale \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/locale_facets_nonio.h \
+ C:/msys64/mingw64/include/c++/15.2.0/ctime \
+ C:/msys64/mingw64/include/c++/15.2.0/x86_64-w64-mingw32/bits/time_members.h \
+ C:/msys64/mingw64/include/c++/15.2.0/x86_64-w64-mingw32/bits/messages_members.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/locale_facets_nonio.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/locale_conv.h \
+ C:/msys64/mingw64/include/c++/15.2.0/stack \
+ C:/msys64/mingw64/include/c++/15.2.0/deque \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_deque.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/deque.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_stack.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/shared_ptr.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/shared_ptr_base.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/allocated_ptr.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/unique_ptr.h \
+ C:/msys64/mingw64/include/c++/15.2.0/ext/concurrence.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/align.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/std_function.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_algo.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/algorithmfwd.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_heap.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/uniform_int_dist.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_tempbuf.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_tree.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_map.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_constants.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_error.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_automaton.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_automaton.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_scanner.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_scanner.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_compiler.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_compiler.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_executor.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/regex_executor.tcc \
+ C:/msys64/mingw64/include/c++/15.2.0/unordered_map \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/unordered_map.h \
+ C:/msys64/mingw64/include/c++/15.2.0/filesystem \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/fs_fwd.h \
+ C:/msys64/mingw64/include/c++/15.2.0/cstdint \
+ C:/msys64/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdint.h \
+ C:/msys64/mingw64/include/stdint.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/chrono.h \
+ C:/msys64/mingw64/include/c++/15.2.0/ratio \
+ C:/msys64/mingw64/include/c++/15.2.0/limits \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/parse_numbers.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/fs_path.h \
+ C:/msys64/mingw64/include/c++/15.2.0/iomanip \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/quoted_string.h \
+ C:/msys64/mingw64/include/c++/15.2.0/codecvt \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/fs_dir.h \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/fs_ops.h \
+ C:/Users/devon/Artemis/compiler/diagnostics.hxx \
+ C:/msys64/mingw64/include/io.h \
+ C:/Users/devon/Artemis/compiler/lexer/main.hxx \
  C:/Users/devon/Artemis/compiler/parser/main.hxx \
  C:/msys64/mingw64/include/c++/15.2.0/iostream \
  C:/msys64/mingw64/include/c++/15.2.0/optional \
  C:/msys64/mingw64/include/c++/15.2.0/variant \
  C:/msys64/mingw64/include/c++/15.2.0/bits/monostate.h \
- C:/msys64/mingw64/include/c++/15.2.0/bits/parse_numbers.h \
  C:/msys64/mingw64/include/c++/15.2.0/memory \
- C:/msys64/mingw64/include/c++/15.2.0/bits/stl_tempbuf.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/stl_raw_storage_iter.h \
- C:/msys64/mingw64/include/c++/15.2.0/bits/align.h \
- C:/msys64/mingw64/include/c++/15.2.0/bits/unique_ptr.h \
- C:/msys64/mingw64/include/c++/15.2.0/bits/shared_ptr.h \
- C:/msys64/mingw64/include/c++/15.2.0/bits/shared_ptr_base.h \
- C:/msys64/mingw64/include/c++/15.2.0/bits/allocated_ptr.h \
- C:/msys64/mingw64/include/c++/15.2.0/ext/concurrence.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/shared_ptr_atomic.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_base.h \
  C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_lockfree_defines.h \
@@ -230,8 +279,6 @@ CMakeFiles/artemis.dir/src/main.cpp.obj: \
  C:/msys64/mingw64/include/llvm/Config/AsmParsers.def \
  C:/msys64/mingw64/include/llvm/Config/Disassemblers.def \
  C:/Users/devon/Artemis/compiler/ir/asm.hxx \
- C:/Users/devon/Artemis/compiler/diagnostics.hxx \
- C:/msys64/mingw64/include/io.h \
  C:/msys64/mingw64/include/llvm-c/TargetMachine.h \
  C:/msys64/mingw64/include/llvm-c/BitWriter.h \
  C:/msys64/mingw64/include/llvm-c/Transforms/PassBuilder.h \

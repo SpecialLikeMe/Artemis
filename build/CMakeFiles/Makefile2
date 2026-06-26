@@ -63,11 +63,13 @@ CMAKE_BINARY_DIR = C:\Users\devon\Artemis\build
 
 # The main recursive "all" target.
 all: CMakeFiles/artemis.dir/all
+all: CMakeFiles/aciso.dir/all
 all: CMakeFiles/artemis_tests.dir/all
 .PHONY : all
 
 # The main recursive "codegen" target.
 codegen: CMakeFiles/artemis.dir/codegen
+codegen: CMakeFiles/aciso.dir/codegen
 codegen: CMakeFiles/artemis_tests.dir/codegen
 .PHONY : codegen
 
@@ -82,6 +84,7 @@ clean: CMakeFiles/omp_gen.dir/clean
 clean: CMakeFiles/acc_gen.dir/clean
 clean: CMakeFiles/target_parser_gen.dir/clean
 clean: CMakeFiles/artemis.dir/clean
+clean: CMakeFiles/aciso.dir/clean
 clean: CMakeFiles/artemis_tests.dir/clean
 clean: CMakeFiles/artemis-linux.dir/clean
 clean: CMakeFiles/artemis-linux-build.dir/clean
@@ -259,7 +262,7 @@ CMakeFiles/target_parser_gen.dir/clean:
 CMakeFiles/artemis.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis.dir\build.make CMakeFiles/artemis.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis.dir\build.make CMakeFiles/artemis.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=1,2 "Built target artemis"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=10,11 "Built target artemis"
 .PHONY : CMakeFiles/artemis.dir/all
 
 # Build rule for subdir invocation for target.
@@ -276,7 +279,7 @@ artemis: CMakeFiles/artemis.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis.dir\build.make CMakeFiles/artemis.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=1,2 "Finished codegen for target artemis"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=10,11 "Finished codegen for target artemis"
 .PHONY : CMakeFiles/artemis.dir/codegen
 
 # clean rule for target.
@@ -285,13 +288,45 @@ CMakeFiles/artemis.dir/clean:
 .PHONY : CMakeFiles/artemis.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/aciso.dir
+
+# All Build rule for target.
+CMakeFiles/aciso.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9 "Built target aciso"
+.PHONY : CMakeFiles/aciso.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/aciso.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start C:\Users\devon\Artemis\build\CMakeFiles 9
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 CMakeFiles/aciso.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start C:\Users\devon\Artemis\build\CMakeFiles 0
+.PHONY : CMakeFiles/aciso.dir/rule
+
+# Convenience name for target.
+aciso: CMakeFiles/aciso.dir/rule
+.PHONY : aciso
+
+# codegen rule for target.
+CMakeFiles/aciso.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9 "Finished codegen for target aciso"
+.PHONY : CMakeFiles/aciso.dir/codegen
+
+# clean rule for target.
+CMakeFiles/aciso.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/clean
+.PHONY : CMakeFiles/aciso.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/artemis_tests.dir
 
 # All Build rule for target.
 CMakeFiles/artemis_tests.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis_tests.dir\build.make CMakeFiles/artemis_tests.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis_tests.dir\build.make CMakeFiles/artemis_tests.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=27,28 "Built target artemis_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=36,37 "Built target artemis_tests"
 .PHONY : CMakeFiles/artemis_tests.dir/all
 
 # Build rule for subdir invocation for target.
@@ -308,7 +343,7 @@ artemis_tests: CMakeFiles/artemis_tests.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis_tests.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis_tests.dir\build.make CMakeFiles/artemis_tests.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=27,28 "Finished codegen for target artemis_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=36,37 "Finished codegen for target artemis_tests"
 .PHONY : CMakeFiles/artemis_tests.dir/codegen
 
 # clean rule for target.
@@ -323,7 +358,7 @@ CMakeFiles/artemis_tests.dir/clean:
 CMakeFiles/artemis-linux.dir/all: CMakeFiles/artemis-linux-build.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-linux.dir\build.make CMakeFiles/artemis-linux.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-linux.dir\build.make CMakeFiles/artemis-linux.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=3,4 "Built target artemis-linux"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=12,13 "Built target artemis-linux"
 .PHONY : CMakeFiles/artemis-linux.dir/all
 
 # Build rule for subdir invocation for target.
@@ -340,7 +375,7 @@ artemis-linux: CMakeFiles/artemis-linux.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis-linux.dir/codegen: CMakeFiles/artemis-linux-build.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-linux.dir\build.make CMakeFiles/artemis-linux.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=3,4 "Finished codegen for target artemis-linux"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=12,13 "Finished codegen for target artemis-linux"
 .PHONY : CMakeFiles/artemis-linux.dir/codegen
 
 # clean rule for target.
@@ -355,7 +390,7 @@ CMakeFiles/artemis-linux.dir/clean:
 CMakeFiles/artemis-linux-build.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-linux-build.dir\build.make CMakeFiles/artemis-linux-build.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-linux-build.dir\build.make CMakeFiles/artemis-linux-build.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=5,6,7,8,9,10 "Built target artemis-linux-build"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=14,15,16,17,18,19 "Built target artemis-linux-build"
 .PHONY : CMakeFiles/artemis-linux-build.dir/all
 
 # Build rule for subdir invocation for target.
@@ -372,7 +407,7 @@ artemis-linux-build: CMakeFiles/artemis-linux-build.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis-linux-build.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-linux-build.dir\build.make CMakeFiles/artemis-linux-build.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=5,6,7,8,9,10 "Finished codegen for target artemis-linux-build"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=14,15,16,17,18,19 "Finished codegen for target artemis-linux-build"
 .PHONY : CMakeFiles/artemis-linux-build.dir/codegen
 
 # clean rule for target.
@@ -387,7 +422,7 @@ CMakeFiles/artemis-linux-build.dir/clean:
 CMakeFiles/artemis-windows.dir/all: CMakeFiles/artemis-windows-build.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-windows.dir\build.make CMakeFiles/artemis-windows.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-windows.dir\build.make CMakeFiles/artemis-windows.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=19,20 "Built target artemis-windows"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=28,29 "Built target artemis-windows"
 .PHONY : CMakeFiles/artemis-windows.dir/all
 
 # Build rule for subdir invocation for target.
@@ -404,7 +439,7 @@ artemis-windows: CMakeFiles/artemis-windows.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis-windows.dir/codegen: CMakeFiles/artemis-windows-build.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-windows.dir\build.make CMakeFiles/artemis-windows.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=19,20 "Finished codegen for target artemis-windows"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=28,29 "Finished codegen for target artemis-windows"
 .PHONY : CMakeFiles/artemis-windows.dir/codegen
 
 # clean rule for target.
@@ -419,7 +454,7 @@ CMakeFiles/artemis-windows.dir/clean:
 CMakeFiles/artemis-windows-build.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-windows-build.dir\build.make CMakeFiles/artemis-windows-build.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-windows-build.dir\build.make CMakeFiles/artemis-windows-build.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=21,22,23,24,25,26 "Built target artemis-windows-build"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=30,31,32,33,34,35 "Built target artemis-windows-build"
 .PHONY : CMakeFiles/artemis-windows-build.dir/all
 
 # Build rule for subdir invocation for target.
@@ -436,7 +471,7 @@ artemis-windows-build: CMakeFiles/artemis-windows-build.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis-windows-build.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-windows-build.dir\build.make CMakeFiles/artemis-windows-build.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=21,22,23,24,25,26 "Finished codegen for target artemis-windows-build"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=30,31,32,33,34,35 "Finished codegen for target artemis-windows-build"
 .PHONY : CMakeFiles/artemis-windows-build.dir/codegen
 
 # clean rule for target.
@@ -451,7 +486,7 @@ CMakeFiles/artemis-windows-build.dir/clean:
 CMakeFiles/artemis-macos.dir/all: CMakeFiles/artemis-macos-build.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-macos.dir\build.make CMakeFiles/artemis-macos.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-macos.dir\build.make CMakeFiles/artemis-macos.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=11,12 "Built target artemis-macos"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=20,21 "Built target artemis-macos"
 .PHONY : CMakeFiles/artemis-macos.dir/all
 
 # Build rule for subdir invocation for target.
@@ -468,7 +503,7 @@ artemis-macos: CMakeFiles/artemis-macos.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis-macos.dir/codegen: CMakeFiles/artemis-macos-build.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-macos.dir\build.make CMakeFiles/artemis-macos.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=11,12 "Finished codegen for target artemis-macos"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=20,21 "Finished codegen for target artemis-macos"
 .PHONY : CMakeFiles/artemis-macos.dir/codegen
 
 # clean rule for target.
@@ -483,7 +518,7 @@ CMakeFiles/artemis-macos.dir/clean:
 CMakeFiles/artemis-macos-build.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-macos-build.dir\build.make CMakeFiles/artemis-macos-build.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-macos-build.dir\build.make CMakeFiles/artemis-macos-build.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=13,14,15,16,17,18 "Built target artemis-macos-build"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=22,23,24,25,26,27 "Built target artemis-macos-build"
 .PHONY : CMakeFiles/artemis-macos-build.dir/all
 
 # Build rule for subdir invocation for target.
@@ -500,7 +535,7 @@ artemis-macos-build: CMakeFiles/artemis-macos-build.dir/rule
 # codegen rule for target.
 CMakeFiles/artemis-macos-build.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\artemis-macos-build.dir\build.make CMakeFiles/artemis-macos-build.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=13,14,15,16,17,18 "Finished codegen for target artemis-macos-build"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=22,23,24,25,26,27 "Finished codegen for target artemis-macos-build"
 .PHONY : CMakeFiles/artemis-macos-build.dir/codegen
 
 # clean rule for target.
@@ -512,12 +547,12 @@ CMakeFiles/artemis-macos-build.dir/clean:
 # Target rules for target CMakeFiles/cross-all.dir
 
 # All Build rule for target.
-CMakeFiles/cross-all.dir/all: CMakeFiles/artemis-linux.dir/all
-CMakeFiles/cross-all.dir/all: CMakeFiles/artemis-windows.dir/all
 CMakeFiles/cross-all.dir/all: CMakeFiles/artemis-macos.dir/all
+CMakeFiles/cross-all.dir/all: CMakeFiles/artemis-windows.dir/all
+CMakeFiles/cross-all.dir/all: CMakeFiles/artemis-linux.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\cross-all.dir\build.make CMakeFiles/cross-all.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\cross-all.dir\build.make CMakeFiles/cross-all.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=29 "Built target cross-all"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=38 "Built target cross-all"
 .PHONY : CMakeFiles/cross-all.dir/all
 
 # Build rule for subdir invocation for target.
@@ -532,11 +567,11 @@ cross-all: CMakeFiles/cross-all.dir/rule
 .PHONY : cross-all
 
 # codegen rule for target.
-CMakeFiles/cross-all.dir/codegen: CMakeFiles/artemis-linux.dir/all
-CMakeFiles/cross-all.dir/codegen: CMakeFiles/artemis-windows.dir/all
 CMakeFiles/cross-all.dir/codegen: CMakeFiles/artemis-macos.dir/all
+CMakeFiles/cross-all.dir/codegen: CMakeFiles/artemis-windows.dir/all
+CMakeFiles/cross-all.dir/codegen: CMakeFiles/artemis-linux.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\cross-all.dir\build.make CMakeFiles/cross-all.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=29 "Finished codegen for target cross-all"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=C:\Users\devon\Artemis\build\CMakeFiles --progress-num=38 "Finished codegen for target cross-all"
 .PHONY : CMakeFiles/cross-all.dir/codegen
 
 # clean rule for target.

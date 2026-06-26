@@ -111,6 +111,7 @@ enum class token_type {
     kw_struct,
     kw_enum,
     kw_union,
+    kw_smem,
     kw_typedef,
 
     kw_asm,     // __asm__
@@ -263,6 +264,7 @@ private:
             {"enum",       token_type::kw_enum},
             {"union",      token_type::kw_union},
             {"typedef",    token_type::kw_typedef},
+            {"memstr",     token_type::kw_smem},
             {"__asm__",    token_type::kw_asm},
         };
         return m;

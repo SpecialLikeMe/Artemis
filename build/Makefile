@@ -269,6 +269,19 @@ artemis/fast:
 .PHONY : artemis/fast
 
 #=============================================================================
+# Target rules for targets named aciso
+
+# Build rule for target.
+aciso: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 aciso
+.PHONY : aciso
+
+# fast build rule for target.
+aciso/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/build
+.PHONY : aciso/fast
+
+#=============================================================================
 # Target rules for targets named artemis_tests
 
 # Build rule for target.
@@ -372,6 +385,198 @@ cross-all/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\cross-all.dir\build.make CMakeFiles/cross-all.dir/build
 .PHONY : cross-all/fast
 
+aciso/cmd_build.obj: aciso/cmd_build.cxx.obj
+.PHONY : aciso/cmd_build.obj
+
+# target to build an object file
+aciso/cmd_build.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_build.cxx.obj
+.PHONY : aciso/cmd_build.cxx.obj
+
+aciso/cmd_build.i: aciso/cmd_build.cxx.i
+.PHONY : aciso/cmd_build.i
+
+# target to preprocess a source file
+aciso/cmd_build.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_build.cxx.i
+.PHONY : aciso/cmd_build.cxx.i
+
+aciso/cmd_build.s: aciso/cmd_build.cxx.s
+.PHONY : aciso/cmd_build.s
+
+# target to generate assembly for a file
+aciso/cmd_build.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_build.cxx.s
+.PHONY : aciso/cmd_build.cxx.s
+
+aciso/cmd_dev.obj: aciso/cmd_dev.cxx.obj
+.PHONY : aciso/cmd_dev.obj
+
+# target to build an object file
+aciso/cmd_dev.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_dev.cxx.obj
+.PHONY : aciso/cmd_dev.cxx.obj
+
+aciso/cmd_dev.i: aciso/cmd_dev.cxx.i
+.PHONY : aciso/cmd_dev.i
+
+# target to preprocess a source file
+aciso/cmd_dev.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_dev.cxx.i
+.PHONY : aciso/cmd_dev.cxx.i
+
+aciso/cmd_dev.s: aciso/cmd_dev.cxx.s
+.PHONY : aciso/cmd_dev.s
+
+# target to generate assembly for a file
+aciso/cmd_dev.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_dev.cxx.s
+.PHONY : aciso/cmd_dev.cxx.s
+
+aciso/cmd_export.obj: aciso/cmd_export.cxx.obj
+.PHONY : aciso/cmd_export.obj
+
+# target to build an object file
+aciso/cmd_export.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_export.cxx.obj
+.PHONY : aciso/cmd_export.cxx.obj
+
+aciso/cmd_export.i: aciso/cmd_export.cxx.i
+.PHONY : aciso/cmd_export.i
+
+# target to preprocess a source file
+aciso/cmd_export.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_export.cxx.i
+.PHONY : aciso/cmd_export.cxx.i
+
+aciso/cmd_export.s: aciso/cmd_export.cxx.s
+.PHONY : aciso/cmd_export.s
+
+# target to generate assembly for a file
+aciso/cmd_export.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_export.cxx.s
+.PHONY : aciso/cmd_export.cxx.s
+
+aciso/cmd_init.obj: aciso/cmd_init.cxx.obj
+.PHONY : aciso/cmd_init.obj
+
+# target to build an object file
+aciso/cmd_init.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_init.cxx.obj
+.PHONY : aciso/cmd_init.cxx.obj
+
+aciso/cmd_init.i: aciso/cmd_init.cxx.i
+.PHONY : aciso/cmd_init.i
+
+# target to preprocess a source file
+aciso/cmd_init.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_init.cxx.i
+.PHONY : aciso/cmd_init.cxx.i
+
+aciso/cmd_init.s: aciso/cmd_init.cxx.s
+.PHONY : aciso/cmd_init.s
+
+# target to generate assembly for a file
+aciso/cmd_init.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_init.cxx.s
+.PHONY : aciso/cmd_init.cxx.s
+
+aciso/cmd_pkg.obj: aciso/cmd_pkg.cxx.obj
+.PHONY : aciso/cmd_pkg.obj
+
+# target to build an object file
+aciso/cmd_pkg.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_pkg.cxx.obj
+.PHONY : aciso/cmd_pkg.cxx.obj
+
+aciso/cmd_pkg.i: aciso/cmd_pkg.cxx.i
+.PHONY : aciso/cmd_pkg.i
+
+# target to preprocess a source file
+aciso/cmd_pkg.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_pkg.cxx.i
+.PHONY : aciso/cmd_pkg.cxx.i
+
+aciso/cmd_pkg.s: aciso/cmd_pkg.cxx.s
+.PHONY : aciso/cmd_pkg.s
+
+# target to generate assembly for a file
+aciso/cmd_pkg.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_pkg.cxx.s
+.PHONY : aciso/cmd_pkg.cxx.s
+
+aciso/cmd_symbols.obj: aciso/cmd_symbols.cxx.obj
+.PHONY : aciso/cmd_symbols.obj
+
+# target to build an object file
+aciso/cmd_symbols.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_symbols.cxx.obj
+.PHONY : aciso/cmd_symbols.cxx.obj
+
+aciso/cmd_symbols.i: aciso/cmd_symbols.cxx.i
+.PHONY : aciso/cmd_symbols.i
+
+# target to preprocess a source file
+aciso/cmd_symbols.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_symbols.cxx.i
+.PHONY : aciso/cmd_symbols.cxx.i
+
+aciso/cmd_symbols.s: aciso/cmd_symbols.cxx.s
+.PHONY : aciso/cmd_symbols.s
+
+# target to generate assembly for a file
+aciso/cmd_symbols.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_symbols.cxx.s
+.PHONY : aciso/cmd_symbols.cxx.s
+
+aciso/cmd_targets.obj: aciso/cmd_targets.cxx.obj
+.PHONY : aciso/cmd_targets.obj
+
+# target to build an object file
+aciso/cmd_targets.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_targets.cxx.obj
+.PHONY : aciso/cmd_targets.cxx.obj
+
+aciso/cmd_targets.i: aciso/cmd_targets.cxx.i
+.PHONY : aciso/cmd_targets.i
+
+# target to preprocess a source file
+aciso/cmd_targets.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_targets.cxx.i
+.PHONY : aciso/cmd_targets.cxx.i
+
+aciso/cmd_targets.s: aciso/cmd_targets.cxx.s
+.PHONY : aciso/cmd_targets.s
+
+# target to generate assembly for a file
+aciso/cmd_targets.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/cmd_targets.cxx.s
+.PHONY : aciso/cmd_targets.cxx.s
+
+aciso/main.obj: aciso/main.cxx.obj
+.PHONY : aciso/main.obj
+
+# target to build an object file
+aciso/main.cxx.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/main.cxx.obj
+.PHONY : aciso/main.cxx.obj
+
+aciso/main.i: aciso/main.cxx.i
+.PHONY : aciso/main.i
+
+# target to preprocess a source file
+aciso/main.cxx.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/main.cxx.i
+.PHONY : aciso/main.cxx.i
+
+aciso/main.s: aciso/main.cxx.s
+.PHONY : aciso/main.s
+
+# target to generate assembly for a file
+aciso/main.cxx.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\aciso.dir\build.make CMakeFiles/aciso.dir/aciso/main.cxx.s
+.PHONY : aciso/main.cxx.s
+
 src/main.obj: src/main.cpp.obj
 .PHONY : src/main.obj
 
@@ -447,8 +652,33 @@ help:
 	@echo ... omp_gen
 	@echo ... target_parser_gen
 	@echo ... vt_gen
+	@echo ... aciso
 	@echo ... artemis
 	@echo ... artemis_tests
+	@echo ... aciso/cmd_build.obj
+	@echo ... aciso/cmd_build.i
+	@echo ... aciso/cmd_build.s
+	@echo ... aciso/cmd_dev.obj
+	@echo ... aciso/cmd_dev.i
+	@echo ... aciso/cmd_dev.s
+	@echo ... aciso/cmd_export.obj
+	@echo ... aciso/cmd_export.i
+	@echo ... aciso/cmd_export.s
+	@echo ... aciso/cmd_init.obj
+	@echo ... aciso/cmd_init.i
+	@echo ... aciso/cmd_init.s
+	@echo ... aciso/cmd_pkg.obj
+	@echo ... aciso/cmd_pkg.i
+	@echo ... aciso/cmd_pkg.s
+	@echo ... aciso/cmd_symbols.obj
+	@echo ... aciso/cmd_symbols.i
+	@echo ... aciso/cmd_symbols.s
+	@echo ... aciso/cmd_targets.obj
+	@echo ... aciso/cmd_targets.i
+	@echo ... aciso/cmd_targets.s
+	@echo ... aciso/main.obj
+	@echo ... aciso/main.i
+	@echo ... aciso/main.s
 	@echo ... src/main.obj
 	@echo ... src/main.i
 	@echo ... src/main.s

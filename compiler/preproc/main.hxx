@@ -3,6 +3,7 @@
 #include <regex>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -114,7 +115,8 @@ inline std::string pr_process(
     const std::string& filename,
     std::unordered_map<std::string, macro_def>& defines,
     diag_engine& diag,
-    int depth = 0
+    int depth = 0,
+    const std::unordered_set<std::string>* predefined = nullptr
 );
 
 inline std::string pr_process(
@@ -122,7 +124,8 @@ inline std::string pr_process(
     const std::string& filename,
     std::unordered_map<std::string, macro_def>& defines,
     diag_engine& diag,
-    int depth
+    int depth,
+    const std::unordered_set<std::string>* predefined
 ) {
     if (depth > 64) {
         diag.error(0, 0, "maximum include depth exceeded (possible circular @include)");
@@ -175,7 +178,8 @@ inline std::string pr_process(
         // so that nesting stays balanced.
         if (kw == "ifdef" || kw == "ifndef") {
             const std::string name = parse_arg(line, pos);
-            const bool defined = defines.count(name) > 0;
+            const bool defined = defines.count(name) > 0
+                                 || (predefined && predefined->count(name) > 0);
             const bool cond = (kw == "ifdef") ? defined : !defined;
             stack.push_back({active() && cond, cond});
         } else if (kw == "elifdef" || kw == "elifndef") {
@@ -185,7 +189,8 @@ inline std::string pr_process(
                 auto& top = stack.back();
                 if (!top.ever_true) {
                     const std::string name = parse_arg(line, pos);
-                    const bool defined = defines.count(name) > 0;
+                    const bool defined = defines.count(name) > 0
+                                         || (predefined && predefined->count(name) > 0);
                     const bool cond = (kw == "elifdef") ? defined : !defined;
                     top.active = parent_active() && cond;
                     top.ever_true = cond;
@@ -211,7 +216,7 @@ inline std::string pr_process(
                 const auto full = base / fname;
                 try {
                     const std::string content = read_file(full.string());
-                    out << pr_process(content, full.string(), defines, diag, depth + 1);
+                    out << pr_process(content, full.string(), defines, diag, depth + 1, predefined);
                 } catch (const std::runtime_error& e) {
                     diag.error(lineno, 1, e.what());
                 }
@@ -262,10 +267,12 @@ inline std::string pr_process(
 inline std::string pr_main(
     const std::string& input,
     const std::string& filename,
-    diag_engine& diag
+    diag_engine& diag,
+    const std::unordered_set<std::string>& predefined = {}
 ) {
     std::unordered_map<std::string, macro_def> defines;
-    return pr_process(input, filename, defines, diag);
+    return pr_process(input, filename, defines, diag, 0,
+                      predefined.empty() ? nullptr : &predefined);
 }
 
 } // namespace preproc
