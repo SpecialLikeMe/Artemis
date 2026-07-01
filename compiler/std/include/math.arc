@@ -41,6 +41,7 @@ extern f32 powf(f32 b, f32 e);
 extern f32 logf(f32 x);
 extern f32 expf(f32 x);
 
+namespace math {
 constexpr f64 PI     = 3.14159265358979323846;
 constexpr f64 TAU    = 6.28318530717958647692;
 constexpr f64 E      = 2.71828182845904523536;
@@ -121,66 +122,66 @@ bool is_odd(i64 n)  { return (n & 1) != 0; }
 istruc vec2 {
     f64 x; f64 y;
 
-    void __construct__(&self, f64 vx, f64 vy) { self.x = vx; self.y = vy; }
+    void __construct__(vec2* self, f64 vx, f64 vy) { self.x = vx; self.y = vy; }
 
-    vec2 add(&self, vec2 o)   { vec2 r(self.x+o.x, self.y+o.y); return r; }
-    vec2 sub(&self, vec2 o)   { vec2 r(self.x-o.x, self.y-o.y); return r; }
-    vec2 scale(&self, f64 s)  { vec2 r(self.x*s,   self.y*s);   return r; }
-    f64  dot(&self, vec2 o)   { return self.x*o.x + self.y*o.y; }
-    f64  len_sq(&self)        { return self.x*self.x + self.y*self.y; }
-    f64  len(&self)           { return sqrt(self.len_sq()); }
-    vec2 normalize(&self) {
+    vec2 add(vec2* self, vec2 o)   { vec2 r(self.x+o.x, self.y+o.y); return r; }
+    vec2 sub(vec2* self, vec2 o)   { vec2 r(self.x-o.x, self.y-o.y); return r; }
+    vec2 scale(vec2* self, f64 s)  { vec2 r(self.x*s,   self.y*s);   return r; }
+    f64  dot(vec2* self, vec2 o)   { return self.x*o.x + self.y*o.y; }
+    f64  len_sq(vec2* self)        { return self.x*self.x + self.y*self.y; }
+    f64  len(vec2* self)           { return sqrt(self.len_sq()); }
+    vec2 normalize(vec2* self) {
         f64 l = self.len();
         if (l == 0.0) { vec2 z(0.0, 0.0); return z; }
         vec2 r(self.x/l, self.y/l); return r;
     }
-    f64  cross(&self, vec2 o) { return self.x*o.y - self.y*o.x; }
-    vec2 perp(&self)          { vec2 r(-self.y, self.x); return r; }
-    f64  angle(&self)         { return atan2(self.y, self.x); }
-    vec2 rotate(&self, f64 a) {
+    f64  cross(vec2* self, vec2 o) { return self.x*o.y - self.y*o.x; }
+    vec2 perp(vec2* self)          { vec2 r(-self.y, self.x); return r; }
+    f64  angle(vec2* self)         { return atan2(self.y, self.x); }
+    vec2 rotate(vec2* self, f64 a) {
         f64 c = cos(a); f64 s = sin(a);
         vec2 r(self.x*c - self.y*s, self.x*s + self.y*c); return r;
     }
-    bool operator==(&self, vec2 o) { return self.x == o.x && self.y == o.y; }
-    vec2 operator+(&self, vec2 o)  { return self.add(o); }
-    vec2 operator-(&self, vec2 o)  { return self.sub(o); }
-    vec2 operator*(&self, f64 s)   { return self.scale(s); }
+    bool operator==(vec2* self, vec2 o) { return self.x == o.x && self.y == o.y; }
+    vec2 operator+(vec2* self, vec2 o)  { return self.add(o); }
+    vec2 operator-(vec2* self, vec2 o)  { return self.sub(o); }
+    vec2 operator*(vec2* self, f64 s)   { return self.scale(s); }
 }
 
 // --- 3D vector ---
 istruc vec3 {
     f64 x; f64 y; f64 z;
 
-    void __construct__(&self, f64 vx, f64 vy, f64 vz) { self.x=vx; self.y=vy; self.z=vz; }
+    void __construct__(vec3* self, f64 vx, f64 vy, f64 vz) { self.x=vx; self.y=vy; self.z=vz; }
 
-    vec3 add(&self, vec3 o)  { vec3 r(self.x+o.x,self.y+o.y,self.z+o.z); return r; }
-    vec3 sub(&self, vec3 o)  { vec3 r(self.x-o.x,self.y-o.y,self.z-o.z); return r; }
-    vec3 scale(&self, f64 s) { vec3 r(self.x*s,self.y*s,self.z*s); return r; }
-    f64  dot(&self, vec3 o)  { return self.x*o.x+self.y*o.y+self.z*o.z; }
-    f64  len_sq(&self)       { return self.x*self.x+self.y*self.y+self.z*self.z; }
-    f64  len(&self)          { return sqrt(self.len_sq()); }
-    vec3 cross(&self, vec3 o) {
+    vec3 add(vec3* self, vec3 o)  { vec3 r(self.x+o.x,self.y+o.y,self.z+o.z); return r; }
+    vec3 sub(vec3* self, vec3 o)  { vec3 r(self.x-o.x,self.y-o.y,self.z-o.z); return r; }
+    vec3 scale(vec3* self, f64 s) { vec3 r(self.x*s,self.y*s,self.z*s); return r; }
+    f64  dot(vec3* self, vec3 o)  { return self.x*o.x+self.y*o.y+self.z*o.z; }
+    f64  len_sq(vec3* self)       { return self.x*self.x+self.y*self.y+self.z*self.z; }
+    f64  len(vec3* self)          { return sqrt(self.len_sq()); }
+    vec3 cross(vec3* self, vec3 o) {
         vec3 r(self.y*o.z - self.z*o.y,
                self.z*o.x - self.x*o.z,
                self.x*o.y - self.y*o.x);
         return r;
     }
-    vec3 normalize(&self) {
+    vec3 normalize(vec3* self) {
         f64 l = self.len();
         if (l == 0.0) { vec3 z(0.0,0.0,0.0); return z; }
         vec3 r(self.x/l,self.y/l,self.z/l); return r;
     }
-    vec3 reflect(&self, vec3 n) { return self.sub(n.scale(2.0*self.dot(n))); }
-    vec3 operator+(&self, vec3 o) { return self.add(o); }
-    vec3 operator-(&self, vec3 o) { return self.sub(o); }
-    vec3 operator*(&self, f64 s)  { return self.scale(s); }
+    vec3 reflect(vec3* self, vec3 n) { return self.sub(n.scale(2.0*self.dot(n))); }
+    vec3 operator+(vec3* self, vec3 o) { return self.add(o); }
+    vec3 operator-(vec3* self, vec3 o) { return self.sub(o); }
+    vec3 operator*(vec3* self, f64 s)  { return self.scale(s); }
 }
 
 // --- 4x4 matrix (column-major) ---
 istruc mat4 {
     f64 m[16]; // [col*4 + row]
 
-    void __construct__(&self) {
+    void __construct__(mat4* self) {
         for (i32 i = 0; i < 16; i = i + 1) { self.m[i] = 0.0; }
     }
 
@@ -190,9 +191,9 @@ istruc mat4 {
         return r;
     }
 
-    f64 at(&self, i32 row, i32 col) { return self.m[col*4 + row]; }
+    f64 at(mat4* self, i32 row, i32 col) { return self.m[col*4 + row]; }
 
-    mat4 mul(&self, mat4 b) {
+    mat4 mul(mat4* self, mat4 b) {
         mat4 r;
         for (i32 row = 0; row < 4; row = row + 1) {
             for (i32 col = 0; col < 4; col = col + 1) {
@@ -205,7 +206,7 @@ istruc mat4 {
         return r;
     }
 
-    mat4 transpose(&self) {
+    mat4 transpose(mat4* self) {
         mat4 r;
         for (i32 i = 0; i < 4; i = i + 1)
             for (i32 j = 0; j < 4; j = j + 1)
@@ -259,13 +260,13 @@ istruc mat4 {
 istruc quat {
     f64 w; f64 x; f64 y; f64 z;
 
-    void __construct__(&self, f64 vw, f64 vx, f64 vy, f64 vz) {
+    void __construct__(quat* self, f64 vw, f64 vx, f64 vy, f64 vz) {
         self.w=vw; self.x=vx; self.y=vy; self.z=vz;
     }
 
     static quat identity() { quat q(1.0,0.0,0.0,0.0); return q; }
 
-    quat mul(&self, quat o) {
+    quat mul(quat* self, quat o) {
         quat r(
             self.w*o.w - self.x*o.x - self.y*o.y - self.z*o.z,
             self.w*o.x + self.x*o.w + self.y*o.z - self.z*o.y,
@@ -275,15 +276,15 @@ istruc quat {
         return r;
     }
 
-    f64  norm(&self) { return sqrt(self.w*self.w+self.x*self.x+self.y*self.y+self.z*self.z); }
+    f64  norm(quat* self) { return sqrt(self.w*self.w+self.x*self.x+self.y*self.y+self.z*self.z); }
 
-    quat normalize(&self) {
+    quat normalize(quat* self) {
         f64 n = self.norm();
         if (n == 0.0) { return quat.identity(); }
         quat r(self.w/n,self.x/n,self.y/n,self.z/n); return r;
     }
 
-    quat conjugate(&self) { quat r(self.w,-self.x,-self.y,-self.z); return r; }
+    quat conjugate(quat* self) { quat r(self.w,-self.x,-self.y,-self.z); return r; }
 
     static quat from_axis_angle(vec3 axis, f64 angle) {
         f64 s = sin(angle * 0.5);
@@ -292,7 +293,7 @@ istruc quat {
         return q;
     }
 
-    mat4 to_mat4(&self) {
+    mat4 to_mat4(quat* self) {
         mat4 r = mat4.identity();
         f64 xx=self.x*self.x; f64 yy=self.y*self.y; f64 zz=self.z*self.z;
         f64 xy=self.x*self.y; f64 xz=self.x*self.z; f64 yz=self.y*self.z;
@@ -368,3 +369,5 @@ u32 bit_reverse_u32(u32 x) {
     return (x >> 16) | (x << 16);
 }
 
+
+} // namespace math

@@ -25,18 +25,18 @@ istruc unordered_set<K> {
         return h;
     }
 
-    void __construct__(&self, i32 initial_cap, &memstr a) {
+    void __construct__(unordered_set* self, i32 initial_cap, &memstr a) {
         self.cap   = initial_cap;
         self.count = 0;
         self.slots = (uset_slot<K>*)a.mmap((u64)(sizeof(uset_slot<K>) * initial_cap));
         for (i32 i = 0; i < initial_cap; i = i + 1) self.slots[i].hash = USET_EMPTY;
     }
 
-    void __construct__(&self) {
+    void __construct__(unordered_set* self) {
         self.cap = 0; self.count = 0; self.slots = (uset_slot<K>*)0;
     }
 
-    private void rehash(&self, &memstr a) {
+    private void rehash(unordered_set* self, &memstr a) {
         i32 old_cap = self.cap;
         uset_slot<K>* old_slots = self.slots;
         i32 new_cap = old_cap == 0 ? 16 : old_cap * 2;
@@ -49,7 +49,7 @@ istruc unordered_set<K> {
         if (old_slots != (uset_slot<K>*)0) a.deinit(old_slots);
     }
 
-    void insert(&self, K key, &memstr a) {
+    void insert(unordered_set* self, K key, &memstr a) {
         if (self.count * 100 >= self.cap * 75) { self.rehash(a); }
         u64 h = hash_key((i64)key);
         if (h == USET_EMPTY || h == USET_DELETED) { h = h ^ 1u; }
@@ -65,7 +65,7 @@ istruc unordered_set<K> {
         }
     }
 
-    bool contains(&self, K key) {
+    bool contains(unordered_set* self, K key) {
         if (self.cap == 0) { return false; }
         u64 h   = hash_key((i64)key);
         if (h == USET_EMPTY || h == USET_DELETED) { h = h ^ 1u; }
@@ -78,7 +78,7 @@ istruc unordered_set<K> {
         }
     }
 
-    void remove(&self, K key) {
+    void remove(unordered_set* self, K key) {
         if (self.cap == 0) { return; }
         u64 h   = hash_key((i64)key);
         if (h == USET_EMPTY || h == USET_DELETED) { h = h ^ 1u; }
@@ -93,16 +93,16 @@ istruc unordered_set<K> {
         }
     }
 
-    i32  size(&self)     { return self.count; }
-    bool is_empty(&self) { return self.count == 0; }
+    i32  size(unordered_set* self)     { return self.count; }
+    bool is_empty(unordered_set* self) { return self.count == 0; }
 
-    void each(&self, void(K)* cb) {
+    void each(unordered_set* self, void(K)* cb) {
         for (i32 i = 0; i < self.cap; i = i + 1)
             if (self.slots[i].hash != USET_EMPTY && self.slots[i].hash != USET_DELETED)
                 cb(self.slots[i].key);
     }
 
-    void deinit(&self, &memstr a) {
+    void deinit(unordered_set* self, &memstr a) {
         if (self.slots != (uset_slot<K>*)0) a.deinit(self.slots);
         self.slots = (uset_slot<K>*)0; self.count = 0; self.cap = 0;
     }

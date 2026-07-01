@@ -17,9 +17,9 @@ istruc array<T> {
     i32 len;
     i32 cap;
 
-    void __construct__(&self) { self.data=(T*)0; self.len=0; self.cap=0; }
+    void __construct__(array* self) { self.data=(T*)0; self.len=0; self.cap=0; }
 
-    void reserve(&self, i32 n, &memstr a) {
+    void reserve(array* self, i32 n, &memstr a) {
         if (n <= self.cap) { return; }
         T* nd = (T*)a.mmap((u64)(sizeof(T) * n));
         for (i32 i = 0; i < self.len; i = i + 1) nd[i] = self.data[i];
@@ -27,7 +27,7 @@ istruc array<T> {
         self.data = nd; self.cap = n;
     }
 
-    void push(&self, T val, &memstr a) {
+    void push(array* self, T val, &memstr a) {
         if (self.len >= self.cap) {
             i32 nc = self.cap == 0 ? 8 : self.cap * 2;
             self.reserve(nc, a);
@@ -36,22 +36,22 @@ istruc array<T> {
         self.len = self.len + 1;
     }
 
-    void remove_at(&self, i32 i) {
+    void remove_at(array* self, i32 i) {
         for (i32 j = i; j < self.len - 1; j = j + 1)
             self.data[j] = self.data[j + 1];
         self.len = self.len - 1;
     }
 
-    T   at(&self, i32 i)    { return self.data[i]; }
-    T*  ptr_at(&self, i32 i)      { return self.data + i; }
-    i32 length(&self)       { return self.len; }
-    bool is_empty(&self)    { return self.len == 0; }
+    T   at(array* self, i32 i)    { return self.data[i]; }
+    T*  ptr_at(array* self, i32 i)      { return self.data + i; }
+    i32 length(array* self)       { return self.len; }
+    bool is_empty(array* self)    { return self.len == 0; }
 
-    void swap(&self, i32 i, i32 j) {
+    void swap(array* self, i32 i, i32 j) {
         T tmp = self.data[i]; self.data[i] = self.data[j]; self.data[j] = tmp;
     }
 
-    void deinit(&self, &memstr a) {
+    void deinit(array* self, &memstr a) {
         if (self.data != (T*)0) { a.deinit(self.data); }
         self.data = (T*)0; self.len = 0; self.cap = 0;
     }
@@ -64,20 +64,20 @@ istruc vec2f {
     array<f32> y;
     i32        len;
 
-    void __construct__(&self) { self.len = 0; }
+    void __construct__(vec2f* self) { self.len = 0; }
 
-    void push(&self, f32 xv, f32 yv, &memstr a) {
+    void push(vec2f* self, f32 xv, f32 yv, &memstr a) {
         self.x.push(xv, a);
         self.y.push(yv, a);
         self.len = self.len + 1;
     }
 
-    void remove_at(&self, i32 i) {
+    void remove_at(vec2f* self, i32 i) {
         self.x.remove_at(i); self.y.remove_at(i); self.len = self.len - 1;
     }
 
     // Swap-erase (O(1) removal preserving density, does not preserve order)
-    void swap_erase(&self, i32 i) {
+    void swap_erase(vec2f* self, i32 i) {
         i32 last = self.len - 1;
         self.x.swap(i, last); self.y.swap(i, last);
         self.x.len = self.x.len - 1;
@@ -85,7 +85,7 @@ istruc vec2f {
         self.len = self.len - 1;
     }
 
-    void deinit(&self, &memstr a) { self.x.deinit(a); self.y.deinit(a); self.len = 0; }
+    void deinit(vec2f* self, &memstr a) { self.x.deinit(a); self.y.deinit(a); self.len = 0; }
 }
 
 // ---- soa.vec3f — SoA of f32 x/y/z triples (e.g. 3D positions) ----
@@ -96,26 +96,26 @@ istruc vec3f {
     array<f32> z;
     i32        len;
 
-    void __construct__(&self) { self.len = 0; }
+    void __construct__(vec3f* self) { self.len = 0; }
 
-    void push(&self, f32 xv, f32 yv, f32 zv, &memstr a) {
+    void push(vec3f* self, f32 xv, f32 yv, f32 zv, &memstr a) {
         self.x.push(xv, a); self.y.push(yv, a); self.z.push(zv, a);
         self.len = self.len + 1;
     }
 
-    void remove_at(&self, i32 i) {
+    void remove_at(vec3f* self, i32 i) {
         self.x.remove_at(i); self.y.remove_at(i); self.z.remove_at(i);
         self.len = self.len - 1;
     }
 
-    void swap_erase(&self, i32 i) {
+    void swap_erase(vec3f* self, i32 i) {
         i32 last = self.len - 1;
         self.x.swap(i,last); self.y.swap(i,last); self.z.swap(i,last);
         self.x.len=self.x.len-1; self.y.len=self.y.len-1; self.z.len=self.z.len-1;
         self.len = self.len - 1;
     }
 
-    void deinit(&self, &memstr a) { self.x.deinit(a); self.y.deinit(a); self.z.deinit(a); self.len=0; }
+    void deinit(vec3f* self, &memstr a) { self.x.deinit(a); self.y.deinit(a); self.z.deinit(a); self.len=0; }
 }
 
 // ---- soa.particle — SoA for a typical game-particle system ----
@@ -128,9 +128,9 @@ istruc particle {
     array<u32> color;
     i32        len;
 
-    void __construct__(&self) { self.len = 0; }
+    void __construct__(particle* self) { self.len = 0; }
 
-    void push(&self, f32 x, f32 y, f32 z,
+    void push(particle* self, f32 x, f32 y, f32 z,
               f32 vx_, f32 vy_, f32 vz_,
               f32 life_, u32 col_, &memstr a) {
         self.px.push(x,a);   self.py.push(y,a);   self.pz.push(z,a);
@@ -139,7 +139,7 @@ istruc particle {
         self.len = self.len + 1;
     }
 
-    void swap_erase(&self, i32 i) {
+    void swap_erase(particle* self, i32 i) {
         i32 last = self.len - 1;
         self.px.swap(i,last); self.py.swap(i,last); self.pz.swap(i,last);
         self.vx.swap(i,last); self.vy.swap(i,last); self.vz.swap(i,last);
@@ -151,7 +151,7 @@ istruc particle {
     }
 
     // Integrate: advance positions by velocity * dt, decrement lifetimes, remove dead
-    void tick(&self, f32 dt) {
+    void tick(particle* self, f32 dt) {
         i32 i = 0;
         while (i < self.len) {
             self.px.data[i] = self.px.data[i] + self.vx.data[i] * dt;
@@ -163,7 +163,7 @@ istruc particle {
         }
     }
 
-    void deinit(&self, &memstr a) {
+    void deinit(particle* self, &memstr a) {
         self.px.deinit(a); self.py.deinit(a); self.pz.deinit(a);
         self.vx.deinit(a); self.vy.deinit(a); self.vz.deinit(a);
         self.life.deinit(a); self.color.deinit(a); self.len=0;
@@ -179,16 +179,16 @@ istruc transform {
     array<f32> qx; array<f32> qy; array<f32> qz; array<f32> qw;
     i32        len;
 
-    void __construct__(&self) { self.len = 0; }
+    void __construct__(transform* self) { self.len = 0; }
 
-    void push_identity(&self, &memstr a) {
+    void push_identity(transform* self, &memstr a) {
         self.px.push(0.0,a); self.py.push(0.0,a); self.pz.push(0.0,a);
         self.sx.push(1.0,a); self.sy.push(1.0,a); self.sz.push(1.0,a);
         self.qx.push(0.0,a); self.qy.push(0.0,a); self.qz.push(0.0,a); self.qw.push(1.0,a);
         self.len = self.len + 1;
     }
 
-    void swap_erase(&self, i32 i) {
+    void swap_erase(transform* self, i32 i) {
         i32 last = self.len - 1;
         self.px.swap(i,last); self.py.swap(i,last); self.pz.swap(i,last);
         self.sx.swap(i,last); self.sy.swap(i,last); self.sz.swap(i,last);
@@ -200,7 +200,7 @@ istruc transform {
         self.len = self.len - 1;
     }
 
-    void deinit(&self, &memstr a) {
+    void deinit(transform* self, &memstr a) {
         self.px.deinit(a); self.py.deinit(a); self.pz.deinit(a);
         self.sx.deinit(a); self.sy.deinit(a); self.sz.deinit(a);
         self.qx.deinit(a); self.qy.deinit(a); self.qz.deinit(a); self.qw.deinit(a);
@@ -215,24 +215,24 @@ istruc kv<K, V> {
     array<V> vals;
     i32      len;
 
-    void __construct__(&self) { self.len = 0; }
+    void __construct__(kv* self) { self.len = 0; }
 
-    void push(&self, K k, V v, &memstr a) {
+    void push(kv* self, K k, V v, &memstr a) {
         self.keys.push(k, a); self.vals.push(v, a); self.len = self.len + 1;
     }
 
-    void remove_at(&self, i32 i) {
+    void remove_at(kv* self, i32 i) {
         self.keys.remove_at(i); self.vals.remove_at(i); self.len = self.len - 1;
     }
 
-    void swap_erase(&self, i32 i) {
+    void swap_erase(kv* self, i32 i) {
         i32 last = self.len - 1;
         self.keys.swap(i,last); self.vals.swap(i,last);
         self.keys.len=self.keys.len-1; self.vals.len=self.vals.len-1;
         self.len = self.len - 1;
     }
 
-    void deinit(&self, &memstr a) { self.keys.deinit(a); self.vals.deinit(a); self.len=0; }
+    void deinit(kv* self, &memstr a) { self.keys.deinit(a); self.vals.deinit(a); self.len=0; }
 }
 
 // ---- soa.zip_each — iterate two parallel arrays simultaneously ----

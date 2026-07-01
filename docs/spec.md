@@ -1066,7 +1066,7 @@ The following packages are specified and will be implemented:
 | `std.sll` | Singly-linked list |
 | `std.dll` | Doubly-linked list |
 | `std.soa` | Struct-of-arrays container |
-| `std.system` | OS detection, env vars, exit |
+| `std.arch.system` | OS detection, env vars, exit |
 | `std.fs` | File I/O, directory listing |
 | `std.net` | TCP/UDP sockets |
 | `std.process` | Process spawn and pipes |
@@ -1077,4 +1077,4 @@ The following packages are specified and will be implemented:
 | `std.toml` | TOML parse |
 | `std.test` | Unit test framework |
 | `std.debug` | Stack traces, assertions, memory checking |
-| `std.simd` | SIMD intrinsic wrappers |
+| `std.arch.simd` | SIMD intrinsic wrappers |

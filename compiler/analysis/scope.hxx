@@ -19,6 +19,7 @@ public:
     std::unordered_map<std::string, union_decl*>   unions;
     std::unordered_map<std::string, typedef_decl*> typedefs;
     std::unordered_map<std::string, class_decl*>   classes;
+    std::unordered_map<std::string, class_decl*>   interfaces; // interface declarations
     std::unordered_set<std::string>                namespaces;
     std::unordered_set<std::string>                memstrs; // memstr-declared allocator types
 
@@ -153,7 +154,19 @@ public:
     bool is_known_type(const std::string& name) const {
         return structs.count(name) || enums.count(name) ||
                unions.count(name) || typedefs.count(name) ||
-               classes.count(name) || memstrs.count(name);
+               classes.count(name) || memstrs.count(name) ||
+               interfaces.count(name);
+    }
+
+    void declare_interface(class_decl* d) {
+        interfaces[d->name] = d;
+    }
+    bool is_interface_type(const std::string& name) const {
+        return interfaces.count(name) > 0;
+    }
+    class_decl* find_interface(const std::string& name) const {
+        auto it = interfaces.find(name);
+        return it != interfaces.end() ? it->second : nullptr;
     }
 
     void declare_namespace(const std::string& name) {

@@ -38,34 +38,34 @@ istruc file {
     void* fp;
     bool  open_flag;
 
-    void __construct__(&self) { self.fp = (void*)0; self.open_flag = false; }
+    void __construct__(file* self) { self.fp = (void*)0; self.open_flag = false; }
 
-    bool open(&self, i8* path, i8* mode) {
+    bool open(file* self, i8* path, i8* mode) {
         self.fp       = fopen(path, mode);
         self.open_flag = self.fp != (void*)0;
         return self.open_flag;
     }
 
-    void close(&self) {
+    void close(file* self) {
         if (self.open_flag) { fclose(self.fp); self.open_flag = false; }
     }
 
-    u64 read_bytes(&self, void* buf, u64 n)  { return fread(buf, 1, n, self.fp); }
-    u64 write_bytes(&self, void* buf, u64 n) { return fwrite(buf, 1, n, self.fp); }
+    u64 read_bytes(file* self, void* buf, u64 n)  { return fread(buf, (u64)1, n, self.fp); }
+    u64 write_bytes(file* self, void* buf, u64 n) { return fwrite(buf, (u64)1, n, self.fp); }
 
-    bool write_str(&self, i8* s) {
+    bool write_str(file* self, i8* s) {
         i32 n = 0;
         while (s[n] != 0) { n = n + 1; }
-        return fwrite(s, 1, (u64)n, self.fp) == (u64)n;
+        return fwrite(s, (u64)1, (u64)n, self.fp) == (u64)n;
     }
 
-    i32 read_char(&self) {
+    i32 read_char(file* self) {
         i8 c = 0;
-        if (fread(&c, 1, 1, self.fp) == 1) { return (i32)c; }
+        if (fread(&c, (u64)1, (u64)1, self.fp) == (u64)1) { return (i32)c; }
         return -1;
     }
 
-    bool read_line(&self, i8* buf, i32 cap) {
+    bool read_line(file* self, i8* buf, i32 cap) {
         i32 i = 0;
         while (i < cap - 1) {
             i32 c = self.read_char();
@@ -77,29 +77,29 @@ istruc file {
         return true;
     }
 
-    void seek_start(&self, i64 off) { fseek(self.fp, off, 0); }
-    void seek_cur(&self, i64 off)   { fseek(self.fp, off, 1); }
-    void seek_end(&self, i64 off)   { fseek(self.fp, off, 2); }
-    i64  tell(&self)                { return ftell(self.fp); }
+    void seek_start(file* self, i64 off) { fseek(self.fp, off, 0); }
+    void seek_cur(file* self, i64 off)   { fseek(self.fp, off, 1); }
+    void seek_end(file* self, i64 off)   { fseek(self.fp, off, 2); }
+    i64  tell(file* self)                { return ftell(self.fp); }
 
-    i64 size(&self) {
+    i64 size(file* self) {
         i64 cur = self.tell();
-        fseek(self.fp, 0, 2);
+        fseek(self.fp, (i64)0, 2);
         i64 sz = self.tell();
         fseek(self.fp, cur, 0);
         return sz;
     }
 
-    bool at_eof(&self)    { return feof(self.fp) != 0; }
-    bool has_error(&self) { return ferror(self.fp) != 0; }
-    bool is_open(&self)   { return self.open_flag; }
-    void flush(&self)           { fflush(self.fp); }
+    bool at_eof(file* self)    { return feof(self.fp) != 0; }
+    bool has_error(file* self) { return ferror(self.fp) != 0; }
+    bool is_open(file* self)   { return self.open_flag; }
+    void flush(file* self)           { fflush(self.fp); }
 
     // Read entire file into a caller-provided buffer
-    i64 read_all(&self, i8* buf, u64 cap) {
+    i64 read_all(file* self, i8* buf, u64 cap) {
         i64 sz = self.size();
         if (sz < 0 || (u64)sz >= cap) { return -1; }
-        self.seek_start(0);
+        self.seek_start((i64)0);
         u64 n = self.read_bytes(buf, (u64)sz);
         buf[n] = 0;
         return (i64)n;
@@ -153,20 +153,6 @@ bool make_dir(i8* path)         { return mkdir(path, 0755) == 0; }
 bool remove_file(i8* path)      { return unlink(path) == 0; }
 bool remove_dir(i8* path)       { return rmdir(path) == 0; }
 bool rename_path(i8* o, i8* n)  { return rename(o, n) == 0; }
-
-bool copy_file(i8* src, i8* dst, &memstr a) {
-    file s; file d;
-    if (!s.open(src, "rb")) { return false; }
-    if (!d.open(dst, "wb")) { s.close(); return false; }
-    i64 sz = s.size();
-    if (sz <= 0) { s.close(); d.close(); return sz == 0; }
-    void* buf = a.mmap((u64)sz);
-    u64 n = s.read_bytes(buf, (u64)sz);
-    d.write_bytes(buf, n);
-    a.deinit(buf);
-    s.close(); d.close();
-    return n == (u64)sz;
-}
 
 i8* cwd(i8* buf, u64 cap) { return getcwd(buf, cap); }
 bool cd(i8* path)          { return chdir(path) == 0; }

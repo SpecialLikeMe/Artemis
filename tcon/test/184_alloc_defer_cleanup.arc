@@ -4,9 +4,9 @@ extern void free(void* ptr);
 
 istruc TrackedAlloc {
     i32 live;
-    void __construct__(&self) { self.live = 0; }
-    void* alloc(&self, u64 n)  { self.live = self.live + 1; return malloc(n); }
-    void  drop(&self, void* p) { self.live = self.live - 1; free(p); }
+    void __construct__(TrackedAlloc* self) { self.live = 0; }
+    void* alloc(TrackedAlloc* self, u64 n)  { self.live = self.live + 1; return malloc(n); }
+    void  drop(TrackedAlloc* self, void* p) { self.live = self.live - 1; free(p); }
 }
 
 // Returns the sum of 1..n using allocator-backed storage; frees on return

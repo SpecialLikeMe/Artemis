@@ -3,13 +3,13 @@ istruc Pair<T> {
     T first;
     T second;
 
-    void __construct__(&self, T a, T b) {
+    void __construct__(Pair* self, T a, T b) {
         self.first  = a;
         self.second = b;
     }
 
-    T sum(&const self) { return self.first + self.second; }
-    T diff(&const self) { return self.first - self.second; }
+    T sum(const Pair* self) { return self.first + self.second; }
+    T diff(const Pair* self) { return self.first - self.second; }
 }
 
 i32 main() {

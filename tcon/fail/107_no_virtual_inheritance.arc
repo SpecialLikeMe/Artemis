@@ -1,10 +1,10 @@
 istruc Animal {
     i32 legs;
-    virtual i32 speak(&const self) { return 1; }
-    i32 nonvirtual(&const self) { return 7; }
+    virtual i32 speak(const Animal* self) { return 1; }
+    i32 nonvirtual(const Animal* self) { return 7; }
 }
 istruc Dog : Animal {
-    i32 speak(&const self) override { return 2; }
+    i32 speak(const Dog* self) override { return 2; }
 }
 i32 main() {
     Dog d;

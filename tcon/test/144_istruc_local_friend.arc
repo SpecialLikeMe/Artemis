@@ -4,11 +4,11 @@
 istruc Secret {
     private i32 value;
 
-    void __construct__(&self, i32 v) {
+    void __construct__(Secret* self, i32 v) {
         self.value = v;
     }
 
-    i32 get(&const self) {
+    i32 get(const Secret* self) {
         return self.value;
     }
 

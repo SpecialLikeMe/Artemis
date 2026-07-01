@@ -2,16 +2,16 @@ istruc Point {
     i32 x;
     i32 y;
 
-    void __construct__(&self, i32 a, i32 b) {
+    void __construct__(Point* self, i32 a, i32 b) {
         self.x = a;
         self.y = b;
     }
 
-    i32 sum(&const self) {
+    i32 sum(const Point* self) {
         return self.x + self.y;
     }
 
-    void scale(&self, i32 factor) {
+    void scale(Point* self, i32 factor) {
         self.x = self.x * factor;
         self.y = self.y * factor;
     }

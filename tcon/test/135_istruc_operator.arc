@@ -2,23 +2,23 @@ istruc Vec2 {
     i32 x;
     i32 y;
 
-    void __construct__(&self, i32 a, i32 b) {
+    void __construct__(Vec2* self, i32 a, i32 b) {
         self.x = a;
         self.y = b;
     }
 
-    Vec2 operator+(&const self, Vec2 other) {
+    Vec2 operator+(const Vec2* self, Vec2 other) {
         Vec2 result;
         result.x = self.x + other.x;
         result.y = self.y + other.y;
         return result;
     }
 
-    bool operator==(&const self, Vec2 other) {
+    bool operator==(const Vec2* self, Vec2 other) {
         return self.x == other.x && self.y == other.y;
     }
 
-    i32 dot(&const self, Vec2 other) {
+    i32 dot(const Vec2* self, Vec2 other) {
         return self.x * other.x + self.y * other.y;
     }
 }

@@ -2,6 +2,20 @@
 #include "context.hxx"
 #include "../parser/expr.hxx"
 
+// Returns true for u8/u16/u32/u64/u128/u256/u512 primitive types.
+inline bool is_unsigned_prim(prim_type_t p) {
+    return p == prim_type_t::u8  || p == prim_type_t::u16 ||
+           p == prim_type_t::u32 || p == prim_type_t::u64 ||
+           p == prim_type_t::u128 || p == prim_type_t::u256 || p == prim_type_t::u512;
+}
+
+// Returns true if the type_node is an unsigned integer (non-pointer) primitive.
+inline bool is_unsigned_type_node(const type_node* t) {
+    if (!t || !t->is_primitive || !t->prim.has_value()) return false;
+    if (t->pointer_depth > 0) return false;
+    return is_unsigned_prim(t->prim.value());
+}
+
 // Map a primitive type to its LLVM type.
 // Notes on non-standard widths:
 //   f8  -> i8  (no native 8-bit float in portable LLVM C API)
@@ -102,14 +116,25 @@ inline LLVMTypeRef llvm_type_of(const type_node* t, ir_context* ctx) {
             if (it != ctx->struct_types.end()) {
                 base = it->second;
             } else {
-                auto al = ctx->typedef_aliases.find(name);
-                if (al != ctx->typedef_aliases.end() && al->second) {
-                    // Scalar/pointer typedef: the underlying node already carries its own
-                    // pointer depth / array; this node's decorators are applied below.
-                    base = llvm_type_of(al->second, ctx);
-                } else {
-                    // Enum values are represented as i32.
-                    base = LLVMInt32TypeInContext(ctx->llvm_ctx);
+                // Try namespace-qualified name for intra-namespace type references.
+                bool ns_found = false;
+                if (!ctx->current_namespace.empty()) {
+                    std::string ns_lookup = ctx->current_namespace + "__NS_" + lookup;
+                    auto ns_it = ctx->struct_types.find(ns_lookup);
+                    if (ns_it != ctx->struct_types.end()) { base = ns_it->second; ns_found = true; }
+                }
+                if (!ns_found) {
+                    auto al = ctx->typedef_aliases.find(name);
+                    if (al == ctx->typedef_aliases.end() && !ctx->current_namespace.empty()) {
+                        std::string ns_alias = ctx->current_namespace + "__NS_" + name;
+                        al = ctx->typedef_aliases.find(ns_alias);
+                    }
+                    if (al != ctx->typedef_aliases.end() && al->second) {
+                        base = llvm_type_of(al->second, ctx);
+                    } else {
+                        // Enum values are represented as i32.
+                        base = LLVMInt32TypeInContext(ctx->llvm_ctx);
+                    }
                 }
             }
         }

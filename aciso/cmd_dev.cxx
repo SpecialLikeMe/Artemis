@@ -57,15 +57,42 @@ void cmd_fmt(const std::string& path) {
 static void sta_file(const std::string& path, const std::string& compiler,
                      const std::vector<std::string>& syms) {
     std::string flags = symbol_flags(syms);
-    // Try to compile to a temp object; errors go to stderr naturally
-    std::string tmp = (fs::temp_directory_path() / "aciso_sta_tmp.o").string();
-    std::string cmd = "\"" + compiler + "\" -c \"" + path + "\" -o \"" + tmp + "\"" + flags + " 2>&1";
-    std::string output = capture_cmd(cmd);
-    fs::remove(tmp);
-    if (output.empty()) {
+    // Use --emit-ast to type-check without producing an object file.
+    // This avoids Windows path-separator issues with -o and temp files.
+    std::string cmd = "\"" + compiler + "\" \"" + path + "\" --emit-ast" + flags + " 2>&1 1>NUL";
+    // Fallback: also try -c with a safe temp path
+    fs::path tmp_dir = fs::temp_directory_path();
+    std::string tmp = tmp_dir.string();
+    // Normalize separators so shell doesn't choke
+    for (char& c : tmp) if (c == '\\') c = '/';
+    tmp += "/aciso_sta_tmp.o";
+    std::string cmd2 = "\"" + compiler + "\" -c \"" + path + "\" -o \"" + tmp + "\"" + flags + " 2>&1";
+
+    // Run check-only: use --emit-ast to just parse+analyze, discard output
+    std::string check_cmd = "\"" + compiler + "\" \"" + path + "\"" + flags + " --emit-ast 2>&1";
+    // Capture stderr (analysis errors) by running with analysis-only flag
+    // Artemis writes errors to stderr; redirect stdout away, keep stderr
+#ifdef _WIN32
+    check_cmd = "\"" + compiler + "\" \"" + path + "\"" + flags + " --emit-ast 2>&1 | more +0";
+    // Simpler: just compile to /dev/null equivalent
+    check_cmd = "\"" + compiler + "\" \"" + path + "\"" + flags + " -c -o NUL 2>&1";
+#else
+    check_cmd = "\"" + compiler + "\" \"" + path + "\"" + flags + " -c -o /dev/null 2>&1";
+#endif
+    std::string output = capture_cmd(check_cmd);
+    // Remove any empty lines for cleaner output
+    std::string filtered;
+    std::istringstream ss(output);
+    std::string line;
+    while (std::getline(ss, line)) {
+        if (!line.empty() && line != "\r")
+            filtered += line + "\n";
+    }
+
+    if (filtered.empty()) {
         ok("clean: " + path);
     } else {
-        std::cout << "\033[33mSTATIC ANALYSIS:\033[0m " << path << "\n" << output;
+        std::cout << "\033[31mERRORS\033[0m in \033[1m" << path << "\033[0m:\n" << filtered;
     }
 }
 

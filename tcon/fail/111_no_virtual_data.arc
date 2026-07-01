@@ -4,8 +4,8 @@ istruc Base {
 }
 istruc Child : Base {
     i32 tag;
-    void __construct__(&self, i32 t) { self.tag = t; }
-    i32 get(&const self) { return self.tag; }
+    void __construct__(Child* self, i32 t) { self.tag = t; }
+    i32 get(const Child* self) { return self.tag; }
 }
 
 i32 main() {

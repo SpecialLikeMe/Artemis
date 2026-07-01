@@ -2,7 +2,7 @@ void greet() noexcept { return; }
 i32 add(i32 a, i32 b) noexcept { return a + b; }
 istruc W {
     i32 v;
-    i32 get(&const self) noexcept const { return self.v; }
+    i32 get(const W* self) noexcept { return self.v; }
 }
 i32 main() {
     greet();

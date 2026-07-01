@@ -57,7 +57,7 @@ istruc child {
 
     // Spawn a child process. argv must be null-terminated.
     // Pipes stdin/stdout/stderr to the child.
-    bool spawn(&self, i8* path, i8** argv) {
+    bool spawn(child* self, i8* path, i8** argv) {
         i32 sin[2]; i32 sout[2]; i32 serr[2];
         if (pipe(sin) != 0 || pipe(sout) != 0 || pipe(serr) != 0) { return false; }
 
@@ -85,26 +85,26 @@ istruc child {
         return true;
     }
 
-    i64 write_stdin(&self, void* buf, u64 n) { return write(self.stdin_wr, buf, n); }
-    i64 read_stdout(&self, void* buf, u64 n) { return read(self.stdout_rd, buf, n); }
-    i64 read_stderr(&self, void* buf, u64 n) { return read(self.stderr_rd, buf, n); }
+    i64 write_stdin(child* self, void* buf, u64 n) { return write(self.stdin_wr, buf, n); }
+    i64 read_stdout(child* self, void* buf, u64 n) { return read(self.stdout_rd, buf, n); }
+    i64 read_stderr(child* self, void* buf, u64 n) { return read(self.stderr_rd, buf, n); }
 
-    void close_stdin(&self) { close(self.stdin_wr); self.stdin_wr = -1; }
+    void close_stdin(child* self) { close(self.stdin_wr); self.stdin_wr = -1; }
 
-    i32 wait(&self) {
+    i32 wait(child* self) {
         i32 status = 0;
         waitpid(self.pid, &status, 0);
         return wex_status(status);
     }
 
-    bool try_wait(&self, i32* exit_code) {
+    bool try_wait(child* self, i32* exit_code) {
         i32 status = 0;
         i32 r = waitpid(self.pid, &status, WNOHANG);
         if (r == self.pid) { (*exit_code) = wex_status(status); return true; }
         return false;
     }
 
-    void cleanup(&self) {
+    void cleanup(child* self) {
         if (self.stdin_wr  >= 0) { close(self.stdin_wr); }
         if (self.stdout_rd >= 0) { close(self.stdout_rd); }
         if (self.stderr_rd >= 0) { close(self.stderr_rd); }

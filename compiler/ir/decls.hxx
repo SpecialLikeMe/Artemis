@@ -14,10 +14,12 @@ inline void visit_struct_decl(struct_decl* d, ir_context* ctx) {
 
     std::vector<LLVMTypeRef> field_types;
     std::vector<std::string> field_names;
+    std::vector<bool>        field_unsigned;
 
     for (auto* f : d->fields) {
         field_types.push_back(llvm_type_of(f->type, ctx));
         field_names.push_back(f->name);
+        field_unsigned.push_back(is_unsigned_type_node(f->type));
     }
 
     LLVMStructSetBody(struct_t,
@@ -25,9 +27,10 @@ inline void visit_struct_decl(struct_decl* d, ir_context* ctx) {
                       static_cast<unsigned>(field_types.size()),
                       /*packed=*/0);
 
-    ctx->struct_types[d->name]       = struct_t;
-    ctx->struct_field_names[d->name] = std::move(field_names);
-    ctx->struct_field_types[d->name] = std::move(field_types);
+    ctx->struct_types[d->name]          = struct_t;
+    ctx->struct_field_names[d->name]    = std::move(field_names);
+    ctx->struct_field_types[d->name]    = std::move(field_types);
+    ctx->struct_field_unsigned[d->name] = std::move(field_unsigned);
 }
 
 // ------------------------------------------------------------------ union
@@ -54,9 +57,13 @@ inline void visit_union_decl(union_decl* d, ir_context* ctx) {
     std::vector<LLVMTypeRef> field_types_vec;
     for (auto* f : d->fields) field_types_vec.push_back(llvm_type_of(f->type, ctx));
 
-    ctx->struct_types[d->name]       = union_t;
-    ctx->struct_field_names[d->name] = std::move(field_names);
-    ctx->struct_field_types[d->name] = std::move(field_types_vec);
+    std::vector<bool> field_unsigned_vec;
+    for (auto* f : d->fields) field_unsigned_vec.push_back(is_unsigned_type_node(f->type));
+
+    ctx->struct_types[d->name]          = union_t;
+    ctx->struct_field_names[d->name]    = std::move(field_names);
+    ctx->struct_field_types[d->name]    = std::move(field_types_vec);
+    ctx->struct_field_unsigned[d->name] = std::move(field_unsigned_vec);
     ctx->union_names.insert(d->name);
 }
 
@@ -242,11 +249,19 @@ inline void visit_global_var_decl(var_decl* d, ir_context* ctx) {
 // ------------------------------------------------------------------ function (pass 1: declare signature)
 
 inline void visit_func_decl_prototype(func_decl* fd, ir_context* ctx) {
+    // Set namespace context so llvm_type_of can resolve intra-namespace types.
+    const std::string ir_name_pre = ir_func_name(fd);
+    std::string saved_proto_ns = ctx->current_namespace;
+    auto proto_ns_pos = ir_name_pre.find("__NS_");
+    if (proto_ns_pos != std::string::npos) ctx->current_namespace = ir_name_pre.substr(0, proto_ns_pos);
+    else ctx->current_namespace.clear();
+
     std::vector<LLVMTypeRef> param_types;
     for (auto& p : fd->params)
         param_types.push_back(llvm_type_of(p.type, ctx));
 
     LLVMTypeRef ret_t  = llvm_type_of(fd->ret_type, ctx);
+    ctx->current_namespace = saved_proto_ns;
     LLVMTypeRef fn_t   = LLVMFunctionType(ret_t,
                                            param_types.data(),
                                            static_cast<unsigned>(param_types.size()),
@@ -257,6 +272,12 @@ inline void visit_func_decl_prototype(func_decl* fd, ir_context* ctx) {
     // Reuse an existing declaration if already registered.
     LLVMValueRef fn = LLVMGetNamedFunction(ctx->llvm_mod, ir_name.c_str());
     if (!fn) fn = LLVMAddFunction(ctx->llvm_mod, ir_name.c_str(), fn_t);
+
+    if (fd->is_noexcept) {
+        unsigned k = LLVMGetEnumAttributeKindForName("nounwind", 8);
+        if (k) LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex,
+                   LLVMCreateEnumAttribute(ctx->llvm_ctx, k, 0));
+    }
 
     ctx->global_funcs[ir_name]      = fn;
     ctx->global_func_types[ir_name] = fn_t;
@@ -280,6 +301,12 @@ inline void visit_func_decl(func_decl* fd, ir_context* ctx) {
     ctx->current_func      = fn;
     ctx->current_func_type = fn_t;
     ctx->current_ret_type  = LLVMGetReturnType(fn_t);
+
+    // Derive namespace context from mangled name (e.g. "hash__NS_foo" -> "hash")
+    std::string saved_ns = ctx->current_namespace;
+    auto ns_pos = ir_name.find("__NS_");
+    if (ns_pos != std::string::npos) ctx->current_namespace = ir_name.substr(0, ns_pos);
+    else ctx->current_namespace.clear();
 
     LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "entry");
     LLVMPositionBuilderAtEnd(ctx->llvm_builder, entry_bb);
@@ -310,7 +337,7 @@ inline void visit_func_decl(func_decl* fd, ir_context* ctx) {
             stripped.pointer_depth--;
             deref_t = llvm_type_of(&stripped, ctx);
         }
-        ctx->declare_local(p.name, alloca, pt, deref_t);
+        ctx->declare_local(p.name, alloca, pt, deref_t, is_unsigned_type_node(p.type));
     }
 
     // Emit body. visit_block_stmt pushes/pops its own scope for locals.
@@ -328,6 +355,7 @@ inline void visit_func_decl(func_decl* fd, ir_context* ctx) {
     ctx->current_func      = nullptr;
     ctx->current_func_type = nullptr;
     ctx->current_ret_type  = nullptr;
+    ctx->current_namespace = saved_ns;
 }
 
 // ------------------------------------------------------------------ generic function instantiation
@@ -377,7 +405,7 @@ inline void emit_generic_func_instance(func_decl* fd,
             LLVMBuildStore(ctx->llvm_builder, LLVMGetParam(fn, i), a);
             LLVMTypeRef deref = nullptr;
             if (p.type->pointer_depth > 0) { type_node s = *p.type; s.pointer_depth--; deref = llvm_type_of(&s, ctx); }
-            ctx->declare_local(p.name, a, pt, deref);
+            ctx->declare_local(p.name, a, pt, deref, is_unsigned_type_node(p.type));
         }
 
         visit_block_stmt(fd->body, ctx);
@@ -410,10 +438,12 @@ inline void visit_class_decl_types(class_decl* d, ir_context* ctx) {
     // Build field layout: vtable ptr (if virtual) + base fields (if any) + own fields
     std::vector<LLVMTypeRef>  all_field_types;
     std::vector<std::string>  all_field_names;
+    std::vector<bool>         all_field_unsigned;
 
     // Inherit base class fields
     if (!d->base_name.empty()) {
-        auto it = ctx->class_infos.find(d->base_name);
+        auto it  = ctx->class_infos.find(d->base_name);
+        auto uit = ctx->struct_field_unsigned.find(d->base_name);
         if (it != ctx->class_infos.end()) {
             auto& base = it->second;
             // Skip vtable ptr from base (we'll add our own)
@@ -421,6 +451,9 @@ inline void visit_class_decl_types(class_decl* d, ir_context* ctx) {
             for (size_t i = start; i < base.all_field_names.size(); i++) {
                 all_field_names.push_back(base.all_field_names[i]);
                 all_field_types.push_back(base.all_field_types[i]);
+                bool u = (uit != ctx->struct_field_unsigned.end() && i < uit->second.size())
+                         ? uit->second[i] : false;
+                all_field_unsigned.push_back(u);
             }
         }
     }
@@ -429,6 +462,7 @@ inline void visit_class_decl_types(class_decl* d, ir_context* ctx) {
     for (auto* f : d->fields) {
         all_field_names.push_back(f->name);
         all_field_types.push_back(llvm_type_of(f->type, ctx));
+        all_field_unsigned.push_back(is_unsigned_type_node(f->type));
     }
 
     // Collect virtual methods for vtable
@@ -495,6 +529,7 @@ inline void visit_class_decl_types(class_decl* d, ir_context* ctx) {
         all_field_names.insert(all_field_names.begin(), "__vtbl");
         all_field_types.insert(all_field_types.begin(),
                                LLVMPointerType(vtbl_t, 0));
+        all_field_unsigned.insert(all_field_unsigned.begin(), false);
     }
 
     info.all_field_names = all_field_names;
@@ -506,13 +541,20 @@ inline void visit_class_decl_types(class_decl* d, ir_context* ctx) {
                       static_cast<unsigned>(all_field_types.size()), 0);
     info.class_type = class_t;
 
-    ctx->struct_types[d->name]       = class_t;
-    ctx->struct_field_names[d->name] = all_field_names;
-    ctx->struct_field_types[d->name] = all_field_types;
-    ctx->class_infos[d->name]        = std::move(info);
+    ctx->struct_types[d->name]          = class_t;
+    ctx->struct_field_names[d->name]    = all_field_names;
+    ctx->struct_field_types[d->name]    = all_field_types;
+    ctx->struct_field_unsigned[d->name] = std::move(all_field_unsigned);
+    ctx->class_infos[d->name]           = std::move(info);
 }
 
 inline void visit_class_decl_methods_prototype(class_decl* d, ir_context* ctx) {
+    // Set namespace context from class name so llvm_type_of resolves intra-namespace types.
+    std::string saved_cls_proto_ns = ctx->current_namespace;
+    auto cls_ns_pos = d->name.find("__NS_");
+    if (cls_ns_pos != std::string::npos) ctx->current_namespace = d->name.substr(0, cls_ns_pos);
+    else ctx->current_namespace.clear();
+
     for (auto* m : d->methods) {
         // Build a synthetic func_decl and register its prototype
         std::string ir_name = m->mangled_name.empty() ? (d->name + "__MT_" + m->name) : m->mangled_name;
@@ -534,9 +576,16 @@ inline void visit_class_decl_methods_prototype(class_decl* d, ir_context* ctx) {
         LLVMValueRef fn = LLVMGetNamedFunction(ctx->llvm_mod, ir_name.c_str());
         if (!fn) fn = LLVMAddFunction(ctx->llvm_mod, ir_name.c_str(), fn_t);
 
+        if (m->is_noexcept) {
+            unsigned k = LLVMGetEnumAttributeKindForName("nounwind", 8);
+            if (k) LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex,
+                       LLVMCreateEnumAttribute(ctx->llvm_ctx, k, 0));
+        }
+
         ctx->global_funcs[ir_name]      = fn;
         ctx->global_func_types[ir_name] = fn_t;
     }
+    ctx->current_namespace = saved_cls_proto_ns;
 }
 
 inline void visit_class_decl_methods_body(class_decl* d, ir_context* ctx) {
@@ -551,6 +600,11 @@ inline void visit_class_decl_methods_body(class_decl* d, ir_context* ctx) {
         ctx->current_func_type  = fn_t;
         ctx->current_ret_type   = LLVMGetReturnType(fn_t);
         ctx->current_class_name = d->name;
+        // Set namespace from class name (e.g. "hash__NS_sha256_ctx" -> "hash")
+        std::string saved_meth_ns = ctx->current_namespace;
+        auto mns_pos = d->name.find("__NS_");
+        if (mns_pos != std::string::npos) ctx->current_namespace = d->name.substr(0, mns_pos);
+        else ctx->current_namespace.clear();
 
         LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "entry");
         LLVMPositionBuilderAtEnd(ctx->llvm_builder, entry_bb);
@@ -561,10 +615,11 @@ inline void visit_class_decl_methods_body(class_decl* d, ir_context* ctx) {
         if (m->has_self) {
             LLVMTypeRef  struct_t = ctx->struct_types[d->name];
             LLVMTypeRef  self_t   = LLVMPointerType(struct_t, 0);
-            LLVMValueRef self_alloca = LLVMBuildAlloca(ctx->llvm_builder, self_t, "self.addr");
+            const std::string& sname = m->self_param_name.empty() ? "self" : m->self_param_name;
+            LLVMValueRef self_alloca = LLVMBuildAlloca(ctx->llvm_builder, self_t, (sname + ".addr").c_str());
             LLVMBuildStore(ctx->llvm_builder, LLVMGetParam(fn, param_idx), self_alloca);
-            // deref_t = struct type so (*self).field and self->field can resolve the struct name
-            ctx->declare_local("self", self_alloca, self_t, struct_t);
+            // deref_t = struct type so (*self).field and self.field can resolve the struct name
+            ctx->declare_local(sname, self_alloca, self_t, struct_t);
             param_idx++;
         }
         // Regular parameters
@@ -578,14 +633,15 @@ inline void visit_class_decl_methods_body(class_decl* d, ir_context* ctx) {
                 type_node stripped = *p.type; stripped.pointer_depth--;
                 deref_t = llvm_type_of(&stripped, ctx);
             }
-            ctx->declare_local(p.name, alloca, pt, deref_t);
+            ctx->declare_local(p.name, alloca, pt, deref_t, is_unsigned_type_node(p.type));
         }
 
         // Emit constructor init list before the body: self.member = value
         if (m->is_constructor && !m->init_list.empty()) {
             LLVMTypeRef struct_t = ctx->struct_types[d->name];
+            const std::string& sn = m->self_param_name.empty() ? "self" : m->self_param_name;
             LLVMValueRef self_load = LLVMBuildLoad2(ctx->llvm_builder,
-                LLVMPointerType(struct_t, 0), ctx->lookup_local("self"), "self");
+                LLVMPointerType(struct_t, 0), ctx->lookup_local(sn), sn.c_str());
             const auto& fnames = ctx->struct_field_names[d->name];
             for (auto& entry : m->init_list) {
                 for (unsigned fi = 0; fi < fnames.size(); fi++) {
@@ -617,6 +673,7 @@ inline void visit_class_decl_methods_body(class_decl* d, ir_context* ctx) {
         ctx->current_func_type  = nullptr;
         ctx->current_ret_type   = nullptr;
         ctx->current_class_name = "";
+        ctx->current_namespace  = saved_meth_ns;
     }
 
     // Create vtable global if needed

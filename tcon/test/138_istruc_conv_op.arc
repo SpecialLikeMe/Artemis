@@ -2,12 +2,12 @@ istruc Ratio {
     i32 num;
     i32 den;
 
-    void __construct__(&self, i32 n, i32 d) {
+    void __construct__(Ratio* self, i32 n, i32 d) {
         self.num = n;
         self.den = d;
     }
 
-    operator i32(&const self) {
+    operator i32(const Ratio* self) {
         return self.num / self.den;
     }
 }

@@ -54,23 +54,23 @@ struct addr_v4 {
 istruc socket_t {
     i32 fd;
 
-    void __construct__(&self) { self.fd = -1; }
+    void __construct__(socket_t* self) { self.fd = -1; }
 
-    bool is_valid(&self) { return self.fd >= 0; }
+    bool is_valid(socket_t* self) { return self.fd >= 0; }
 
-    void close(&self) {
+    void close(socket_t* self) {
         if (self.fd >= 0) { close(self.fd); self.fd = -1; }
     }
 
-    i64 send_bytes(&self, void* buf, u64 n) { return send(self.fd, buf, n, 0); }
-    i64 recv_bytes(&self, void* buf, u64 n) { return recv(self.fd, buf, n, 0); }
+    i64 send_bytes(socket_t* self, void* buf, u64 n) { return send(self.fd, buf, n, 0); }
+    i64 recv_bytes(socket_t* self, void* buf, u64 n) { return recv(self.fd, buf, n, 0); }
 
-    bool set_reuse_addr(&self) {
+    bool set_reuse_addr(socket_t* self) {
         i32 val = 1;
         return setsockopt(self.fd, SOL_SOCKET, SO_REUSEADDR, &val, (u32)sizeof(i32)) == 0;
     }
 
-    bool set_keepalive(&self) {
+    bool set_keepalive(socket_t* self) {
         i32 val = 1;
         return setsockopt(self.fd, SOL_SOCKET, SO_KEEPALIVE, &val, (u32)sizeof(i32)) == 0;
     }
@@ -81,7 +81,7 @@ istruc socket_t {
 istruc tcp_listener {
     socket_t sock;
 
-    bool bind_and_listen(&self, u16 port, i32 backlog) {
+    bool bind_and_listen(tcp_listener* self, u16 port, i32 backlog) {
         self.sock.fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (!self.sock.is_valid()) { return false; }
         self.sock.set_reuse_addr();
@@ -95,7 +95,7 @@ istruc tcp_listener {
         return listen(self.sock.fd, backlog) == 0;
     }
 
-    bool accept_conn(&self, socket_t* out_sock) {
+    bool accept_conn(tcp_listener* self, socket_t* out_sock) {
         addr_v4 addr;
         u32 len = (u32)sizeof(addr_v4);
         i32 fd  = accept(self.sock.fd, &addr, &len);
@@ -104,7 +104,7 @@ istruc tcp_listener {
         return true;
     }
 
-    void close(&self) { self.sock.close(); }
+    void close(tcp_listener* self) { self.sock.close(); }
 }
 
 // --- TCP client ---
@@ -112,7 +112,7 @@ istruc tcp_listener {
 istruc tcp_client {
     socket_t sock;
 
-    bool connect_to(&self, i8* host, u16 port) {
+    bool connect_to(tcp_client* self, i8* host, u16 port) {
         void* res = (void*)0;
         i8 port_str[8];
         i32 pi = port;
@@ -152,9 +152,9 @@ istruc tcp_client {
         return connected;
     }
 
-    i64 send_bytes(&self, void* buf, u64 n) { return self.sock.send_bytes(buf, n); }
-    i64 recv_bytes(&self, void* buf, u64 n) { return self.sock.recv_bytes(buf, n); }
-    void close(&self) { self.sock.close(); }
+    i64 send_bytes(tcp_client* self, void* buf, u64 n) { return self.sock.send_bytes(buf, n); }
+    i64 recv_bytes(tcp_client* self, void* buf, u64 n) { return self.sock.recv_bytes(buf, n); }
+    void close(tcp_client* self) { self.sock.close(); }
 }
 
 // --- UDP socket ---
@@ -162,12 +162,12 @@ istruc tcp_client {
 istruc udp_socket {
     socket_t sock;
 
-    bool open(&self) {
+    bool open(udp_socket* self) {
         self.sock.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         return self.sock.is_valid();
     }
 
-    bool bind_port(&self, u16 port) {
+    bool bind_port(udp_socket* self, u16 port) {
         addr_v4 addr;
         addr.family = (u16)AF_INET;
         addr.port   = htons(port);
@@ -175,7 +175,7 @@ istruc udp_socket {
         return bind(self.sock.fd, &addr, (u32)sizeof(addr_v4)) == 0;
     }
 
-    i64 send_to(&self, void* buf, u64 n, i8* host, u16 port) {
+    i64 send_to(udp_socket* self, void* buf, u64 n, i8* host, u16 port) {
         addr_v4 addr;
         addr.family = (u16)AF_INET;
         addr.port   = htons(port);
@@ -183,12 +183,12 @@ istruc udp_socket {
         return sendto(self.sock.fd, buf, n, 0, &addr, (u32)sizeof(addr_v4));
     }
 
-    i64 recv_from(&self, void* buf, u64 n, addr_v4* from) {
+    i64 recv_from(udp_socket* self, void* buf, u64 n, addr_v4* from) {
         u32 len = (u32)sizeof(addr_v4);
         return recvfrom(self.sock.fd, buf, n, 0, from, &len);
     }
 
-    void close(&self) { self.sock.close(); }
+    void close(udp_socket* self) { self.sock.close(); }
 }
 
 } // net

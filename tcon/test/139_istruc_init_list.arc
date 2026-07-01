@@ -2,14 +2,14 @@ istruc Pair {
     i32 first;
     i32 second;
 
-    void __construct__(&self, i32 a, i32 b) : first(a), second(b) {
+    void __construct__(Pair* self, i32 a, i32 b) : first(a), second(b) {
     }
 
-    i32 sum(&const self) {
+    i32 sum(const Pair* self) {
         return self.first + self.second;
     }
 
-    i32 product(&const self) {
+    i32 product(const Pair* self) {
         return self.first * self.second;
     }
 }
@@ -19,10 +19,10 @@ istruc Triple {
     i32 b;
     i32 c;
 
-    void __construct__(&self, i32 x, i32 y, i32 z) : a(x), b(y), c(z) {
+    void __construct__(Triple* self, i32 x, i32 y, i32 z) : a(x), b(y), c(z) {
     }
 
-    i32 total(&const self) {
+    i32 total(const Triple* self) {
         return self.a + self.b + self.c;
     }
 }

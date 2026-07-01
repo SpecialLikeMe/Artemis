@@ -9,9 +9,10 @@ struct type_node;
 
 // ---- Per-scope variable table ----
 struct ir_scope_frame {
-    std::unordered_map<std::string, LLVMValueRef> alloca_ptrs;  // name -> alloca
-    std::unordered_map<std::string, LLVMTypeRef>  alloca_types; // name -> element type (i32 for i32[N], ptr for i32*)
-    std::unordered_map<std::string, LLVMTypeRef>  deref_types;  // name -> pointed-to type (i32 when name is i32*)
+    std::unordered_map<std::string, LLVMValueRef> alloca_ptrs;     // name -> alloca
+    std::unordered_map<std::string, LLVMTypeRef>  alloca_types;    // name -> element type (i32 for i32[N], ptr for i32*)
+    std::unordered_map<std::string, LLVMTypeRef>  deref_types;     // name -> pointed-to type (i32 when name is i32*)
+    std::unordered_map<std::string, bool>          alloca_unsigned; // name -> true if declared unsigned (u8/u16/u32/u64/...)
 };
 
 // ---- Control-flow target pair (for break/continue) ----
@@ -42,8 +43,9 @@ struct ir_context {
     std::unordered_map<std::string, LLVMTypeRef>  global_func_types; // fn type (not ptr)
     std::unordered_map<std::string, LLVMValueRef> global_vars;
     std::unordered_map<std::string, LLVMTypeRef>  struct_types;           // name -> LLVMStructType
-    std::unordered_map<std::string, std::vector<std::string>> struct_field_names; // for GEP index
-    std::unordered_map<std::string, std::vector<LLVMTypeRef>> struct_field_types; // for member load
+    std::unordered_map<std::string, std::vector<std::string>> struct_field_names;    // for GEP index
+    std::unordered_map<std::string, std::vector<LLVMTypeRef>> struct_field_types;   // for member load
+    std::unordered_map<std::string, std::vector<bool>>        struct_field_unsigned; // per-field unsigned flag
     std::unordered_set<std::string> union_names; // union types (single-body LLVM struct)
     // Non-struct typedef aliases: alias name -> underlying AST type (e.g. Real -> f64,
     // IntPtr -> i32*). Struct typedefs are handled via struct_types directly.
@@ -71,6 +73,8 @@ struct ir_context {
 
     // Current class being emitted (for self parameter lookup)
     std::string current_class_name;
+    // Current namespace being emitted (for intra-namespace bare-name calls)
+    std::string current_namespace;
 
     // ---- Generics (monomorphization) ----
     // Active type-parameter substitution while emitting a generic instantiation:
@@ -99,11 +103,12 @@ struct ir_context {
     void pop_scope()  { if (!scopes.empty()) scopes.pop_back(); }
 
     void declare_local(const std::string& name, LLVMValueRef ptr, LLVMTypeRef elem_type,
-                       LLVMTypeRef deref_type = nullptr) {
+                       LLVMTypeRef deref_type = nullptr, bool is_unsigned = false) {
         if (scopes.empty()) push_scope();
-        scopes.back().alloca_ptrs[name]  = ptr;
-        scopes.back().alloca_types[name] = elem_type;
+        scopes.back().alloca_ptrs[name]      = ptr;
+        scopes.back().alloca_types[name]     = elem_type;
         if (deref_type) scopes.back().deref_types[name] = deref_type;
+        if (is_unsigned) scopes.back().alloca_unsigned[name] = true;
     }
 
     LLVMValueRef lookup_local(const std::string& name) const {
@@ -128,6 +133,25 @@ struct ir_context {
             if (f != it->deref_types.end()) return f->second;
         }
         return nullptr;
+    }
+
+    bool lookup_local_unsigned(const std::string& name) const {
+        for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+            auto f = it->alloca_unsigned.find(name);
+            if (f != it->alloca_unsigned.end()) return f->second;
+        }
+        return false;
+    }
+
+    bool lookup_field_unsigned(const std::string& struct_name, const std::string& field_name) const {
+        auto nit = struct_field_names.find(struct_name);
+        auto uit = struct_field_unsigned.find(struct_name);
+        if (nit == struct_field_names.end() || uit == struct_field_unsigned.end()) return false;
+        const auto& names   = nit->second;
+        const auto& unsigns = uit->second;
+        for (size_t i = 0; i < names.size() && i < unsigns.size(); i++)
+            if (names[i] == field_name) return unsigns[i];
+        return false;
     }
 
     // ---- loop/switch helpers ----

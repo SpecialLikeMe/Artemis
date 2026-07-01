@@ -1,12 +1,12 @@
 // protected members: accessible in derived class, not outside
 istruc Animal {
     protected i32 legs;
-    public void __construct__(&self, i32 n) { self.legs = n; }
+    public void __construct__(Animal* self, i32 n) { self.legs = n; }
 }
 
 istruc Dog : Animal {
-    public i32 leg_count(&const self) { return self.legs; }
-    public void set_legs(&self, i32 n) { self.legs = n; }
+    public i32 leg_count(const Dog* self) { return self.legs; }
+    public void set_legs(Dog* self, i32 n) { self.legs = n; }
 }
 
 i32 main() {

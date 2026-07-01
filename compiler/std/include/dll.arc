@@ -13,13 +13,13 @@ istruc dll<T> {
     dll_node<T>* tail;
     i32          length;
 
-    void __construct__(&self) {
+    void __construct__(dll* self) {
         self.head   = (dll_node<T>*)0;
         self.tail   = (dll_node<T>*)0;
         self.length = 0;
     }
 
-    private dll_node<T>* make_node(&self, T val, &memstr a) {
+    private dll_node<T>* make_node(dll* self, T val, &memstr a) {
         dll_node<T>* n = (dll_node<T>*)a.mmap(sizeof(dll_node<T>));
         (*n).val  = val;
         (*n).prev = (dll_node<T>*)0;
@@ -27,7 +27,7 @@ istruc dll<T> {
         return n;
     }
 
-    void push_front(&self, T val, &memstr a) {
+    void push_front(dll* self, T val, &memstr a) {
         dll_node<T>* n = self.make_node(val, a);
         (*n).next = self.head;
         if (self.head != (dll_node<T>*)0) { (*self.head).prev = n; }
@@ -36,7 +36,7 @@ istruc dll<T> {
         self.length = self.length + 1;
     }
 
-    void push_back(&self, T val, &memstr a) {
+    void push_back(dll* self, T val, &memstr a) {
         dll_node<T>* n = self.make_node(val, a);
         (*n).prev = self.tail;
         if (self.tail != (dll_node<T>*)0) { (*self.tail).next = n; }
@@ -45,7 +45,7 @@ istruc dll<T> {
         self.length = self.length + 1;
     }
 
-    T pop_front(&self) {
+    T pop_front(dll* self) {
         dll_node<T>* n = self.head;
         T val = (*n).val;
         self.head = (*n).next;
@@ -55,7 +55,7 @@ istruc dll<T> {
         return val;
     }
 
-    T pop_back(&self) {
+    T pop_back(dll* self) {
         dll_node<T>* n = self.tail;
         T val = (*n).val;
         self.tail = (*n).prev;
@@ -65,17 +65,17 @@ istruc dll<T> {
         return val;
     }
 
-    T* peek_front(&self) {
+    T* peek_front(dll* self) {
         if (self.head == (dll_node<T>*)0) { return (T*)0; }
         return &(*self.head).val;
     }
 
-    T* peek_back(&self) {
+    T* peek_back(dll* self) {
         if (self.tail == (dll_node<T>*)0) { return (T*)0; }
         return &(*self.tail).val;
     }
 
-    void insert_before(&self, dll_node<T>* pos, T val, &memstr a) {
+    void insert_before(dll* self, dll_node<T>* pos, T val, &memstr a) {
         dll_node<T>* n = self.make_node(val, a);
         (*n).next = pos;
         (*n).prev = (*pos).prev;
@@ -85,7 +85,7 @@ istruc dll<T> {
         self.length = self.length + 1;
     }
 
-    void remove(&self, dll_node<T>* n) {
+    void remove(dll* self, dll_node<T>* n) {
         if ((*n).prev != (dll_node<T>*)0) { (*(*n).prev).next = (*n).next; }
         else { self.head = (*n).next; }
         if ((*n).next != (dll_node<T>*)0) { (*(*n).next).prev = (*n).prev; }
@@ -93,20 +93,20 @@ istruc dll<T> {
         self.length = self.length - 1;
     }
 
-    bool is_empty(&self) { return self.head == (dll_node<T>*)0; }
-    i32  size(&self)     { return self.length; }
+    bool is_empty(dll* self) { return self.head == (dll_node<T>*)0; }
+    i32  size(dll* self)     { return self.length; }
 
-    void each_fwd(&self, void(T)* cb) {
+    void each_fwd(dll* self, void(T)* cb) {
         dll_node<T>* n = self.head;
         while (n != (dll_node<T>*)0) { cb((*n).val); n = (*n).next; }
     }
 
-    void each_rev(&self, void(T)* cb) {
+    void each_rev(dll* self, void(T)* cb) {
         dll_node<T>* n = self.tail;
         while (n != (dll_node<T>*)0) { cb((*n).val); n = (*n).prev; }
     }
 
-    void clear(&self) {
+    void clear(dll* self) {
         self.head = (dll_node<T>*)0;
         self.tail = (dll_node<T>*)0;
         self.length = 0;

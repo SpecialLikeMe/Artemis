@@ -1,6 +1,6 @@
 // FAIL: calling a private method from outside the class must be rejected
 istruc Engine {
-    private void start_internal(&self) {}
+    private void start_internal(Engine* self) {}
     public i32 x;
 }
 

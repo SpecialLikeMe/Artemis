@@ -1,7 +1,7 @@
 // FAIL: calling a non-existent method on an istruc instance
 istruc Logger {
     i32 level;
-    void __construct__(&self, i32 l) { self.level = l; }
+    void __construct__(Logger* self, i32 l) { self.level = l; }
 }
 i32 main() {
     Logger log(1);

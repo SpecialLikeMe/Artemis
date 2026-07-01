@@ -7,19 +7,23 @@ istruc vector<T> {
     i32 length;
     i32 cap;
 
-    void __construct__(&self) {
+    operator T*() const {
+        return self.data;
+    }
+
+    void __construct__(vector* self) {
         self.data   = (T*)0;
         self.length = 0;
         self.cap    = 0;
     }
 
-    void __construct__(&self, i32 initial_cap, &memstr a) {
+    void __construct__(vector* self, i32 initial_cap, &memstr a) {
         self.cap    = initial_cap;
         self.length = 0;
         self.data   = (T*)a.mmap((u64)(sizeof(T) * initial_cap));
     }
 
-    private void grow(&self, &memstr a) {
+    private void grow(vector* self, &memstr a) {
         i32 new_cap = self.cap == 0 ? 8 : self.cap * 2;
         T* new_data = (T*)a.mmap((u64)(sizeof(T) * new_cap));
         for (i32 i = 0; i < self.length; i = i + 1) new_data[i] = self.data[i];
@@ -28,54 +32,54 @@ istruc vector<T> {
         self.cap  = new_cap;
     }
 
-    void push(&self, T val, &memstr a) {
+    void push(vector* self, T val, &memstr a) {
         if (self.length >= self.cap) { self.grow(a); }
         self.data[self.length] = val;
         self.length = self.length + 1;
     }
 
-    T pop(&self) {
+    T pop(vector* self) {
         self.length = self.length - 1;
         return self.data[self.length];
     }
 
-    T* get(&self, i32 i)          { return (T*)(self.data + i); }
-    T  at(&self, i32 i)     { return self.data[i]; }
-    T  operator[](&self, i32 i) { return self.data[i]; }
+    T* get(vector* self, i32 i)          { return (T*)(self.data + i); }
+    T  at(vector* self, i32 i)     { return self.data[i]; }
+    T  operator[](vector* self, i32 i) { return self.data[i]; }
 
-    void set(&self, i32 i, T val) { self.data[i] = val; }
+    void set(vector* self, i32 i, T val) { self.data[i] = val; }
 
-    void insert(&self, i32 idx, T val, &memstr a) {
+    void insert(vector* self, i32 idx, T val, &memstr a) {
         if (self.length >= self.cap) { self.grow(a); }
         for (i32 i = self.length; i > idx; i = i - 1) self.data[i] = self.data[i-1];
         self.data[idx] = val;
         self.length = self.length + 1;
     }
 
-    void remove_at(&self, i32 idx) {
+    void remove_at(vector* self, i32 idx) {
         for (i32 i = idx; i < self.length - 1; i = i + 1) self.data[i] = self.data[i+1];
         self.length = self.length - 1;
     }
 
-    void clear(&self)              { self.length = 0; }
-    bool is_empty(&self)     { return self.length == 0; }
-    i32  size(&self)         { return self.length; }
-    i32  capacity(&self)     { return self.cap; }
-    T*   raw(&self)          { return self.data; }
+    void clear(vector* self)              { self.length = 0; }
+    bool is_empty(vector* self)     { return self.length == 0; }
+    i32  size(vector* self)         { return self.length; }
+    i32  capacity(vector* self)     { return self.cap; }
+    T*   raw(vector* self)          { return self.data; }
 
-    bool contains(&self, T val) {
+    bool contains(vector* self, T val) {
         for (i32 i = 0; i < self.length; i = i + 1)
             if (self.data[i] == val) { return true; }
         return false;
     }
 
-    i32 index_of(&self, T val) {
+    i32 index_of(vector* self, T val) {
         for (i32 i = 0; i < self.length; i = i + 1)
             if (self.data[i] == val) { return i; }
         return -1;
     }
 
-    void reserve(&self, i32 new_cap, &memstr a) {
+    void reserve(vector* self, i32 new_cap, &memstr a) {
         if (new_cap <= self.cap) { return; }
         T* nd = (T*)a.mmap((u64)(sizeof(T) * new_cap));
         for (i32 i = 0; i < self.length; i = i + 1) nd[i] = self.data[i];
@@ -84,13 +88,13 @@ istruc vector<T> {
         self.cap  = new_cap;
     }
 
-    void resize(&self, i32 new_len, T fill, &memstr a) {
+    void resize(vector* self, i32 new_len, T fill, &memstr a) {
         if (new_len > self.cap) { self.reserve(new_len, a); }
         for (i32 i = self.length; i < new_len; i = i + 1) self.data[i] = fill;
         self.length = new_len;
     }
 
-    void reverse(&self) {
+    void reverse(vector* self) {
         i32 lo = 0; i32 hi = self.length - 1;
         while (lo < hi) {
             T tmp = self.data[lo];
@@ -100,12 +104,27 @@ istruc vector<T> {
         }
     }
 
-    void deinit(&self, &memstr a) {
+    void deinit(vector* self, &memstr a) {
         if (self.data != (T*)0) { a.deinit(self.data); }
         self.data   = (T*)0;
         self.length = 0;
         self.cap    = 0;
     }
+}
+
+// Wrap an existing raw array pointer as a vector (non-owning view).
+// The resulting vector's data, length, and cap are all set from the given pointer and length.
+vector<T> make_vector<T>(T* ptr, i32 len) {
+    vector<T> v;
+    v.data   = ptr;
+    v.length = len;
+    v.cap    = len;
+    return v;
+}
+
+// Extract the underlying raw array pointer from a vector.
+T* make_ptr<T>(vector<T>* v) {
+    return (*v).data;
 }
 
 } // std

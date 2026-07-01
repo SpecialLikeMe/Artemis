@@ -5,9 +5,9 @@ extern void free(void* p);
 
 istruc SimpleAlloc {
     i32 count;
-    void __construct__(&self) { self.count = 0; }
-    void* alloc(&self, u64 n)  { self.count = self.count + 1; return malloc(n); }
-    void  drop(&self, void* p) { self.count = self.count - 1; free(p); }
+    void __construct__(SimpleAlloc* self) { self.count = 0; }
+    void* alloc(SimpleAlloc* self, u64 n)  { self.count = self.count + 1; return malloc(n); }
+    void  drop(SimpleAlloc* self, void* p) { self.count = self.count - 1; free(p); }
 }
 
 // Accept allocator by pointer and use it

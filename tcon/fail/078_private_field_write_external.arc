@@ -1,7 +1,7 @@
 // FAIL: writing to a private field from outside the class
 istruc Counter {
     private i32 count;
-    public void __construct__(&self) { self.count = 0; }
+    public void __construct__(Counter* self) { self.count = 0; }
 }
 i32 main() {
     Counter c;

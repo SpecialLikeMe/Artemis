@@ -3,16 +3,16 @@ i32 g_count = 0;
 istruc Tracker {
     i32 id;
 
-    void __construct__(&self, i32 n) {
+    void __construct__(Tracker* self, i32 n) {
         self.id = n;
         g_count = g_count + 1;
     }
 
-    void __destruct__(&self) {
+    void __destruct__(Tracker* self) {
         g_count = g_count - 1;
     }
 
-    i32 get(&const self) {
+    i32 get(const Tracker* self) {
         return self.id;
     }
 }

@@ -1,83 +1,56 @@
 // std.test — Testing framework: assertions, test runner, leak detection,
 // and a test allocator that tracks every allocation.
 
-namespace std {
+extern i32   printf(i8* fmt, ...);
+extern void  abort();
+extern void* malloc(u64 n);
+extern void  free(void* p);
+
 namespace test {
 
 // ---- Test allocator ----
-// Wraps any &memstr but records all allocations/frees to detect leaks.
+// Tracks allocation/free counts via malloc/free; detects potential leaks.
 
 constexpr i32 MAX_ALLOCS = 4096;
 
-istruc alloc_record {
-    void* ptr;
-    u64   size;
-    bool  freed;
-}
-
 istruc test_alloc {
-    alloc_record records[4096];
-    i32          count;
-    u64          total_bytes;
-    u64          peak_bytes;
-    u64          current_bytes;
+    i32 count;
+    i32 freed_count;
+    u64 total_bytes;
+    u64 peak_bytes;
+    u64 current_bytes;
 
-    void __construct__(&self) {
-        self.count=0; self.total_bytes=0; self.peak_bytes=0; self.current_bytes=0;
-        for(i32 i=0;i<MAX_ALLOCS;i=i+1){ self.records[i].ptr=(void*)0; self.records[i].freed=true; }
+    void __construct__(test_alloc* self) {
+        self.count=0; self.freed_count=0;
+        self.total_bytes=0; self.peak_bytes=0; self.current_bytes=0;
     }
 
-    void* alloc(&self, u64 size, &memstr backing) {
-        void* p = backing.mmap(size);
-        if(self.count < MAX_ALLOCS) {
-            self.records[self.count].ptr   = p;
-            self.records[self.count].size  = size;
-            self.records[self.count].freed = false;
-            self.count = self.count + 1;
+    void* alloc(test_alloc* self, u64 size) {
+        void* p = malloc(size);
+        if(p != (void*)0) {
+            self.count         = self.count + 1;
+            self.total_bytes   = self.total_bytes + size;
+            self.current_bytes = self.current_bytes + size;
+            if(self.current_bytes > self.peak_bytes) self.peak_bytes = self.current_bytes;
         }
-        self.total_bytes   = self.total_bytes   + size;
-        self.current_bytes = self.current_bytes + size;
-        if(self.current_bytes > self.peak_bytes) self.peak_bytes = self.current_bytes;
         return p;
     }
 
-    void free(&self, void* p, &memstr backing) {
-        backing.deinit(p);
-        for(i32 i=0;i<self.count;i=i+1) {
-            if(self.records[i].ptr==p && !self.records[i].freed) {
-                self.current_bytes = self.current_bytes - self.records[i].size;
-                self.records[i].freed = true;
-                return;
-            }
-        }
+    void dealloc(test_alloc* self, void* p, u64 size) {
+        free(p);
+        self.freed_count   = self.freed_count + 1;
+        self.current_bytes = self.current_bytes - size;
     }
 
-    bool has_leaks(&self) {
-        for(i32 i=0;i<self.count;i=i+1)
-            if(!self.records[i].freed) { return true; }
-        return false;
-    }
-
-    i32 leak_count(&self) {
-        i32 n=0;
-        for(i32 i=0;i<self.count;i=i+1)
-            if(!self.records[i].freed) n=n+1;
-        return n;
-    }
-
-    void report_leaks(&self) {
-        extern i32 printf(i8* fmt, ...);
-        for(i32 i=0;i<self.count;i=i+1) {
-            if(!self.records[i].freed)
-                printf("  LEAK: %p (%llu bytes)\n", self.records[i].ptr, self.records[i].size);
-        }
+    bool has_leaks(test_alloc* self) { return self.count != self.freed_count; }
+    i32  leak_count(test_alloc* self) { return self.count - self.freed_count; }
+    void report_leaks(test_alloc* self) {
+        printf("  %d potential leaks (alloc:%d free:%d)\n",
+               self.count - self.freed_count, self.count, self.freed_count);
     }
 }
 
 // ---- Assertion primitives ----
-
-extern i32  printf(i8* fmt, ...);
-extern void abort();
 
 // Runtime assertion: on failure prints location and aborts.
 void assert_true(bool cond, i8* msg, i8* file, i32 line) {
@@ -144,52 +117,47 @@ void assert_not_null(void* p, i8* msg, i8* file, i32 line) {
 
 constexpr i32 MAX_TESTS = 256;
 
-istruc test_fn {
-    i8*  name;
-    bool passed;
-    i32  fail_count;
-}
-
 istruc runner {
-    test_fn  tests[256];
-    i32      count;
-    i32      passed;
-    i32      failed;
+    i8*  test_names[256];
+    bool test_passed[256];
+    i32  test_fails[256];
+    i32  count;
+    i32  passed;
+    i32  failed;
 
-    void __construct__(&self) { self.count=0; self.passed=0; self.failed=0; }
+    void __construct__(runner* self) { self.count=0; self.passed=0; self.failed=0; }
 
-    void begin(&self, i8* name) {
+    void begin(runner* self, i8* name) {
         if(self.count < MAX_TESTS) {
-            self.tests[self.count].name       = name;
-            self.tests[self.count].passed     = true;
-            self.tests[self.count].fail_count = 0;
+            self.test_names[self.count]  = name;
+            self.test_passed[self.count] = true;
+            self.test_fails[self.count]  = 0;
             self.count = self.count + 1;
             printf("  RUN  %s\n", name);
         }
     }
 
-    void record_fail(&self) {
+    void record_fail(runner* self) {
         i32 i = self.count - 1;
         if(i >= 0) {
-            self.tests[i].passed = false;
-            self.tests[i].fail_count = self.tests[i].fail_count + 1;
+            self.test_passed[i] = false;
+            self.test_fails[i]  = self.test_fails[i] + 1;
         }
     }
 
-    void end(&self) {
+    void end(runner* self) {
         i32 i = self.count - 1;
         if(i < 0) { return; }
-        if(self.tests[i].passed) {
+        if(self.test_passed[i]) {
             self.passed = self.passed + 1;
-            printf("  OK   %s\n", self.tests[i].name);
+            printf("  OK   %s\n", self.test_names[i]);
         } else {
             self.failed = self.failed + 1;
-            printf("  FAIL %s (%d failures)\n", self.tests[i].name, self.tests[i].fail_count);
+            printf("  FAIL %s (%d failures)\n", self.test_names[i], self.test_fails[i]);
         }
     }
 
-    // Returns 0 if all tests passed, 1 if any failed.
-    i32 finish(&self) {
+    i32 finish(runner* self) {
         printf("\n=== %d passed, %d failed ===\n", self.passed, self.failed);
         return self.failed > 0 ? 1 : 0;
     }
@@ -222,5 +190,4 @@ void expect_not_null(runner* r, void* p, i8* msg) {
     if(p==(void*)0) { printf("  EXPECT FAIL (null): %s\n", msg); (*r).record_fail(); }
 }
 
-} // test
-} // std
+} // namespace test

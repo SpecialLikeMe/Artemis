@@ -73,7 +73,8 @@ public:
 private:
     scope_manager scope;
     func_decl*    current_func  = nullptr;
-    std::string   current_class;   // name of the class whose method body is being analyzed
+    std::string   current_class;    // name of the class whose method body is being analyzed
+    std::string   current_namespace; // set while visiting declarations inside a namespace
     int           loop_depth    = 0;
     int           switch_depth  = 0;
 
@@ -148,8 +149,19 @@ private:
         }
     }
 
+    // Resolve a type name that may be unqualified when inside a namespace.
+    // If bare name not found and we're in a namespace, try ns__NS_name.
+    void resolve_type_name(type_node* t) {
+        if (!t || t->is_primitive || t->is_func_ptr || t->is_self_ref || t->is_memstr_ref) return;
+        if (!t->name) return;
+        if (!current_namespace.empty() && !scope.is_known_type(*t->name)) {
+            std::string qualified = current_namespace + "__NS_" + *t->name;
+            if (scope.is_known_type(qualified)) t->name = qualified;
+        }
+    }
+
     // Validate that a named type is defined; check void not used as a variable type.
-    void check_var_type(const type_node* t, uint64_t line) {
+    void check_var_type(type_node* t, uint64_t line) {
         if (!t) throw std::runtime_error(err(line, "null type"));
         if (t->is_func_ptr || t->is_self_ref || t->is_memstr_ref) return;
         if (t->is_primitive) {
@@ -157,13 +169,15 @@ private:
                 throw std::runtime_error(err(line, "Cannot declare a variable of type 'void'"));
             return;
         }
+        resolve_type_name(t);
         const std::string& name = t->name.value_or("");
         if (!scope.is_known_type(name))
             throw std::runtime_error(err(line, "Unknown type '" + name + "'"));
     }
 
-    void check_type_known(const type_node* t, uint64_t line) {
+    void check_type_known(type_node* t, uint64_t line) {
         if (!t || t->is_primitive) return;
+        resolve_type_name(t);
         const std::string& name = t->name.value_or("");
         if (!scope.is_known_type(name))
             throw std::runtime_error(err(line, "Unknown type '" + name + "'"));
@@ -196,6 +210,8 @@ private:
         if (auto* d = dynamic_cast<union_decl*>(node))   { scope.declare_union(d);   return; }
         if (auto* d = dynamic_cast<typedef_decl*>(node)) { scope.declare_typedef(d); return; }
         if (auto* d = dynamic_cast<class_decl*>(node)) {
+            // Interface declarations: register in interfaces map, not classes map
+            if (d->is_interface) { scope.declare_interface(d); return; }
             // Generic class templates: only register the name as a known type; skip method
             // registration (their signatures reference unbound type parameters).
             if (!d->type_params.empty()) { generic_class_names.insert(d->name); scope.declare_class(d); return; }
@@ -215,6 +231,16 @@ private:
             for (auto* decl : d->decls) {
                 if (auto* fd = dynamic_cast<func_decl*>(decl))
                     fd->name = d->name + "__NS_" + fd->name;
+                if (auto* cd = dynamic_cast<class_decl*>(decl))
+                    cd->name = d->name + "__NS_" + cd->name;
+                if (auto* sd = dynamic_cast<struct_decl*>(decl))
+                    sd->name = d->name + "__NS_" + sd->name;
+                if (auto* ud = dynamic_cast<union_decl*>(decl))
+                    ud->name = d->name + "__NS_" + ud->name;
+                if (auto* td = dynamic_cast<typedef_decl*>(decl))
+                    td->alias = d->name + "__NS_" + td->alias;
+                if (auto* vd = dynamic_cast<var_decl*>(decl))
+                    vd->name = d->name + "__NS_" + vd->name;
                 register_decl(decl);
             }
             return;
@@ -225,6 +251,15 @@ private:
     void register_class_decl(class_decl* d) {
         scope.declare_class(d);
         if (d->is_memstr) scope.declare_memstr(d->name);
+        // Reject duplicate method names (method overloading is not supported)
+        for (size_t i = 0; i < d->methods.size(); i++) {
+            for (size_t j = i + 1; j < d->methods.size(); j++) {
+                if (d->methods[i]->name == d->methods[j]->name)
+                    throw std::runtime_error(err(d->methods[j]->line,
+                        "Duplicate method '" + d->methods[j]->name + "' in '" + d->name +
+                        "': method overloading is not supported"));
+            }
+        }
         // Register methods as global functions with mangled names ClassName__MT_methodname
         for (auto* m : d->methods) {
             // Build a synthetic func_decl for each method so call resolution works
@@ -239,7 +274,10 @@ private:
                 param_decl sp;
                 auto* st = new type_node();
                 st->is_primitive = false; st->name = d->name; st->pointer_depth = 1;
-                sp.type = st; sp.name = "self"; sp.line = m->line;
+                if (m->self_const) st->is_const = true;
+                sp.type = st;
+                sp.name = m->self_param_name.empty() ? "self" : m->self_param_name;
+                sp.line = m->line;
                 fd->params.push_back(sp);
             }
             for (auto& p : m->params) fd->params.push_back(p);
@@ -276,17 +314,51 @@ private:
     }
 
     void visit_namespace_decl(namespace_decl* d) {
+        std::string saved_ns = current_namespace;
+        current_namespace = d->name;
         for (auto* decl : d->decls) {
-            if (auto* fd = dynamic_cast<func_decl*>(decl)) visit_func_decl(fd);
-            else if (auto* vd = dynamic_cast<var_decl*>(decl)) visit_global_var_decl(vd);
+            if (auto* fd = dynamic_cast<func_decl*>(decl)) {
+                if (!fd->type_params.empty()) continue; // skip generic function templates
+                visit_func_decl(fd);
+            } else if (auto* vd = dynamic_cast<var_decl*>(decl)) visit_global_var_decl(vd);
             else if (auto* sd = dynamic_cast<struct_decl*>(decl)) visit_struct_decl(sd);
+            else if (auto* cd = dynamic_cast<class_decl*>(decl)) {
+                if (cd->is_interface) continue; // interfaces need no body visiting
+                if (!cd->type_params.empty()) continue; // skip generic class templates
+                visit_class_decl(cd);
+            }
         }
+        current_namespace = saved_ns;
     }
 
     void visit_class_decl(class_decl* d) {
-        // Check base class exists
-        if (!d->base_name.empty() && !scope.is_known_type(d->base_name))
-            throw std::runtime_error(err(d->line, "Unknown base class '" + d->base_name + "'"));
+        // Interface declarations have no fields/bodies — nothing to visit
+        if (d->is_interface) return;
+
+        // Check that `: Name` refers to an interface (not a class — inheritance is gone)
+        if (!d->base_name.empty()) {
+            if (scope.is_interface_type(d->base_name)) {
+                // Verify all interface methods are implemented
+                class_decl* iface = scope.find_interface(d->base_name);
+                for (auto* im : iface->methods) {
+                    bool found = false;
+                    for (auto* cm : d->methods) {
+                        if (cm->name == im->name) { found = true; break; }
+                    }
+                    if (!found)
+                        throw std::runtime_error(err(d->line,
+                            "'" + d->name + "' does not implement interface method '" +
+                            im->name + "' required by '" + d->base_name + "'"));
+                }
+            } else if (scope.classes.count(d->base_name)) {
+                throw std::runtime_error(err(d->line,
+                    "Inheritance is not supported; use interfaces instead ('" +
+                    d->base_name + "' is a class, not an interface)"));
+            } else {
+                throw std::runtime_error(err(d->line,
+                    "Unknown interface '" + d->base_name + "'"));
+            }
+        }
 
         // Check all fields
         for (auto* f : d->fields) {
@@ -295,15 +367,9 @@ private:
 
         // Check all methods
         for (auto* m : d->methods) {
-            // Validate mandatory virtual: only allowed with virtual
-            if (m->is_mandatory_virtual && !m->is_virtual)
+            if (m->is_mandatory_virtual || m->is_virtual || m->is_override)
                 throw std::runtime_error(err(m->line,
-                    "Method '" + m->name + "': 'mandatory' requires 'virtual'"));
-
-            // Check override requires base class
-            if (m->is_override && d->base_name.empty())
-                throw std::runtime_error(err(m->line,
-                    "Method '" + m->name + "': 'override' requires a base class"));
+                    "Method '" + m->name + "': virtual/override/mandatory are not supported; use interfaces"));
 
             if (!m->body) continue; // forward declaration, skip body check
 
@@ -323,8 +389,9 @@ private:
                 auto* st = make_type(type_node{});
                 st->is_primitive = false; st->name = d->name; st->pointer_depth = 1;
                 st->is_const = m->self_const;
-                var_decl* sv = make_param_var(st, "self", m->line);
-                scope.declare_var("self", sv);
+                const std::string sname = m->self_param_name.empty() ? "self" : m->self_param_name;
+                var_decl* sv = make_param_var(st, sname, m->line);
+                scope.declare_var(sname, sv);
             }
             // Declare params
             for (auto& p : m->params) {
@@ -496,6 +563,23 @@ private:
         if (auto* n = dynamic_cast<expr_stmt*>(node))     { visit_expr(n->expr);    return; }
         if (auto* n = dynamic_cast<asm_stmt*>(node))      { visit_asm_stmt(n);      return; }
         if (auto* n = dynamic_cast<defer_stmt*>(node))    { visit_defer_stmt(n);    return; }
+        if (auto* n = dynamic_cast<throw_stmt*>(node))    { if (n->value) visit_expr(n->value); return; }
+        if (auto* n = dynamic_cast<try_stmt*>(node))      {
+            visit_block(n->body);
+            scope.push();
+            // Synthesize a var_decl for the exception variable so it's visible in the handler.
+            // Skip for catch-all except (...) where exc_name is empty.
+            if (!n->exc_name.empty()) {
+                auto* edecl = new var_decl();
+                edecl->type = n->exc_type;
+                edecl->name = n->exc_name;
+                edecl->line = n->line;
+                scope.declare_var(n->exc_name, edecl);
+            }
+            visit_block(n->handler);
+            scope.pop();
+            return;
+        }
         throw std::runtime_error(err(node->line, "Unknown statement kind"));
     }
 
@@ -644,6 +728,9 @@ private:
                 "call '" + d->name + ".__construct__(...)' explicitly after the declaration."));
         if (d->init.has_value()) {
             expr_node* init_e = d->init.value();
+            // Mark class_init used in assignment (copy-init) context so explicit ctor check works.
+            if (init_e->kind == expr_kind::class_init)
+                init_e->is_implicit_init = true;
             type_node* it = visit_expr(init_e);
             // Context-inferred class initializer .{...} adopts the variable's type; skip check.
             bool inferred_init = (init_e->kind == expr_kind::class_init && !init_e->init_type);
@@ -688,7 +775,21 @@ private:
         // Type-check field initializer expressions; the field-name validity and stores
         // are handled by the IR. Returns the named type (or void for context-inferred .{}).
         for (auto& fi : e->field_inits) visit_expr(fi.second);
-        if (e->init_type) return e->init_type;
+        if (e->init_type) {
+            // Enforce 'explicit': explicit constructors cannot be used in copy-init context.
+            if (e->is_implicit_init) {
+                const std::string cname = e->init_type->name.value_or("");
+                auto cit = scope.classes.find(cname);
+                if (cit != scope.classes.end()) {
+                    for (auto* m : cit->second->methods) {
+                        if (m->is_constructor && m->is_explicit)
+                            throw std::runtime_error(err(e->line,
+                                "Semantic Error: cannot use explicit constructor for implicit conversion"));
+                    }
+                }
+            }
+            return e->init_type;
+        }
         // ADT enum named-struct/istruc variant init: EnumName::VariantName { .field = val }
         // The object field holds the member expr (EnumName::VariantName).
         if (e->object && e->object->kind == expr_kind::member &&
@@ -720,6 +821,28 @@ private:
     type_node* visit_identifier(expr_node* e) {
         var_decl* vd = scope.lookup_var(e->str_val);
         if (vd) return vd->type;
+
+        // Intra-namespace bare variable/type reference: try ns__NS_name
+        if (!current_namespace.empty()) {
+            std::string ns_qual = current_namespace + "__NS_" + e->str_val;
+            var_decl* ns_vd = scope.lookup_var(ns_qual);
+            if (ns_vd) { e->str_val = ns_qual; return ns_vd->type; }
+            // Class name used as identifier (e.g. for static method dispatch)
+            if (scope.classes.count(ns_qual)) {
+                e->str_val = ns_qual;
+                auto* t = make_type(type_node{});
+                t->is_primitive = false;
+                t->name = ns_qual;
+                return t;
+            }
+            if (scope.enums.count(ns_qual)) {
+                e->str_val = ns_qual;
+                auto* t = make_type(type_node{});
+                t->is_primitive = false;
+                t->name = ns_qual;
+                return t;
+            }
+        }
 
         // Function used as value (e.g. address-of for function pointer)
         func_decl* fd = scope.lookup_func(e->str_val);
@@ -1049,6 +1172,12 @@ private:
                 } else if (scope.classes.count(maybe_ns)) {
                     e->callee->kind    = expr_kind::identifier;
                     e->callee->str_val = maybe_ns + "__MT_" + e->callee->member_name;
+                } else if (!current_namespace.empty() && scope.classes.count(current_namespace + "__NS_" + maybe_ns)) {
+                    // Intra-namespace static method call: mat4.identity() inside namespace math
+                    std::string ns_cls = current_namespace + "__NS_" + maybe_ns;
+                    e->callee->object->str_val = ns_cls;
+                    e->callee->kind    = expr_kind::identifier;
+                    e->callee->str_val = ns_cls + "__MT_" + e->callee->member_name;
                 } else if (scope.is_namespace(maybe_ns)) {
                     e->callee->kind    = expr_kind::identifier;
                     e->callee->str_val = maybe_ns + "__NS_" + e->callee->member_name;
@@ -1118,6 +1247,14 @@ private:
         }
 
         const std::vector<func_decl*>* overloads = scope.lookup_overloads(fname);
+        // Intra-namespace bare-name call fallback: try ns__NS_fname
+        if ((!overloads || overloads->empty()) && !current_namespace.empty()) {
+            std::string ns_qual = current_namespace + "__NS_" + fname;
+            overloads = scope.lookup_overloads(ns_qual);
+            if (overloads && !overloads->empty()) {
+                e->callee->str_val = ns_qual; // rewrite callee name for IR
+            }
+        }
         if (!overloads || overloads->empty())
             throw std::runtime_error(err(ln, "Call to undeclared function '" + fname + "'"));
 
@@ -1264,6 +1401,17 @@ private:
     }
 
     type_node* visit_member(expr_node* e) {
+        // Namespace-qualified variable/constant: ns::name — rewrite to plain identifier
+        if (e->object->kind == expr_kind::identifier) {
+            const std::string& obj = e->object->str_val;
+            if (scope.is_namespace(obj) && !scope.lookup_var(obj)
+                && !scope.enums.count(obj) && !scope.classes.count(obj)) {
+                // Rewrite member(ns, name) → identifier(ns__NS_name)
+                e->kind = expr_kind::identifier;
+                e->str_val = obj + "__NS_" + e->member_name;
+                return visit_identifier(e);
+            }
+        }
         // Enum scope resolution: short-circuit before visiting object as an expression.
         // For plain enums, returns i32. For ADT enums, returns the enum type itself.
         if (e->object->kind == expr_kind::identifier) {

@@ -72,7 +72,7 @@ inline void visit_local_var_decl(var_decl* d, ir_context* ctx) {
     }
 
     LLVMValueRef alloca = LLVMBuildAlloca(ctx->llvm_builder, alloca_t, d->name.c_str());
-    ctx->declare_local(d->name, alloca, elem_t, deref_t);
+    ctx->declare_local(d->name, alloca, elem_t, deref_t, is_unsigned_type_node(d->type));
 
     // Named-field class initializer:  Type v = Type { .f = x };  or  Type v = .{ .f = x };
     if (d->init.has_value() && d->init.value()->kind == expr_kind::class_init
@@ -342,6 +342,194 @@ inline void visit_return_stmt(return_stmt* s, ir_context* ctx) {
     LLVMBuildRet(ctx->llvm_builder, val);
 }
 
+// ------------------------------------------------------------------ throw / try-except
+
+// Returns (or creates) the module-level exception state globals.
+struct exc_globals {
+    LLVMValueRef val;       // @__arc_exc_val  — i64, stores the thrown value
+    LLVMValueRef jbuf_ptr;  // @__arc_exc_jbuf — i8*, points at current jmp_buf alloca
+};
+
+inline exc_globals get_exc_globals(ir_context* ctx) {
+    LLVMTypeRef i64t  = LLVMInt64TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i8pt  = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
+
+    auto get_or_create = [&](const char* name, LLVMTypeRef ty) -> LLVMValueRef {
+        LLVMValueRef g = LLVMGetNamedGlobal(ctx->llvm_mod, name);
+        if (!g) {
+            g = LLVMAddGlobal(ctx->llvm_mod, ty, name);
+            LLVMSetInitializer(g, LLVMConstNull(ty));
+            LLVMSetLinkage(g, LLVMInternalLinkage);
+        }
+        return g;
+    };
+
+    return { get_or_create("__arc_exc_val",  i64t),
+             get_or_create("__arc_exc_jbuf", i8pt) };
+}
+
+// Declare setjmp / longjmp as extern C.
+// On Windows x64 (MinGW), the ABI requires _setjmp(jbuf, frame_ptr) — two args.
+// On POSIX, setjmp(jbuf) takes one arg.
+#ifdef _WIN32
+static constexpr bool ARC_WIN_SETJMP = true;
+#else
+static constexpr bool ARC_WIN_SETJMP = false;
+#endif
+
+inline LLVMValueRef get_setjmp_fn(ir_context* ctx) {
+    const char* fname = ARC_WIN_SETJMP ? "_setjmp" : "setjmp";
+    LLVMValueRef fn = LLVMGetNamedFunction(ctx->llvm_mod, fname);
+    if (!fn) {
+        LLVMTypeRef i8pt = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
+        LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
+        LLVMTypeRef params[2] = { i8pt, i8pt };
+        unsigned nparams = ARC_WIN_SETJMP ? 2u : 1u;
+        LLVMTypeRef fty = LLVMFunctionType(i32t, params, nparams, 0);
+        fn = LLVMAddFunction(ctx->llvm_mod, fname, fty);
+        {
+            unsigned k = LLVMGetEnumAttributeKindForName("returns_twice", 13);
+            if (k) LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex,
+                       LLVMCreateEnumAttribute(ctx->llvm_ctx, k, 0));
+        }
+    }
+    return fn;
+}
+
+inline LLVMValueRef get_longjmp_fn(ir_context* ctx) {
+    LLVMValueRef fn = LLVMGetNamedFunction(ctx->llvm_mod, "longjmp");
+    if (!fn) {
+        LLVMTypeRef i8pt  = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
+        LLVMTypeRef i32t  = LLVMInt32TypeInContext(ctx->llvm_ctx);
+        LLVMTypeRef voidt = LLVMVoidTypeInContext(ctx->llvm_ctx);
+        LLVMTypeRef params[2] = { i8pt, i32t };
+        LLVMTypeRef fty = LLVMFunctionType(voidt, params, 2, 0);
+        fn = LLVMAddFunction(ctx->llvm_mod, "longjmp", fty);
+        {
+            unsigned k = LLVMGetEnumAttributeKindForName("noreturn", 8);
+            if (k) LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex,
+                       LLVMCreateEnumAttribute(ctx->llvm_ctx, k, 0));
+        }
+    }
+    return fn;
+}
+
+inline void visit_throw_stmt(throw_stmt* n, ir_context* ctx) {
+    // Store exception value (cast to i64) in @__arc_exc_val, then longjmp.
+    auto [exc_val_g, exc_jbuf_g] = get_exc_globals(ctx);
+    LLVMTypeRef i8t  = LLVMInt8TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i8pt = LLVMPointerType(i8t, 0);
+    LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->llvm_ctx);
+
+    LLVMValueRef val = n->value ? visit_expr(n->value, ctx)
+                                : LLVMConstInt(i64t, 0, 0);
+    LLVMTypeRef vt = LLVMTypeOf(val);
+    if (vt != i64t) {
+        if (LLVMGetTypeKind(vt) == LLVMIntegerTypeKind)
+            val = LLVMBuildIntCast2(ctx->llvm_builder, val, i64t, 1, "exc_cast");
+        else if (LLVMGetTypeKind(vt) == LLVMPointerTypeKind)
+            val = LLVMBuildPtrToInt(ctx->llvm_builder, val, i64t, "exc_cast");
+        else
+            val = LLVMConstInt(i64t, 0, 0);
+    }
+    LLVMBuildStore(ctx->llvm_builder, val, exc_val_g);
+
+    LLVMValueRef jbuf = LLVMBuildLoad2(ctx->llvm_builder, i8pt, exc_jbuf_g, "jbuf");
+    LLVMValueRef one  = LLVMConstInt(i32t, 1, 0);
+    LLVMValueRef args[2] = { jbuf, one };
+    LLVMTypeRef  ljparams[2] = { i8pt, i32t };
+    LLVMTypeRef  ljfty = LLVMFunctionType(LLVMVoidTypeInContext(ctx->llvm_ctx), ljparams, 2, 0);
+    LLVMBuildCall2(ctx->llvm_builder, ljfty, get_longjmp_fn(ctx), args, 2, "");
+    LLVMBuildUnreachable(ctx->llvm_builder);
+}
+
+inline void visit_try_stmt(try_stmt* n, ir_context* ctx) {
+    LLVMTypeRef i8t   = LLVMInt8TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i8pt  = LLVMPointerType(i8t, 0);
+    LLVMTypeRef i32t  = LLVMInt32TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i64t  = LLVMInt64TypeInContext(ctx->llvm_ctx);
+    LLVMValueRef fn   = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->llvm_builder));
+
+    auto [exc_val_g, exc_jbuf_g] = get_exc_globals(ctx);
+
+    // Alloca a jmp_buf (256 bytes, 16-byte aligned).
+    LLVMTypeRef jbuf_t = LLVMArrayType(i8t, 256);
+    LLVMValueRef jbuf  = LLVMBuildAlloca(ctx->llvm_builder, jbuf_t, "jbuf");
+    LLVMSetAlignment(jbuf, 16);
+
+    // Decay array to i8* pointer.
+    LLVMValueRef zero  = LLVMConstInt(i32t, 0, 0);
+    LLVMValueRef idxs[2] = { zero, zero };
+    LLVMValueRef jbuf_i8 = LLVMBuildGEP2(ctx->llvm_builder, jbuf_t, jbuf, idxs, 2, "jbuf_i8");
+
+    // Save old jmp_buf pointer and install ours.
+    LLVMValueRef old_jbuf = LLVMBuildLoad2(ctx->llvm_builder, i8pt, exc_jbuf_g, "old_jbuf");
+    LLVMBuildStore(ctx->llvm_builder, jbuf_i8, exc_jbuf_g);
+
+    // rc = setjmp(jbuf_i8)   [Windows: _setjmp(jbuf, NULL)]
+    LLVMValueRef setjmp_fn = get_setjmp_fn(ctx);
+    LLVMValueRef rc;
+    if constexpr (ARC_WIN_SETJMP) {
+        LLVMValueRef null_ptr  = LLVMConstNull(i8pt);
+        LLVMTypeRef  params2[2] = { i8pt, i8pt };
+        LLVMTypeRef  sjfty = LLVMFunctionType(i32t, params2, 2, 0);
+        LLVMValueRef args2[2] = { jbuf_i8, null_ptr };
+        rc = LLVMBuildCall2(ctx->llvm_builder, sjfty, setjmp_fn, args2, 2, "sjrc");
+    } else {
+        LLVMTypeRef  sjfty = LLVMFunctionType(i32t, &i8pt, 1, 0);
+        rc = LLVMBuildCall2(ctx->llvm_builder, sjfty, setjmp_fn, &jbuf_i8, 1, "sjrc");
+    }
+
+    // Branch: rc != 0 → except_bb, else → try_bb
+    LLVMValueRef thrown = LLVMBuildICmp(ctx->llvm_builder, LLVMIntNE,
+                                        rc, LLVMConstInt(i32t, 0, 0), "thrown");
+    LLVMBasicBlockRef try_bb    = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "try");
+    LLVMBasicBlockRef except_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "except");
+    LLVMBasicBlockRef after_bb  = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "after_try");
+    LLVMBuildCondBr(ctx->llvm_builder, thrown, except_bb, try_bb);
+
+    // --- try body ---
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, try_bb);
+    visit_block_stmt(n->body, ctx);
+    if (!ctx->is_terminated()) {
+        LLVMBuildStore(ctx->llvm_builder, old_jbuf, exc_jbuf_g); // restore on normal exit
+        LLVMBuildBr(ctx->llvm_builder, after_bb);
+    }
+
+    // --- except handler ---
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, except_bb);
+    LLVMBuildStore(ctx->llvm_builder, old_jbuf, exc_jbuf_g); // restore on exception exit
+    // Declare exception variable in a new scope.
+    ctx->push_scope();
+    if (n->exc_type != nullptr) {
+        // Named exception: except (type name) — alloca and store the exception value.
+        LLVMTypeRef exc_t    = llvm_type_of(n->exc_type, ctx);
+        LLVMValueRef exc_var = LLVMBuildAlloca(ctx->llvm_builder, exc_t, n->exc_name.c_str());
+        // Load stored exception value and cast to the declared type.
+        LLVMValueRef exc_val = LLVMBuildLoad2(ctx->llvm_builder, i64t, exc_val_g, "exc_val");
+        LLVMValueRef casted;
+        if (exc_t == i64t) {
+            casted = exc_val;
+        } else if (LLVMGetTypeKind(exc_t) == LLVMIntegerTypeKind) {
+            casted = LLVMBuildIntCast2(ctx->llvm_builder, exc_val, exc_t, 1, "exc_narrow");
+        } else if (LLVMGetTypeKind(exc_t) == LLVMPointerTypeKind) {
+            casted = LLVMBuildIntToPtr(ctx->llvm_builder, exc_val, exc_t, "exc_ptr");
+        } else {
+            casted = LLVMConstNull(exc_t);
+        }
+        LLVMBuildStore(ctx->llvm_builder, casted, exc_var);
+        ctx->declare_local(n->exc_name, exc_var, exc_t);
+    }
+    // else: catch-all except (...) — no exception variable, just run handler.
+    visit_block_stmt(n->handler, ctx);
+    ctx->pop_scope();
+    if (!ctx->is_terminated())
+        LLVMBuildBr(ctx->llvm_builder, after_bb);
+
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, after_bb);
+}
+
 // ------------------------------------------------------------------ break / continue
 
 inline void visit_break_stmt(break_stmt* /*s*/, ir_context* ctx) {
@@ -375,6 +563,8 @@ inline void visit_stmt(ast_node* node, ir_context* ctx) {
     if (auto* n = dynamic_cast<expr_stmt*>(node))     { visit_expr_stmt(n, ctx);    return; }
     if (auto* n = dynamic_cast<asm_stmt*>(node))      { visit_asm_stmt(n, ctx);     return; }
     if (auto* n = dynamic_cast<defer_stmt*>(node))    { visit_defer_stmt(n, ctx);   return; }
+    if (auto* n = dynamic_cast<throw_stmt*>(node))    { visit_throw_stmt(n, ctx);   return; }
+    if (auto* n = dynamic_cast<try_stmt*>(node))      { visit_try_stmt(n, ctx);     return; }
 
     throw std::runtime_error("IR: Unknown statement kind in visit_stmt");
 }

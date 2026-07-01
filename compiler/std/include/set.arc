@@ -18,7 +18,7 @@ istruc set<K> {
     set_node<K>* nil;
     i32          size_count;
 
-    void __construct__(&self, &memstr a) {
+    void __construct__(set* self, &memstr a) {
         self.nil       = (set_node<K>*)a.mmap(sizeof(set_node<K>));
         (*self.nil).color  = SET_BLACK;
         (*self.nil).left   = self.nil;
@@ -28,7 +28,7 @@ istruc set<K> {
         self.size_count = 0;
     }
 
-    private void rotate_left(&self, set_node<K>* x) {
+    private void rotate_left(set* self, set_node<K>* x) {
         set_node<K>* y = (*x).right;
         (*x).right = (*y).left;
         if ((*y).left != self.nil) (*(*y).left).parent = x;
@@ -40,7 +40,7 @@ istruc set<K> {
         (*x).parent = y;
     }
 
-    private void rotate_right(&self, set_node<K>* y) {
+    private void rotate_right(set* self, set_node<K>* y) {
         set_node<K>* x = (*y).left;
         (*y).left = (*x).right;
         if ((*x).right != self.nil) (*(*x).right).parent = y;
@@ -52,7 +52,7 @@ istruc set<K> {
         (*y).parent = x;
     }
 
-    private void fix_insert(&self, set_node<K>* z) {
+    private void fix_insert(set* self, set_node<K>* z) {
         while ((*(*z).parent).color == SET_RED) {
             if ((*z).parent == (*(*(*z).parent).parent).left) {
                 set_node<K>* u = (*(*(*z).parent).parent).right;
@@ -85,7 +85,7 @@ istruc set<K> {
         (*self.root).color = SET_BLACK;
     }
 
-    void insert(&self, K key, &memstr a) {
+    void insert(set* self, K key, &memstr a) {
         if (self.contains(key)) { return; }
         set_node<K>* z = (set_node<K>*)a.mmap(sizeof(set_node<K>));
         (*z).key    = key;
@@ -106,7 +106,7 @@ istruc set<K> {
         self.size_count = self.size_count + 1;
     }
 
-    private set_node<K>* find_node(&self, K key) {
+    private set_node<K>* find_node(set* self, K key) {
         set_node<K>* x = self.root;
         while (x != self.nil) {
             if (key < (*x).key)  x = (*x).left;
@@ -116,19 +116,19 @@ istruc set<K> {
         return self.nil;
     }
 
-    bool contains(&self, K key) { return self.find_node(key) != self.nil; }
+    bool contains(set* self, K key) { return self.find_node(key) != self.nil; }
 
-    i32  size(&self)     { return self.size_count; }
-    bool is_empty(&self) { return self.size_count == 0; }
+    i32  size(set* self)     { return self.size_count; }
+    bool is_empty(set* self) { return self.size_count == 0; }
 
-    private void inorder(&self, set_node<K>* n, void(K)* cb) {
+    private void inorder(set* self, set_node<K>* n, void(K)* cb) {
         if (n == self.nil) { return; }
         self.inorder((*n).left, cb);
         cb((*n).key);
         self.inorder((*n).right, cb);
     }
 
-    void each(&self, void(K)* cb) { self.inorder(self.root, cb); }
+    void each(set* self, void(K)* cb) { self.inorder(self.root, cb); }
 }
 
 } // std

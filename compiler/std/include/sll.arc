@@ -12,20 +12,20 @@ istruc sll<T> {
     sll_node<T>* tail;
     i32          length;
 
-    void __construct__(&self) {
+    void __construct__(sll* self) {
         self.head = (sll_node<T>*)0;
         self.tail = (sll_node<T>*)0;
         self.length = 0;
     }
 
-    private sll_node<T>* make_node(&self, T val, &memstr a) {
+    private sll_node<T>* make_node(sll* self, T val, &memstr a) {
         sll_node<T>* n = (sll_node<T>*)a.mmap(sizeof(sll_node<T>));
         (*n).val  = val;
         (*n).next = (sll_node<T>*)0;
         return n;
     }
 
-    void push_front(&self, T val, &memstr a) {
+    void push_front(sll* self, T val, &memstr a) {
         sll_node<T>* n = self.make_node(val, a);
         (*n).next = self.head;
         self.head = n;
@@ -33,7 +33,7 @@ istruc sll<T> {
         self.length = self.length + 1;
     }
 
-    void push_back(&self, T val, &memstr a) {
+    void push_back(sll* self, T val, &memstr a) {
         sll_node<T>* n = self.make_node(val, a);
         if (self.tail != (sll_node<T>*)0) { (*self.tail).next = n; }
         else { self.head = n; }
@@ -41,7 +41,7 @@ istruc sll<T> {
         self.length = self.length + 1;
     }
 
-    T pop_front(&self) {
+    T pop_front(sll* self) {
         sll_node<T>* n = self.head;
         T val = (*n).val;
         self.head = (*n).next;
@@ -50,20 +50,20 @@ istruc sll<T> {
         return val;
     }
 
-    T* peek_front(&self) {
+    T* peek_front(sll* self) {
         if (self.head == (sll_node<T>*)0) { return (T*)0; }
         return &(*self.head).val;
     }
 
-    T* peek_back(&self) {
+    T* peek_back(sll* self) {
         if (self.tail == (sll_node<T>*)0) { return (T*)0; }
         return &(*self.tail).val;
     }
 
-    bool is_empty(&self) { return self.head == (sll_node<T>*)0; }
-    i32  size(&self)     { return self.length; }
+    bool is_empty(sll* self) { return self.head == (sll_node<T>*)0; }
+    i32  size(sll* self)     { return self.length; }
 
-    bool contains(&self, T val) {
+    bool contains(sll* self, T val) {
         sll_node<T>* n = self.head;
         while (n != (sll_node<T>*)0) {
             if ((*n).val == val) { return true; }
@@ -72,7 +72,7 @@ istruc sll<T> {
         return false;
     }
 
-    void remove_first(&self, T val) {
+    void remove_first(sll* self, T val) {
         sll_node<T>* prev = (sll_node<T>*)0;
         sll_node<T>* curr = self.head;
         while (curr != (sll_node<T>*)0) {
@@ -87,7 +87,7 @@ istruc sll<T> {
         }
     }
 
-    void reverse(&self) {
+    void reverse(sll* self) {
         sll_node<T>* prev = (sll_node<T>*)0;
         sll_node<T>* curr = self.head;
         self.tail = self.head;
@@ -100,12 +100,12 @@ istruc sll<T> {
         self.head = prev;
     }
 
-    void each(&self, void(T)* cb) {
+    void each(sll* self, void(T)* cb) {
         sll_node<T>* n = self.head;
         while (n != (sll_node<T>*)0) { cb((*n).val); n = (*n).next; }
     }
 
-    void clear(&self) {
+    void clear(sll* self) {
         self.head = (sll_node<T>*)0;
         self.tail = (sll_node<T>*)0;
         self.length = 0;

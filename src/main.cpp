@@ -183,6 +183,8 @@ static std::string resolve_aciso_imports(const std::string& src) {
         // Trim leading whitespace for matching
         size_t first = line.find_first_not_of(" \t");
         std::string trimmed = (first == std::string::npos) ? "" : line.substr(first);
+        // Strip trailing \r (Windows CRLF line endings)
+        if (!trimmed.empty() && trimmed.back() == '\r') trimmed.pop_back();
 
         // Match: extern aciso.NAME;
         const std::string prefix = "extern aciso.";
@@ -240,13 +242,32 @@ static std::string resolve_std_imports(const std::string& src) {
     ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (n > 0) { exe_path[n] = '\0'; exe_dir = fs::path(exe_path).parent_path(); }
 #endif
-    // Walk up from exe_dir to find compiler/std/include/
+    // 1. Walk up from exe_dir to find compiler/std/include/
     for (fs::path p = exe_dir; p.has_parent_path() && p != p.parent_path(); p = p.parent_path()) {
         if (fs::exists(p / "compiler" / "std" / "include")) {
             std_root = p / "compiler" / "std" / "include"; break;
         }
     }
-    if (std_root.empty()) std_root = fs::path("compiler") / "std" / "include"; // CWD fallback
+    // 2. Check ARTEMIS_HOME env var (set by installer)
+    if (std_root.empty()) {
+        const char* home = std::getenv("ARTEMIS_HOME");
+        if (home) {
+            fs::path h(home);
+            if (fs::exists(h / "std" / "include"))
+                std_root = h / "std" / "include";
+            else if (fs::exists(h / "compiler" / "std" / "include"))
+                std_root = h / "compiler" / "std" / "include";
+        }
+    }
+    // 3. Walk up from current working directory
+    if (std_root.empty()) {
+        for (fs::path p = fs::current_path(); p.has_parent_path() && p != p.parent_path(); p = p.parent_path()) {
+            if (fs::exists(p / "compiler" / "std" / "include")) {
+                std_root = p / "compiler" / "std" / "include"; break;
+            }
+        }
+    }
+    if (std_root.empty()) std_root = fs::path("compiler") / "std" / "include"; // last-resort CWD
 
     std::unordered_set<std::string> already_included;
     std::istringstream ss(src);
@@ -254,6 +275,8 @@ static std::string resolve_std_imports(const std::string& src) {
     while (std::getline(ss, line)) {
         size_t first = line.find_first_not_of(" \t");
         std::string trimmed = (first == std::string::npos) ? "" : line.substr(first);
+        // Strip trailing \r (Windows CRLF line endings)
+        if (!trimmed.empty() && trimmed.back() == '\r') trimmed.pop_back();
 
         const std::string prefix = "extern std.";
         if (trimmed.size() > prefix.size() + 1 &&

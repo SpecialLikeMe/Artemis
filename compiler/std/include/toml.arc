@@ -42,14 +42,14 @@ istruc lex {
     i32 pos;
     i32 len;
 
-    void __construct__(&self, i8* s, i32 n) { self.src=s; self.pos=0; self.len=n; }
+    void __construct__(lex* self, i8* s, i32 n) { self.src=s; self.pos=0; self.len=n; }
 
-    bool at_end(&self) { return self.pos >= self.len; }
-    i8   peek(&self)   { return self.pos < self.len ? self.src[self.pos] : 0; }
-    i8   peek2(&self)  { return self.pos+1 < self.len ? self.src[self.pos+1] : 0; }
-    i8   next(&self)         { i8 c = self.src[self.pos]; self.pos=self.pos+1; return c; }
+    bool at_end(lex* self) { return self.pos >= self.len; }
+    i8   peek(lex* self)   { return self.pos < self.len ? self.src[self.pos] : 0; }
+    i8   peek2(lex* self)  { return self.pos+1 < self.len ? self.src[self.pos+1] : 0; }
+    i8   next(lex* self)         { i8 c = self.src[self.pos]; self.pos=self.pos+1; return c; }
 
-    void skip_ws(&self) {
+    void skip_ws(lex* self) {
         while (self.pos < self.len) {
             i8 c = self.src[self.pos];
             if (c==' '||c=='\t') { self.pos=self.pos+1; }
@@ -59,7 +59,7 @@ istruc lex {
         }
     }
 
-    void skip_ws_nl(&self) {
+    void skip_ws_nl(lex* self) {
         while (self.pos < self.len) {
             i8 c = self.src[self.pos];
             if (c==' '||c=='\t'||c=='\r'||c=='\n') { self.pos=self.pos+1; }

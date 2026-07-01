@@ -6,7 +6,7 @@ istruc BufAlloc {
     i32 alloc_count;
     i32 free_count;
 
-    void __construct__(&self) { self.alloc_count = 0; self.free_count = 0; }
+    void __construct__(BufAlloc* self) { self.alloc_count = 0; self.free_count = 0; }
 
     // Static factory: creates a default BufAlloc
     static BufAlloc make() {
@@ -14,8 +14,8 @@ istruc BufAlloc {
         return b;
     }
 
-    void* alloc(&self, u64 n)  { self.alloc_count = self.alloc_count + 1; return malloc(n); }
-    void  drop(&self, void* p) { self.free_count  = self.free_count  + 1; free(p); }
+    void* alloc(BufAlloc* self, u64 n)  { self.alloc_count = self.alloc_count + 1; return malloc(n); }
+    void  drop(BufAlloc* self, void* p) { self.free_count  = self.free_count  + 1; free(p); }
 
     static i32 overhead() { return 0; }  // no metadata overhead
 }

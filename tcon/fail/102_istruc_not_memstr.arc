@@ -4,7 +4,7 @@ extern void  free(void* p);
 
 istruc BadAlloc {
     void* ptr;
-    void __construct__(&self) { self.ptr = (void*)0; }
+    void __construct__(BadAlloc* self) { self.ptr = (void*)0; }
 }
 
 // This function requires a memstr allocator

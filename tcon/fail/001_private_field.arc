@@ -1,7 +1,7 @@
 // FAIL: accessing a private field from outside the class must be rejected
 istruc Wallet {
     private i32 balance;
-    public void __construct__(&self, i32 v) { self.balance = v; }
+    public void __construct__(Wallet* self, i32 v) { self.balance = v; }
 }
 
 i32 main() {

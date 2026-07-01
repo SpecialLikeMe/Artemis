@@ -1,9 +1,9 @@
 istruc Timer {
     i32 start;
     i32 ticks;
-    void __construct__(&self, i32 s) { self.start = s; self.ticks = 0; }
-    void tick(&self) { self.ticks = self.ticks + 1; }
-    i32 elapsed(&const self) { return self.ticks; }
+    void __construct__(Timer* self, i32 s) { self.start = s; self.ticks = 0; }
+    void tick(Timer* self) { self.ticks = self.ticks + 1; }
+    i32 elapsed(const Timer* self) { return self.ticks; }
 }
 i32 main() {
     // implicit ctor (normal)

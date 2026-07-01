@@ -43,9 +43,15 @@ struct type_node {
     std::vector<std::string>      fp_param_names;         // parameter names (optional)
     bool                          fp_variadic  = false;
 
-    // Self reference (&self / &const self) in method parameters
+    // Self reference (&self / &const self) — legacy, kept for IR compat during migration
     bool is_self_ref       = false;
     bool is_self_ref_const = false;
+
+    // 'self' or 'this' used as a type keyword inside a method param list (alias for class type)
+    bool is_self_type = false;
+
+    // *const after stars: data pointed to is immutable (new Artemis semantics)
+    bool ptr_data_const = false;
 
     // Memstr reference (&memstr name) in function parameters
     bool is_memstr_ref = false;
@@ -119,8 +125,9 @@ struct expr_node {
     expr_node*                  else_e   = nullptr;
 
     // class_init: TypeName { .field = val, ... }
-    type_node*                                          init_type   = nullptr; // null => infer from context (.{...})
-    std::vector<std::pair<std::string, expr_node*>>     field_inits;           // named field initializers
+    type_node*                                          init_type        = nullptr; // null => infer from context (.{...})
+    std::vector<std::pair<std::string, expr_node*>>     field_inits;               // named field initializers
+    bool                                                is_implicit_init = false;  // true if used in copy-init (= expr) context
 
     // call: explicit generic type arguments  f<T>(...)
     std::vector<type_node*>     type_args;

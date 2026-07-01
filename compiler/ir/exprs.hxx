@@ -58,10 +58,66 @@ inline LLVMValueRef coerce_int_val(LLVMValueRef val, LLVMTypeRef dst_t, LLVMBuil
     return val;
 }
 
-// Bring two operands to a common type before a binary instruction.
-// is_cmp=true: truncate the wider operand to the narrower type (sign-safe for eq/ne).
-// is_cmp=false: zero-extend the narrower to the wider (for arithmetic).
-inline void homogenize_int_widths(LLVMValueRef& a, LLVMValueRef& b, LLVMBuilderRef builder, bool is_cmp = false) {
+// Coerce call arguments to match function parameter types (handles int<->int widening/narrowing).
+// Skips variadic args (beyond the fixed param count).
+inline void coerce_args_to_fn(LLVMTypeRef fn_t, std::vector<LLVMValueRef>& args,
+                               LLVMBuilderRef b) {
+    if (!fn_t || LLVMGetTypeKind(fn_t) != LLVMFunctionTypeKind) return;
+    unsigned np = LLVMCountParamTypes(fn_t);
+    if (np == 0) return;
+    std::vector<LLVMTypeRef> pt(np);
+    LLVMGetParamTypes(fn_t, pt.data());
+    for (size_t i = 0; i < args.size() && i < np; ++i)
+        args[i] = coerce_int_val(args[i], pt[i], b);
+}
+
+// Returns true if the expression is known to produce an unsigned integer value.
+inline bool is_unsigned_expr(expr_node* e, ir_context* ctx) {
+    if (!e) return false;
+    if (e->kind == expr_kind::cast && e->cast_type)
+        return is_unsigned_type_node(e->cast_type);
+    if (e->kind == expr_kind::identifier)
+        return ctx->lookup_local_unsigned(e->str_val);
+    // member access: look up the field's unsigned flag in struct_field_unsigned
+    if (e->kind == expr_kind::member && e->object) {
+        std::string sname;
+        if (e->object->kind == expr_kind::identifier) {
+            LLVMTypeRef elem = ctx->lookup_local_type(e->object->str_val);
+            if (elem && LLVMGetTypeKind(elem) == LLVMStructTypeKind) {
+                const char* sn = LLVMGetStructName(elem); if (sn) sname = sn;
+            }
+            if (sname.empty()) {
+                LLVMTypeRef dt = ctx->lookup_deref_type(e->object->str_val);
+                if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind) {
+                    const char* sn = LLVMGetStructName(dt); if (sn) sname = sn;
+                }
+            }
+        } else if (e->object->kind == expr_kind::unary &&
+                   e->object->uop == unary_op::deref &&
+                   e->object->operand && e->object->operand->kind == expr_kind::identifier) {
+            LLVMTypeRef dt = ctx->lookup_deref_type(e->object->operand->str_val);
+            if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind) {
+                const char* sn = LLVMGetStructName(dt); if (sn) sname = sn;
+            }
+        }
+        if (!sname.empty()) return ctx->lookup_field_unsigned(sname, e->member_name);
+    }
+    // subscript: element type inherits from the base (e.g., u8[32] subscript is unsigned)
+    if (e->kind == expr_kind::subscript && e->object)
+        return is_unsigned_expr(e->object, ctx);
+    if (e->kind == expr_kind::unary && e->uop == unary_op::deref && e->operand)
+        return is_unsigned_expr(e->operand, ctx);
+    return false;
+}
+
+// Bring two integer operands to a common width before a binary instruction.
+// is_cmp=true: extend the narrower operand to match the wider.
+//   is_unsigned=true  -> zero-extend  (u8 < u32 comparisons)
+//   is_unsigned=false -> sign-extend  (i8 < i32 comparisons)
+// is_cmp=false: zero-extend the narrower to the wider (for arithmetic — two's complement
+//   add/sub/mul are identical for signed and unsigned).
+inline void homogenize_int_widths(LLVMValueRef& a, LLVMValueRef& b, LLVMBuilderRef builder,
+                                   bool is_cmp = false, bool is_unsigned = false) {
     LLVMTypeRef ta = LLVMTypeOf(a), tb = LLVMTypeOf(b);
     bool ai = LLVMGetTypeKind(ta) == LLVMIntegerTypeKind;
     bool bi = LLVMGetTypeKind(tb) == LLVMIntegerTypeKind;
@@ -71,9 +127,13 @@ inline void homogenize_int_widths(LLVMValueRef& a, LLVMValueRef& b, LLVMBuilderR
         unsigned wa = LLVMGetIntTypeWidth(ta), wb = LLVMGetIntTypeWidth(tb);
         if (wa == wb) return;
         if (is_cmp) {
-            // Truncate wider to narrower so signed/unsigned comparison is type-safe.
-            if (wa < wb) b = LLVMBuildTrunc(builder, b, ta, "itrunc");
-            else         a = LLVMBuildTrunc(builder, a, tb, "itrunc");
+            // Extend narrower to wider for comparison so no information is lost.
+            if (wa < wb)
+                a = is_unsigned ? LLVMBuildZExt(builder, a, tb, "zext")
+                                : LLVMBuildSExt(builder, a, tb, "sext");
+            else
+                b = is_unsigned ? LLVMBuildZExt(builder, b, ta, "zext")
+                                : LLVMBuildSExt(builder, b, ta, "sext");
         } else {
             if (wa < wb) a = LLVMBuildZExt(builder, a, tb, "zext");
             else         b = LLVMBuildZExt(builder, b, ta, "zext");
@@ -632,10 +692,14 @@ inline LLVMValueRef visit_binary_expr(expr_node* e, ir_context* ctx) {
     else if (r_ptr && lk == LLVMIntegerTypeKind)
         lv = LLVMBuildIntToPtr(ctx->llvm_builder, lv, LLVMTypeOf(rv), "inttoptr");
 
+    // Determine if either operand is an unsigned type — affects comparison predicates,
+    // division, remainder, and right-shift semantics.
+    bool is_unsigned = is_unsigned_expr(e->lhs, ctx) || is_unsigned_expr(e->rhs, ctx);
+
     bool is_cmp_op = (e->bop == binary_op::eq || e->bop == binary_op::ne ||
                       e->bop == binary_op::lt || e->bop == binary_op::gt ||
                       e->bop == binary_op::lte || e->bop == binary_op::gte);
-    homogenize_int_widths(lv, rv, ctx->llvm_builder, is_cmp_op);
+    homogenize_int_widths(lv, rv, ctx->llvm_builder, is_cmp_op, is_unsigned);
     bool is_fp = llvm_is_float(LLVMTypeOf(lv));
 
     switch (e->bop) {
@@ -650,11 +714,13 @@ inline LLVMValueRef visit_binary_expr(expr_node* e, ir_context* ctx) {
             return is_fp ? LLVMBuildFMul(ctx->llvm_builder, lv, rv, "fmul")
                          : LLVMBuildMul(ctx->llvm_builder,  lv, rv, "mul");
         case binary_op::div:
-            return is_fp ? LLVMBuildFDiv(ctx->llvm_builder, lv, rv, "fdiv")
-                         : LLVMBuildSDiv(ctx->llvm_builder, lv, rv, "sdiv");
+            return is_fp  ? LLVMBuildFDiv(ctx->llvm_builder,  lv, rv, "fdiv")
+                 : is_unsigned ? LLVMBuildUDiv(ctx->llvm_builder, lv, rv, "udiv")
+                               : LLVMBuildSDiv(ctx->llvm_builder, lv, rv, "sdiv");
         case binary_op::mod:
-            return is_fp ? LLVMBuildFRem(ctx->llvm_builder, lv, rv, "frem")
-                         : LLVMBuildSRem(ctx->llvm_builder, lv, rv, "srem");
+            return is_fp  ? LLVMBuildFRem(ctx->llvm_builder,  lv, rv, "frem")
+                 : is_unsigned ? LLVMBuildURem(ctx->llvm_builder, lv, rv, "urem")
+                               : LLVMBuildSRem(ctx->llvm_builder, lv, rv, "srem");
 
         // ---- comparison (yields i1) ----
         case binary_op::eq:
@@ -664,24 +730,30 @@ inline LLVMValueRef visit_binary_expr(expr_node* e, ir_context* ctx) {
             return is_fp ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealONE, lv, rv, "fcmpne")
                          : LLVMBuildICmp(ctx->llvm_builder, LLVMIntNE,   lv, rv, "icmpne");
         case binary_op::lt:
-            return is_fp ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOLT, lv, rv, "fcmplt")
-                         : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSLT,  lv, rv, "icmplt");
+            return is_fp      ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOLT, lv, rv, "fcmplt")
+                 : is_unsigned ? LLVMBuildICmp(ctx->llvm_builder, LLVMIntULT,  lv, rv, "icmpult")
+                               : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSLT,  lv, rv, "icmpslt");
         case binary_op::gt:
-            return is_fp ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOGT, lv, rv, "fcmpgt")
-                         : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSGT,  lv, rv, "icmpgt");
+            return is_fp      ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOGT, lv, rv, "fcmpgt")
+                 : is_unsigned ? LLVMBuildICmp(ctx->llvm_builder, LLVMIntUGT,  lv, rv, "icmpugt")
+                               : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSGT,  lv, rv, "icmpsgt");
         case binary_op::lte:
-            return is_fp ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOLE, lv, rv, "fcmple")
-                         : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSLE,  lv, rv, "icmple");
+            return is_fp      ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOLE, lv, rv, "fcmple")
+                 : is_unsigned ? LLVMBuildICmp(ctx->llvm_builder, LLVMIntULE,  lv, rv, "icmpule")
+                               : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSLE,  lv, rv, "icmpsle");
         case binary_op::gte:
-            return is_fp ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOGE, lv, rv, "fcmpge")
-                         : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSGE,  lv, rv, "icmpge");
+            return is_fp      ? LLVMBuildFCmp(ctx->llvm_builder, LLVMRealOGE, lv, rv, "fcmpge")
+                 : is_unsigned ? LLVMBuildICmp(ctx->llvm_builder, LLVMIntUGE,  lv, rv, "icmpuge")
+                               : LLVMBuildICmp(ctx->llvm_builder, LLVMIntSGE,  lv, rv, "icmpsge");
 
         // ---- bitwise ----
         case binary_op::bit_and: return LLVMBuildAnd(ctx->llvm_builder,  lv, rv, "band");
         case binary_op::bit_or:  return LLVMBuildOr(ctx->llvm_builder,   lv, rv, "bor");
         case binary_op::bit_xor: return LLVMBuildXor(ctx->llvm_builder,  lv, rv, "bxor");
         case binary_op::shl:     return LLVMBuildShl(ctx->llvm_builder,  lv, rv, "shl");
-        case binary_op::shr:     return LLVMBuildAShr(ctx->llvm_builder, lv, rv, "ashr");
+        case binary_op::shr:
+            return is_unsigned ? LLVMBuildLShr(ctx->llvm_builder, lv, rv, "lshr")
+                               : LLVMBuildAShr(ctx->llvm_builder, lv, rv, "ashr");
 
         default:
             throw std::runtime_error("IR: Unknown binary op in visit_binary_expr");
@@ -758,6 +830,7 @@ inline LLVMValueRef visit_assign_expr(expr_node* e, ir_context* ctx) {
     LLVMTypeRef elem_t = lvalue_elem_type(e->lhs, ctx);
     if (!elem_t) elem_t = LLVMTypeOf(rhs);
 
+    bool is_unsigned_lhs = is_unsigned_expr(e->lhs, ctx);
     LLVMValueRef lhs = LLVMBuildLoad2(ctx->llvm_builder, elem_t, ptr, "cmp_lhs");
     LLVMValueRef result = nullptr;
 
@@ -772,16 +845,20 @@ inline LLVMValueRef visit_assign_expr(expr_node* e, ir_context* ctx) {
             result = is_fp ? LLVMBuildFMul(ctx->llvm_builder, lhs, rhs, "fmul")
                            : LLVMBuildMul(ctx->llvm_builder,  lhs, rhs, "mul");  break;
         case binary_op::div_assign:
-            result = is_fp ? LLVMBuildFDiv(ctx->llvm_builder, lhs, rhs, "fdiv")
-                           : LLVMBuildSDiv(ctx->llvm_builder, lhs, rhs, "sdiv"); break;
+            result = is_fp           ? LLVMBuildFDiv(ctx->llvm_builder,  lhs, rhs, "fdiv")
+                   : is_unsigned_lhs ? LLVMBuildUDiv(ctx->llvm_builder,  lhs, rhs, "udiv")
+                                     : LLVMBuildSDiv(ctx->llvm_builder,  lhs, rhs, "sdiv"); break;
         case binary_op::mod_assign:
-            result = is_fp ? LLVMBuildFRem(ctx->llvm_builder, lhs, rhs, "frem")
-                           : LLVMBuildSRem(ctx->llvm_builder, lhs, rhs, "srem"); break;
+            result = is_fp           ? LLVMBuildFRem(ctx->llvm_builder,  lhs, rhs, "frem")
+                   : is_unsigned_lhs ? LLVMBuildURem(ctx->llvm_builder,  lhs, rhs, "urem")
+                                     : LLVMBuildSRem(ctx->llvm_builder,  lhs, rhs, "srem"); break;
         case binary_op::and_assign: result = LLVMBuildAnd(ctx->llvm_builder,  lhs, rhs, "and");  break;
         case binary_op::or_assign:  result = LLVMBuildOr(ctx->llvm_builder,   lhs, rhs, "or");   break;
         case binary_op::xor_assign: result = LLVMBuildXor(ctx->llvm_builder,  lhs, rhs, "xor");  break;
         case binary_op::shl_assign: result = LLVMBuildShl(ctx->llvm_builder,  lhs, rhs, "shl");  break;
-        case binary_op::shr_assign: result = LLVMBuildAShr(ctx->llvm_builder, lhs, rhs, "ashr"); break;
+        case binary_op::shr_assign:
+            result = is_unsigned_lhs ? LLVMBuildLShr(ctx->llvm_builder, lhs, rhs, "lshr")
+                                     : LLVMBuildAShr(ctx->llvm_builder, lhs, rhs, "ashr"); break;
         default:
             throw std::runtime_error("IR: Unknown compound assignment op");
     }
@@ -792,10 +869,40 @@ inline LLVMValueRef visit_assign_expr(expr_node* e, ir_context* ctx) {
 // ------------------------------------------------------------------ call
 
 inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
+    // Pre-pass: for context-inferred class_init args (.{...}), infer the struct type
+    // from the callee's declared parameter types so visit_class_init can resolve them.
+    std::vector<std::string> inferred_param_types(e->args.size(), "");
+    if (e->callee->kind == expr_kind::identifier) {
+        auto ft_it = ctx->global_func_types.find(e->callee->str_val);
+        if (ft_it != ctx->global_func_types.end()) {
+            LLVMTypeRef fn_t_pre = ft_it->second;
+            unsigned np = LLVMCountParamTypes(fn_t_pre);
+            std::vector<LLVMTypeRef> pt(np);
+            if (np > 0) LLVMGetParamTypes(fn_t_pre, pt.data());
+            for (size_t i = 0; i < e->args.size() && i < np; ++i) {
+                if (pt[i] && LLVMGetTypeKind(pt[i]) == LLVMStructTypeKind) {
+                    const char* sn = LLVMGetStructName(pt[i]);
+                    if (sn && *sn) inferred_param_types[i] = sn;
+                }
+            }
+        }
+    }
+
     // Build argument values.
     std::vector<LLVMValueRef> args;
-    for (auto* arg : e->args)
-        args.push_back(visit_expr(arg, ctx));
+    for (size_t ai = 0; ai < e->args.size(); ++ai) {
+        expr_node* arg = e->args[ai];
+        if (arg->kind == expr_kind::class_init && !arg->init_type && !arg->object
+            && !inferred_param_types[ai].empty()) {
+            type_node tmp_tn;
+            tmp_tn.name = inferred_param_types[ai];
+            arg->init_type = &tmp_tn;
+            args.push_back(visit_expr(arg, ctx));
+            arg->init_type = nullptr;
+        } else {
+            args.push_back(visit_expr(arg, ctx));
+        }
+    }
 
     LLVMValueRef fn   = nullptr;
     LLVMTypeRef  fn_t = nullptr;
@@ -872,6 +979,7 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
                     std::vector<LLVMValueRef> mt_args = { self_ptr };
                     mt_args.insert(mt_args.end(), args.begin(), args.end());
                     LLVMTypeRef mt_fn_t = ctx->global_func_types[mt_name];
+                    coerce_args_to_fn(mt_fn_t, mt_args, ctx->llvm_builder);
                     bool mt_void = LLVMGetTypeKind(LLVMGetReturnType(mt_fn_t)) == LLVMVoidTypeKind;
                     return LLVMBuildCall2(ctx->llvm_builder, mt_fn_t, mfit->second,
                                          mt_args.data(), static_cast<unsigned>(mt_args.size()),
@@ -1006,34 +1114,40 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
         ir_name = ir_func_name(e->resolved_overload);
     }
 
-    // Look up in global_funcs
-    auto fit = ctx->global_funcs.find(ir_name);
-    if (fit == ctx->global_funcs.end()) {
-        // Try original name as fallback
-        fit = ctx->global_funcs.find(fname);
-        if (fit == ctx->global_funcs.end()) {
-            // Try as a local function pointer variable: fp(args)
-            LLVMValueRef fp_alloca = ctx->lookup_local(fname);
-            LLVMTypeRef  fp_ptr_t  = ctx->lookup_local_type(fname);
-            if (fp_alloca && fp_ptr_t && LLVMGetTypeKind(fp_ptr_t) == LLVMPointerTypeKind) {
-                // Use deref_type (stored at declaration time) for LLVM opaque pointer compat.
-                LLVMTypeRef fn_elem_t = ctx->lookup_deref_type(fname);
-                if (!fn_elem_t) fn_elem_t = LLVMGetElementType(fp_ptr_t);
-                if (fn_elem_t && LLVMGetTypeKind(fn_elem_t) == LLVMFunctionTypeKind) {
-                    LLVMValueRef fp_val = LLVMBuildLoad2(ctx->llvm_builder, fp_ptr_t, fp_alloca, "fp");
-                    bool is_void_fp = LLVMGetTypeKind(LLVMGetReturnType(fn_elem_t)) == LLVMVoidTypeKind;
-                    return LLVMBuildCall2(ctx->llvm_builder, fn_elem_t, fp_val,
-                                         args.data(), static_cast<unsigned>(args.size()),
-                                         is_void_fp ? "" : "calltmp");
-                }
-            }
-            throw std::runtime_error("IR: Call to undeclared function '" + fname + "'");
+    // Look up in global_funcs; try several fallbacks in order
+    auto resolve_fn = [&]() -> bool {
+        if (ctx->global_funcs.count(ir_name)) return true;
+        // Try original unmangled name
+        if (ctx->global_funcs.count(fname)) { ir_name = fname; return true; }
+        // Intra-namespace bare-name call: try ns__NS_fname
+        if (!ctx->current_namespace.empty()) {
+            std::string ns_qual = ctx->current_namespace + "__NS_" + fname;
+            if (ctx->global_funcs.count(ns_qual)) { ir_name = ns_qual; return true; }
         }
-        ir_name = fname;
+        return false;
+    };
+    if (!resolve_fn()) {
+        // Try as a local function pointer variable: fp(args)
+        LLVMValueRef fp_alloca = ctx->lookup_local(fname);
+        LLVMTypeRef  fp_ptr_t  = ctx->lookup_local_type(fname);
+        if (fp_alloca && fp_ptr_t && LLVMGetTypeKind(fp_ptr_t) == LLVMPointerTypeKind) {
+            LLVMTypeRef fn_elem_t = ctx->lookup_deref_type(fname);
+            if (!fn_elem_t) fn_elem_t = LLVMGetElementType(fp_ptr_t);
+            if (fn_elem_t && LLVMGetTypeKind(fn_elem_t) == LLVMFunctionTypeKind) {
+                LLVMValueRef fp_val = LLVMBuildLoad2(ctx->llvm_builder, fp_ptr_t, fp_alloca, "fp");
+                bool is_void_fp = LLVMGetTypeKind(LLVMGetReturnType(fn_elem_t)) == LLVMVoidTypeKind;
+                return LLVMBuildCall2(ctx->llvm_builder, fn_elem_t, fp_val,
+                                     args.data(), static_cast<unsigned>(args.size()),
+                                     is_void_fp ? "" : "calltmp");
+            }
+        }
+        throw std::runtime_error("IR: Call to undeclared function '" + fname + "'");
     }
+    auto fit = ctx->global_funcs.find(ir_name);
 
     fn   = fit->second;
     fn_t = ctx->global_func_types[ir_name];
+    coerce_args_to_fn(fn_t, args, ctx->llvm_builder);
     bool is_void = LLVMGetTypeKind(LLVMGetReturnType(fn_t)) == LLVMVoidTypeKind;
 
     return LLVMBuildCall2(ctx->llvm_builder, fn_t, fn,

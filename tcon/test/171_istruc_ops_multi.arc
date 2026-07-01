@@ -1,21 +1,21 @@
 // Multiple operator overloads: -, *, !=
 istruc Vec {
     i32 x;
-    void __construct__(&self, i32 v) { self.x = v; }
-    Vec operator-(&const self, Vec rhs) {
+    void __construct__(Vec* self, i32 v) { self.x = v; }
+    Vec operator-(const Vec* self, Vec rhs) {
         Vec r;
         r.x = self.x - rhs.x;
         return r;
     }
-    Vec operator*(&const self, i32 s) {
+    Vec operator*(const Vec* self, i32 s) {
         Vec r;
         r.x = self.x * s;
         return r;
     }
-    bool operator!=(&const self, Vec rhs) {
+    bool operator!=(const Vec* self, Vec rhs) {
         return self.x != rhs.x;
     }
-    bool operator<(&const self, Vec rhs) {
+    bool operator<(const Vec* self, Vec rhs) {
         return self.x < rhs.x;
     }
 }

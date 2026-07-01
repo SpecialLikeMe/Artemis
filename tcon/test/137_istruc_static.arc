@@ -1,7 +1,7 @@
 istruc Counter {
     i32 value;
 
-    void __construct__(&self, i32 v) {
+    void __construct__(Counter* self, i32 v) {
         self.value = v;
     }
 
@@ -13,11 +13,11 @@ istruc Counter {
         return a + b;
     }
 
-    i32 get(&const self) {
+    i32 get(const Counter* self) {
         return self.value;
     }
 
-    void inc(&self) {
+    void inc(Counter* self) {
         self.value = self.value + 1;
     }
 }

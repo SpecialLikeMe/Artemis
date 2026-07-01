@@ -6,14 +6,14 @@ istruc Alloc {
     i32 total_allocs;
     i32 total_frees;
 
-    void __construct__(&self) { self.total_allocs = 0; self.total_frees = 0; }
+    void __construct__(Alloc* self) { self.total_allocs = 0; self.total_frees = 0; }
 
-    void* alloc(&self, u64 n) {
+    void* alloc(Alloc* self, u64 n) {
         self.total_allocs = self.total_allocs + 1;
         return malloc(n);
     }
 
-    void dealloc(&self, void* p) {
+    void dealloc(Alloc* self, void* p) {
         self.total_frees = self.total_frees + 1;
         free(p);
     }

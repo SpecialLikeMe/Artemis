@@ -120,6 +120,7 @@ enum class token_type {
 
     // OOP / class keywords
     kw_istruc,      // istruc  (class)
+    kw_interface,   // interface (contract declaration)
     kw_public,      // public
     kw_private,     // private
     kw_protected,   // protected
@@ -136,11 +137,15 @@ enum class token_type {
     kw_local,       // local (friend-like)
     kw_operator,    // operator
     kw_self,        // self
+    kw_this,        // this (type alias for enclosing class in method params)
 
     // Misc
     kw_defer,       // defer
     kw_extern_c,    // extern "C"
     kw_namespace,   // namespace
+    kw_try,         // try
+    kw_except,      // except
+    kw_throw,       // throw
     arrow,          // ->
 };
 
@@ -293,6 +298,7 @@ private:
             {"memstr",     token_type::kw_smem},
             {"__asm__",    token_type::kw_asm},
             {"istruc",     token_type::kw_istruc},
+            {"interface",  token_type::kw_interface},
             {"public",     token_type::kw_public},
             {"private",    token_type::kw_private},
             {"protected",  token_type::kw_protected},
@@ -309,8 +315,12 @@ private:
             {"local",      token_type::kw_local},
             {"operator",   token_type::kw_operator},
             {"self",       token_type::kw_self},
+            {"this",       token_type::kw_this},
             {"defer",      token_type::kw_defer},
             {"namespace",  token_type::kw_namespace},
+            {"try",        token_type::kw_try},
+            {"except",     token_type::kw_except},
+            {"throw",      token_type::kw_throw},
         };
         return m;
     }

@@ -1,11 +1,11 @@
 istruc Animal {
     i32 legs;
 
-    void __construct__(&self, i32 n) {
+    void __construct__(Animal* self, i32 n) {
         self.legs = n;
     }
 
-    i32 get_legs(&const self) {
+    i32 get_legs(const Animal* self) {
         return self.legs;
     }
 }
@@ -13,12 +13,12 @@ istruc Animal {
 istruc Dog : Animal {
     i32 tail;
 
-    void __construct__(&self, i32 t) {
+    void __construct__(Dog* self, i32 t) {
         self.legs = 4;
         self.tail = t;
     }
 
-    i32 describe(&const self) {
+    i32 describe(const Dog* self) {
         return self.legs * 10 + self.tail;
     }
 }

@@ -19,6 +19,8 @@ static void compile_fail(const std::string& src) {
     auto toks = l.tokenize();
     parser p(std::move(toks));
     auto* prog = p.parse();
+    if (p.had_parse_error)
+        throw std::runtime_error("Parse error");
     analyze(prog); // expected to throw
 }
 
@@ -210,15 +212,12 @@ TEST(Analyzer, IstrucMethodEmptyBody) {
     );
 }
 
-TEST(Analyzer, IstrucInheritance) {
-    compile_ok(
-        "istruc Animal {"
-        "  i32 legs;"
-        "}"
-        "istruc Dog : Animal {"
-        "  i32 fur_length;"
-        "}"
-    );
+TEST(Analyzer, IstrucInheritanceRejected) {
+    // Inheritance via class is no longer allowed; only interface implementation
+    ASSERT_THROWS(compile_fail(
+        "istruc Animal { i32 legs; }"
+        "istruc Dog : Animal { i32 fur_length; }"
+    ), std::runtime_error);
 }
 
 TEST(Analyzer, IstrucUnknownBaseClassFails) {
@@ -227,13 +226,15 @@ TEST(Analyzer, IstrucUnknownBaseClassFails) {
     ), std::runtime_error);
 }
 
-TEST(Analyzer, IstrucMandatoryVirtualRequiresVirtual) {
+TEST(Analyzer, IstrucMandatoryRejected) {
+    // 'mandatory' is a parse error now
     ASSERT_THROWS(compile_fail(
         "istruc Base { mandatory void foo(); }"
     ), std::runtime_error);
 }
 
-TEST(Analyzer, IstrucOverrideMissingBaseFails) {
+TEST(Analyzer, IstrucOverrideRejected) {
+    // 'override' is a parse error now
     ASSERT_THROWS(compile_fail(
         "istruc A { void foo() override {} }"
     ), std::runtime_error);

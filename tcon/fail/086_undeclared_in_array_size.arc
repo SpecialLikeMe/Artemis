@@ -1,6 +1,6 @@
 // FAIL: undeclared identifier used inside a class method body
 istruc Processor {
-    i32 run(&const self) {
+    i32 run(const Processor* self) {
         return undefined_constant + 1;  // ERROR: undefined_constant undeclared
     }
 }

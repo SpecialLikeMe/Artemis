@@ -27,7 +27,7 @@ istruc unordered_map<K, V> {
         return h;
     }
 
-    void __construct__(&self, i32 initial_cap, &memstr a) {
+    void __construct__(unordered_map* self, i32 initial_cap, &memstr a) {
         self.cap   = initial_cap;
         self.count = 0;
         self.slots = (umap_slot<K,V>*)a.mmap((u64)(sizeof(umap_slot<K,V>) * initial_cap));
@@ -35,13 +35,13 @@ istruc unordered_map<K, V> {
             self.slots[i].hash = UMAP_EMPTY;
     }
 
-    void __construct__(&self) {
+    void __construct__(unordered_map* self) {
         self.cap   = 0;
         self.count = 0;
         self.slots = (umap_slot<K,V>*)0;
     }
 
-    private void rehash(&self, &memstr a) {
+    private void rehash(unordered_map* self, &memstr a) {
         i32 old_cap = self.cap;
         umap_slot<K,V>* old_slots = self.slots;
         i32 new_cap = old_cap == 0 ? 16 : old_cap * 2;
@@ -56,7 +56,7 @@ istruc unordered_map<K, V> {
         if (old_slots != (umap_slot<K,V>*)0) a.deinit(old_slots);
     }
 
-    void insert(&self, K key, V val, &memstr a) {
+    void insert(unordered_map* self, K key, V val, &memstr a) {
         if (self.count * 100 >= (i32)((f64)self.cap * 75.0)) { self.rehash(a); }
         u64 h  = hash_key((i64)key);
         if (h == UMAP_EMPTY || h == UMAP_DELETED) { h = h ^ 1u; }
@@ -78,7 +78,7 @@ istruc unordered_map<K, V> {
         }
     }
 
-    V* get(&self, K key) {
+    V* get(unordered_map* self, K key) {
         if (self.cap == 0) { return (V*)0; }
         u64 h   = hash_key((i64)key);
         if (h == UMAP_EMPTY || h == UMAP_DELETED) { h = h ^ 1u; }
@@ -86,14 +86,14 @@ istruc unordered_map<K, V> {
         while (true) {
             u64 sh = self.slots[idx].hash;
             if (sh == UMAP_EMPTY) { return (V*)0; }
-            if (sh == h && self.slots[idx].key == key) { return &self.slots[idx].val; }
+            if (sh == h && self.slots[idx].key == key) { return unordered_map* self.slots[idx].val; }
             idx = (idx + 1) % self.cap;
         }
     }
 
-    bool contains(&self, K key) { return self.get(key) != (V*)0; }
+    bool contains(unordered_map* self, K key) { return self.get(key) != (V*)0; }
 
-    void remove(&self, K key) {
+    void remove(unordered_map* self, K key) {
         if (self.cap == 0) { return; }
         u64 h   = hash_key((i64)key);
         if (h == UMAP_EMPTY || h == UMAP_DELETED) { h = h ^ 1u; }
@@ -110,10 +110,10 @@ istruc unordered_map<K, V> {
         }
     }
 
-    i32  size(&self)     { return self.count; }
-    bool is_empty(&self) { return self.count == 0; }
+    i32  size(unordered_map* self)     { return self.count; }
+    bool is_empty(unordered_map* self) { return self.count == 0; }
 
-    void each(&self, void(K, V)* cb) {
+    void each(unordered_map* self, void(K, V)* cb) {
         for (i32 i = 0; i < self.cap; i = i + 1) {
             u64 h = self.slots[i].hash;
             if (h != UMAP_EMPTY && h != UMAP_DELETED)
@@ -121,7 +121,7 @@ istruc unordered_map<K, V> {
         }
     }
 
-    void deinit(&self, &memstr a) {
+    void deinit(unordered_map* self, &memstr a) {
         if (self.slots != (umap_slot<K,V>*)0) a.deinit(self.slots);
         self.slots = (umap_slot<K,V>*)0;
         self.count = 0; self.cap = 0;

@@ -80,8 +80,15 @@ int main(int argc, char** argv) {
     if (argc >= 2) {
         test_dir = argv[1];
     } else {
-        fs::path candidate = exe_dir.empty() ? fs::path("test") : (fs::path(exe_dir) / "test");
-        test_dir = fs::is_directory(candidate) ? candidate.string() : "test";
+#ifndef ARC_DEFAULT_TEST_SUBDIR
+#  define ARC_DEFAULT_TEST_SUBDIR "test"
+#endif
+        fs::path candidate = exe_dir.empty()
+            ? fs::path(ARC_DEFAULT_TEST_SUBDIR)
+            : (fs::path(exe_dir).parent_path() / "tcon" / ARC_DEFAULT_TEST_SUBDIR);
+        if (!fs::is_directory(candidate))
+            candidate = fs::path(ARC_DEFAULT_TEST_SUBDIR);
+        test_dir = candidate.string();
     }
 
     std::string bin = artemis_bin(exe_dir);

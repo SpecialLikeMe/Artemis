@@ -1,8 +1,8 @@
 // FAIL: using a private operator overload from outside the class
 istruc Val {
     i32 n;
-    public void __construct__(&self, i32 x) { self.n = x; }
-    private Val operator+(&const self, Val other) {
+    public void __construct__(Val* self, i32 x) { self.n = x; }
+    private Val operator+(const Val* self, Val other) {
         Val r;
         r.n = self.n + other.n;
         return r;

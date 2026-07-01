@@ -1,6 +1,6 @@
 // FAIL: calling a private method from outside the class
 istruc Util {
-    private i32 compute(&const self) { return 42; }
+    private i32 compute(const Util* self) { return 42; }
 }
 i32 main() {
     Util u;

@@ -8,13 +8,13 @@ istruc Arena {
     u64   used;
     u64   cap;
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(Arena* self, u64 capacity) {
         self.base = malloc(capacity);
         self.used = 0;
         self.cap  = capacity;
     }
 
-    void* alloc(&self, u64 size) {
+    void* alloc(Arena* self, u64 size) {
         if (self.used + size > self.cap) { return 0; }
         // Manually compute the pointer offset: base + used
         u8* p = (u8*)self.base;
@@ -23,9 +23,9 @@ istruc Arena {
         return result;
     }
 
-    void reset(&self) { self.used = 0; }
+    void reset(Arena* self) { self.used = 0; }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(Arena* self) { free(self.base); }
 }
 
 i32 main() {

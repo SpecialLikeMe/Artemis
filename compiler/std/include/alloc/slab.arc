@@ -17,7 +17,7 @@ istruc slab_page {
     void*     free_slots[64];
     slab_page* next;
 
-    void __construct__(&self, u64 sz) {
+    void __construct__(slab_page* self, u64 sz) {
         self.slot_size  = sz;
         self.capacity   = SLAB_OBJECTS_PER_SLAB;
         self.free_count = SLAB_OBJECTS_PER_SLAB;
@@ -27,20 +27,20 @@ istruc slab_page {
             self.free_slots[i] = (void*)((u8*)self.base + (u64)i * sz);
     }
 
-    void* alloc_slot(&self) {
+    void* alloc_slot(slab_page* self) {
         if (self.free_count == 0) { return (void*)0; }
         self.free_count = self.free_count - 1;
         return self.free_slots[self.free_count];
     }
 
-    void return_slot(&self, void* p) {
+    void return_slot(slab_page* self, void* p) {
         if (self.free_count < self.capacity) {
             self.free_slots[self.free_count] = p;
             self.free_count = self.free_count + 1;
         }
     }
 
-    bool has_room(&self) { return self.free_count > 0; }
+    bool has_room(slab_page* self) { return self.free_count > 0; }
 }
 
 // slab_page struct layout (for sizeof):

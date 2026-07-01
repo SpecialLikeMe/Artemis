@@ -12,7 +12,7 @@ namespace rand {
 istruc xoshiro_state {
     u64 s[4];
 
-    void __construct__(&self, u64 seed) {
+    void __construct__(xoshiro_state* self, u64 seed) {
         for (i32 i = 0; i < 4; i = i + 1) {
             seed = seed + 0x9e3779b97f4a7c15u;
             u64 z = seed;
@@ -22,7 +22,7 @@ istruc xoshiro_state {
         }
     }
 
-    u64 next_u64(&self) {
+    u64 next_u64(xoshiro_state* self) {
         u64 r1  = self.s[1] * 5;
         u64 res = ((r1 << 7) | (r1 >> 57)) * 9;
         u64 t   = self.s[1] << 17;
@@ -36,23 +36,23 @@ istruc xoshiro_state {
         return res;
     }
 
-    u32  next_u32(&self)          { return (u32)(self.next_u64() >> 32); }
-    f64  next_f64(&self)          { return (f64)(self.next_u64() >> 11) * (1.0 / 9007199254740992.0); }
-    f32  next_f32(&self)          { return (f32)(self.next_u32() >> 8) * (1.0 / 16777216.0); }
+    u32  next_u32(xoshiro_state* self)          { return (u32)(self.next_u64() >> 32); }
+    f64  next_f64(xoshiro_state* self)          { return (f64)(self.next_u64() >> 11) * (1.0 / 9007199254740992.0); }
+    f32  next_f32(xoshiro_state* self)          { return (f32)(self.next_u32() >> 8) * (1.0 / 16777216.0); }
 
-    i32 range_i32(&self, i32 lo, i32 hi) {
+    i32 range_i32(xoshiro_state* self, i32 lo, i32 hi) {
         u32 span = (u32)(hi - lo + 1);
         u32 r    = self.next_u32();
         return lo + (i32)(r % span);
     }
 
-    f64 range_f64(&self, f64 lo, f64 hi) {
+    f64 range_f64(xoshiro_state* self, f64 lo, f64 hi) {
         return lo + self.next_f64() * (hi - lo);
     }
 
-    bool next_bool(&self) { return (self.next_u64() & 1u) != 0; }
+    bool next_bool(xoshiro_state* self) { return (self.next_u64() & 1u) != 0; }
 
-    void fill_bytes(&self, u8* buf, u64 n) {
+    void fill_bytes(xoshiro_state* self, u8* buf, u64 n) {
         u64 i = 0;
         while (i + 8 <= n) {
             u64 v = self.next_u64();
@@ -71,7 +71,7 @@ istruc pcg_state {
     u64 pcg_s;
     u64 inc;
 
-    void __construct__(&self, u64 seed, u64 seq) {
+    void __construct__(pcg_state* self, u64 seed, u64 seq) {
         self.pcg_s = 0;
         self.inc   = (seq << 1) | 1u;
         self.next_u32();
@@ -79,7 +79,7 @@ istruc pcg_state {
         self.next_u32();
     }
 
-    u32 next_u32(&self) {
+    u32 next_u32(pcg_state* self) {
         u64 old = self.pcg_s;
         self.pcg_s = old * 6364136223846793005u + self.inc;
         u32 xsh = (u32)(((old >> 18) ^ old) >> 27);
@@ -87,10 +87,10 @@ istruc pcg_state {
         return (xsh >> rot) | (xsh << ((-(i32)rot) & 31));
     }
 
-    f64  next_f64(&self) { return (f64)(self.next_u32() >> 1) * (1.0 / 2147483648.0); }
-    bool next_bool(&self) { return (self.next_u32() & 1u) != 0; }
+    f64  next_f64(pcg_state* self) { return (f64)(self.next_u32() >> 1) * (1.0 / 2147483648.0); }
+    bool next_bool(pcg_state* self) { return (self.next_u32() & 1u) != 0; }
 
-    i32 range_i32(&self, i32 lo, i32 hi) {
+    i32 range_i32(pcg_state* self, i32 lo, i32 hi) {
         u32 span = (u32)(hi - lo + 1);
         return lo + (i32)(self.next_u32() % span);
     }

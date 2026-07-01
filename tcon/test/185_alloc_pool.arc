@@ -8,7 +8,7 @@ istruc Pool {
     i32   top;              // number of free slots remaining
     void* block;            // backing allocation
 
-    void __construct__(&self, u64 elem_size, i32 n) {
+    void __construct__(Pool* self, u64 elem_size, i32 n) {
         self.block = malloc(elem_size * (u64)n);
         self.top   = 0;
         u8* p = (u8*)self.block;
@@ -18,20 +18,20 @@ istruc Pool {
         }
     }
 
-    void* acquire(&self) {
+    void* acquire(Pool* self) {
         if (self.top == 0) { return (void*)0; }
         self.top = self.top - 1;
         return self.free_slots[self.top];
     }
 
-    void release(&self, void* p) {
+    void release(Pool* self, void* p) {
         if (self.top < 16) {
             self.free_slots[self.top] = p;
             self.top = self.top + 1;
         }
     }
 
-    void deinit(&self) { free(self.block); }
+    void deinit(Pool* self) { free(self.block); }
 }
 
 i32 main() {

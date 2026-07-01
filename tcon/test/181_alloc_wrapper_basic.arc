@@ -5,19 +5,19 @@ extern void free(void* ptr);
 istruc HeapAlloc {
     i32 count;
 
-    void __construct__(&self) { self.count = 0; }
+    void __construct__(HeapAlloc* self) { self.count = 0; }
 
-    void* alloc(&self, u64 size) {
+    void* alloc(HeapAlloc* self, u64 size) {
         self.count = self.count + 1;
         return malloc(size);
     }
 
-    void dealloc(&self, void* ptr) {
+    void dealloc(HeapAlloc* self, void* ptr) {
         self.count = self.count - 1;
         free(ptr);
     }
 
-    i32 outstanding(&const self) { return self.count; }
+    i32 outstanding(const HeapAlloc* self) { return self.count; }
 }
 
 i32 main() {
