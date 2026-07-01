@@ -12,13 +12,13 @@ memstr ring {
     u64   cap;
     u64   head;
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(ring* self, u64 capacity) {
         self.base = malloc(capacity);
         self.cap  = capacity;
         self.head = 0;
     }
 
-    void* alloc_bytes(&self, u64 n) {
+    void* alloc_bytes(ring* self, u64 n) {
         u64 aligned = (n + 7) & ~(u64)7;
         if (aligned > self.cap) { return (void*)0; }
         if (self.head + aligned > self.cap) { self.head = 0; }
@@ -27,9 +27,9 @@ memstr ring {
         return p;
     }
 
-    void reset(&self) { self.head = 0; }
+    void reset(ring* self) { self.head = 0; }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(ring* self) { free(self.base); }
 }
 
 } // alloc

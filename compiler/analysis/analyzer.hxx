@@ -77,6 +77,7 @@ private:
     std::string   current_namespace; // set while visiting declarations inside a namespace
     int           loop_depth    = 0;
     int           switch_depth  = 0;
+    std::unordered_map<std::string, type_node*> using_aliases; // using X = type;
 
     // Generic templates (not type-checked here; instantiated by the IR via monomorphization).
     std::unordered_map<std::string, func_decl*> generic_templates;
@@ -164,6 +165,7 @@ private:
     void check_var_type(type_node* t, uint64_t line) {
         if (!t) throw std::runtime_error(err(line, "null type"));
         if (t->is_func_ptr || t->is_self_ref || t->is_memstr_ref) return;
+        if (t->is_auto) return; // auto placeholder — type inferred from init
         if (t->is_primitive) {
             if (t->prim == prim_type_t::void_t && t->pointer_depth == 0)
                 throw std::runtime_error(err(line, "Cannot declare a variable of type 'void'"));
@@ -171,6 +173,11 @@ private:
         }
         resolve_type_name(t);
         const std::string& name = t->name.value_or("");
+        // Check using aliases before failing
+        if (!scope.is_known_type(name)) {
+            auto ua = using_aliases.find(name);
+            if (ua != using_aliases.end()) return; // valid alias, resolved at use
+        }
         if (!scope.is_known_type(name))
             throw std::runtime_error(err(line, "Unknown type '" + name + "'"));
     }
@@ -189,8 +196,13 @@ private:
         while (t && !t->is_primitive && t->name.has_value()) {
             const std::string& name = t->name.value();
             auto it = scope.typedefs.find(name);
-            if (it == scope.typedefs.end()) break;
-            t = it->second->underlying;
+            if (it != scope.typedefs.end()) {
+                t = it->second->underlying;
+            } else {
+                auto ua = using_aliases.find(name);
+                if (ua != using_aliases.end()) t = ua->second;
+                else break;
+            }
             if (++depth > 64)
                 throw std::runtime_error(err(line, "Circular typedef chain"));
         }
@@ -303,6 +315,8 @@ private:
         if (auto* d = dynamic_cast<extern_c_block*>(node)) { visit_extern_c_block(d);   return; }
         if (dynamic_cast<memstr_decl*>(node))               { return; } // stub: just skip for now
         if (auto* d = dynamic_cast<namespace_decl*>(node)) { visit_namespace_decl(d); return; }
+        if (auto* d = dynamic_cast<using_decl*>(node))     { visit_using_decl(d); return; }
+        // Macro stub nodes (const_resolve, proc macros) — stored as namespace_decl with __macro_ prefix
         throw std::runtime_error(err(node->line, "Unrecognised top-level declaration"));
     }
 
@@ -563,6 +577,7 @@ private:
         if (auto* n = dynamic_cast<expr_stmt*>(node))     { visit_expr(n->expr);    return; }
         if (auto* n = dynamic_cast<asm_stmt*>(node))      { visit_asm_stmt(n);      return; }
         if (auto* n = dynamic_cast<defer_stmt*>(node))    { visit_defer_stmt(n);    return; }
+        if (auto* n = dynamic_cast<for_range_stmt*>(node)) { visit_for_range(n); return; }
         if (auto* n = dynamic_cast<throw_stmt*>(node))    { if (n->value) visit_expr(n->value); return; }
         if (auto* n = dynamic_cast<try_stmt*>(node))      {
             visit_block(n->body);
@@ -719,6 +734,11 @@ private:
     }
 
     void visit_local_var_decl(var_decl* d) {
+        // Resolve using aliases (e.g. 'var' → auto) before type checking.
+        if (d->type && !d->type->is_primitive && !d->type->is_auto && d->type->name) {
+            auto ua = using_aliases.find(*d->type->name);
+            if (ua != using_aliases.end()) d->type = ua->second;
+        }
         check_var_type(d->type, d->line);
         // consteval means the user will call __construct__ manually; passing ctor args
         // at the declaration site (consteval T v(args)) is an error.
@@ -732,6 +752,12 @@ private:
             if (init_e->kind == expr_kind::class_init)
                 init_e->is_implicit_init = true;
             type_node* it = visit_expr(init_e);
+            // auto type: infer from initializer (set d->type so IR can use it).
+            if (d->type->is_auto) {
+                d->type = it;
+                scope.declare_var(d->name, d);
+                return;
+            }
             // Context-inferred class initializer .{...} adopts the variable's type; skip check.
             bool inferred_init = (init_e->kind == expr_kind::class_init && !init_e->init_type);
             if (!inferred_init && !assignable_td(d->type, it))
@@ -1617,5 +1643,38 @@ private:
         throw std::runtime_error(err(e->line,
             "Ternary branches have incompatible types: '" +
             type_to_str(tt) + "' vs '" + type_to_str(et) + "'"));
+    }
+
+    void visit_using_decl(using_decl* d) {
+        if (!d->alias.empty() && d->type_alias) {
+            using_aliases[d->alias] = d->type_alias;
+        }
+    }
+
+    void visit_for_range(for_range_stmt* n) {
+        // Type-check the range expression and declare the loop variable in the body scope.
+        type_node* range_t = visit_expr(n->range);
+        // Determine element type: if range is array, elem = element type; if pointer, use pointer base.
+        type_node* elem_t = n->var_type;
+        if (!elem_t || elem_t->is_auto) {
+            // Infer element type from range type.
+            if (range_t->pointer_depth > 0) {
+                auto* et = new type_node(*range_t);
+                et->pointer_depth--;
+                et->array_size = std::nullopt;
+                elem_t = et;
+            } else {
+                elem_t = range_t; // fallback
+            }
+            n->var_type = elem_t;
+        }
+        scope.push();
+        auto* loop_var = new var_decl();
+        loop_var->type = elem_t;
+        loop_var->name = n->var_name;
+        loop_var->line = n->line;
+        scope.declare_var(n->var_name, loop_var);
+        visit_stmt(n->body);
+        scope.pop();
     }
 };

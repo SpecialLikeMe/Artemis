@@ -147,6 +147,20 @@ enum class token_type {
     kw_except,      // except
     kw_throw,       // throw
     arrow,          // ->
+
+    // New features
+    kw_auto,        // auto (type inference / trailing type placeholder)
+    kw_using,       // using (contextual alias: using let = const auto;)
+    kw_pragma,      // pragma (preprocessor hint: @pragma once)
+    kw_derive,      // derive (proc macro marker)
+    kw_attr,        // attr   (proc macro marker)
+    kw_macro,       // macro  (proc macro marker)
+    kw_verify,      // verify (proc macro syntax-check flag)
+    kw_quote,       // quote  (tokenstream literal block)
+    kw_const_resolve, // const_resolve (fn macro definition)
+    kw_res,         // res    (error-handling resource block)
+    kw_error,       // error  (error literal: error.Variant)
+    kw_null_t,      // null_t (internal nullable wrapper — not a source keyword)
 };
 
 struct token_t {
@@ -308,7 +322,6 @@ private:
             {"static",     token_type::kw_static},
             {"mandatory",  token_type::kw_mandatory},
             {"noexcept",   token_type::kw_noexcept},
-            {"explicit",   token_type::kw_explicit},
             {"constexpr",  token_type::kw_constexpr},
             {"consteval",  token_type::kw_consteval},
             {"sta",        token_type::kw_sta},
@@ -318,9 +331,13 @@ private:
             {"this",       token_type::kw_this},
             {"defer",      token_type::kw_defer},
             {"namespace",  token_type::kw_namespace},
-            {"try",        token_type::kw_try},
-            {"except",     token_type::kw_except},
-            {"throw",      token_type::kw_throw},
+            {"try",            token_type::kw_try},
+            {"except",         token_type::kw_except},
+            {"throw",          token_type::kw_throw},
+            {"explicit",       token_type::kw_explicit},
+            {"auto",           token_type::kw_auto},
+            {"using",          token_type::kw_using},
+            {"const_resolve",  token_type::kw_const_resolve},
         };
         return m;
     }

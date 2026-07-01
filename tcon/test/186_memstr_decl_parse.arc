@@ -9,13 +9,13 @@ memstr BumpAlloc {
     u64   used;
     u64   cap;
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(BumpAlloc* self, u64 capacity) {
         self.base = malloc(capacity);
         self.used = 0;
         self.cap  = capacity;
     }
 
-    void* alloc_bytes(&self, u64 n) {
+    void* alloc_bytes(BumpAlloc* self, u64 n) {
         u64 aligned = (n + 7) & ~(u64)7;
         if (self.used + aligned > self.cap) { return (void*)0; }
         void* p = (void*)((u8*)self.base + self.used);
@@ -23,7 +23,7 @@ memstr BumpAlloc {
         return p;
     }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(BumpAlloc* self) { free(self.base); }
 }
 
 i32 main() {

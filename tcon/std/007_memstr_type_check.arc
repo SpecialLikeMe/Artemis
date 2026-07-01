@@ -7,20 +7,20 @@ memstr MyAlloc {
     u64   used;
     u64   cap;
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(MyAlloc* self, u64 capacity) {
         self.base = malloc(capacity);
         self.used = (u64)0;
         self.cap  = capacity;
     }
 
-    void* alloc_bytes(&self, u64 n) {
+    void* alloc_bytes(MyAlloc* self, u64 n) {
         if (self.used + n > self.cap) { return (void*)0; }
         void* p = (void*)((u8*)self.base + self.used);
         self.used = self.used + n;
         return p;
     }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(MyAlloc* self) { free(self.base); }
 }
 
 i32 main() {

@@ -12,7 +12,7 @@ memstr free_list {
     u64   cap;
     void* free_head;  // pointer to first free block (null = no free blocks)
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(free_list* self, u64 capacity) {
         self.cap  = capacity;
         self.base = malloc(capacity);
         // Initialise the single free block covering the whole region.
@@ -21,7 +21,7 @@ memstr free_list {
         self.free_head = self.base;
     }
 
-    void* alloc_bytes(&self, u64 n) {
+    void* alloc_bytes(free_list* self, u64 n) {
         u64 header = (u64)16;
         u64 total  = n + header;
         // Align total up to 8
@@ -55,7 +55,7 @@ memstr free_list {
         return (void*)0;
     }
 
-    void free_ptr(&self, void* p) {
+    void free_ptr(free_list* self, void* p) {
         if (p == (void*)0) { return; }
         void* h = (void*)((u8*)p - (u64)16);
         // Prepend to free list.
@@ -80,7 +80,7 @@ memstr free_list {
         }
     }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(free_list* self) { free(self.base); }
 }
 
 } // alloc

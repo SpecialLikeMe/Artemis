@@ -57,7 +57,7 @@ memstr slab {
     slab_page* head;
     u64        slot_size;
 
-    void __construct__(&self, u64 object_size) {
+    void __construct__(slab* self, u64 object_size) {
         // Round up to 8-byte alignment
         u64 rem = object_size % (u64)8;
         if (rem != (u64)0) { self.slot_size = object_size + ((u64)8 - rem); }
@@ -65,7 +65,7 @@ memstr slab {
         self.head = (void*)0;
     }
 
-    void* alloc_obj(&self) {
+    void* alloc_obj(slab* self) {
         slab_page* pg = self.head;
         while (pg != (void*)0) {
             if ((*pg).has_room()) { return (*pg).alloc_slot(); }
@@ -79,7 +79,7 @@ memstr slab {
         return (*new_pg).alloc_slot();
     }
 
-    void free_obj(&self, void* p) {
+    void free_obj(slab* self, void* p) {
         slab_page* pg = self.head;
         while (pg != (void*)0) {
             u64 base_v = (u64)((*pg).base);

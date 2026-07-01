@@ -108,6 +108,9 @@ struct func_decl : ast_node {
     bool                     is_overloaded = false; // set by analyzer
     bool                     is_noexcept = false;   // noexcept modifier (informational)
     std::vector<std::string> type_params;           // generic type parameters <T, U>
+    // Error union: !T or E!T return type
+    bool                     is_error_union = false; // function may return an error
+    type_node*               err_type = nullptr;     // explicit error type E (null = inferred)
 };
 
 struct struct_decl : ast_node {
@@ -262,6 +265,25 @@ struct namespace_decl : ast_node {
     std::vector<ast_node*> decls;
 };
 
+// `using name = tokens...;`  — contextual alias (works like typedef but for any token sequence)
+struct using_decl : ast_node {
+    std::string alias;       // left-hand name
+    std::string expansion;   // raw token text (applied by analyzer as a type/keyword alias)
+    type_node*  type_alias = nullptr; // non-null if the RHS parses as a type
+};
+
+// Range-based for loop:  for (T name : expr) body
+struct for_range_stmt : ast_node {
+    type_node*  var_type = nullptr;   // element type  (auto = inferred)
+    std::string var_name;
+    expr_node*  range    = nullptr;
+    ast_node*   body     = nullptr;
+};
+
+// Error union return type marker  (!T  or  E!T)
+// Stored on func_decl; the parser sets is_error_union=true and fills err_type/ok_type.
+// ok_type is the normal return type, err_type is the explicit error type (null = inferred).
+
 // top-level program
 struct program_node : ast_node {
     std::vector<ast_node*> decls;
@@ -305,6 +327,8 @@ private:
         if (check(token_type::kw_extern_std)) return parse_extern_std();
         if (check(token_type::kw_smem))       return parse_memstr_decl();
         if (check(token_type::kw_namespace))  return parse_namespace_decl();
+        if (check(token_type::kw_using))      return parse_using_decl();
+        if (check(token_type::kw_const_resolve)) return parse_const_resolve_macro();
         return parse_func_or_var_decl();
     }
 
@@ -312,28 +336,20 @@ private:
     type_node* parse_type() {
         auto* t = alloc<type_node>();
 
-        // Handle &self and &const self (legacy — kept for backward compat during test migration)
-        if (check(token_type::addr)) {
-            size_t saved = current;
+        // Nullable prefix: ?T
+        if (check(token_type::question)) {
+            advance(); // consume ?
+            type_node* inner = parse_type();
+            inner->is_nullable = true;
+            return inner;
+        }
+
+        // &memstr parameter type
+        if (check(token_type::addr) && peek_at(1).type == token_type::kw_smem) {
             advance(); // consume &
-            if (check(token_type::kw_const) && peek_at(1).type == token_type::kw_self) {
-                advance(); // const
-                advance(); // self
-                t->is_self_ref = true; t->is_self_ref_const = true;
-                return t;
-            }
-            if (check(token_type::kw_self)) {
-                advance(); // self
-                t->is_self_ref = true;
-                return t;
-            }
-            if (check(token_type::kw_smem)) {
-                advance(); // memstr
-                t->is_memstr_ref = true;
-                return t;
-            }
-            // not &self or &memstr — restore and treat & as bitwise-and (not a type)
-            current = saved;
+            advance(); // consume memstr
+            t->is_memstr_ref = true;
+            return t;
         }
 
         // storage class specifiers
@@ -393,6 +409,16 @@ private:
         for (auto& [tt, pt] : prim_map) {
             if (match(tt)) { t->prim = pt; t->is_primitive = true; found = true; break; }
         }
+        // 'auto' as a type placeholder (trailing-type form)
+        if (!found && check(token_type::kw_auto)) {
+            advance();
+            t->is_auto = true;
+            t->is_primitive = false;
+            // Still consume pointer stars and array (e.g. const auto*)
+            while (check(token_type::ast)) { advance(); t->pointer_depth++; }
+            return t;
+        }
+
         // 'self' or 'this' as type keyword inside method params (alias for the enclosing class)
         if (!found && (check(token_type::kw_self) || check(token_type::kw_this))) {
             advance();
@@ -480,6 +506,23 @@ private:
         if (check(token_type::kw_constexpr)) { advance(); is_cexpr = true; }
         if (check(token_type::kw_consteval)) { advance(); is_ceval = true; }
         type_node* ret = parse_type();
+
+        // Error union return: !T or E!T before function name
+        // Handled by parse_error_return_type if type was just parsed
+        // Check if we have !T: leading type followed by not_
+        // (E!T means ret=E, then !, then T)
+        bool is_err_union = false;
+        type_node* err_type = nullptr;
+        type_node* ok_type  = nullptr;
+        if (check(token_type::not_) && peek_at(1).type != token_type::eq) {
+            // E!T: err_type = ret, ok_type = T after !
+            is_err_union = true;
+            err_type = ret;
+            advance(); // consume !
+            ok_type = parse_type();
+            ret = ok_type;
+        }
+
         auto name_tok  = consume(token_type::id, "Expected declaration name");
 
         // Optional generic type parameters: name<T, U>
@@ -488,7 +531,13 @@ private:
         if (match(token_type::oparen)) {
             auto* fd = parse_func_body(ret, name_tok);
             fd->type_params = std::move(type_params);
+            if (is_err_union) { fd->is_error_union = true; fd->err_type = err_type; }
             return fd;
+        }
+        // Trailing type for variable: auto name: type = expr;
+        if (ret->is_auto && check(token_type::colon)) {
+            advance(); // consume ':'
+            ret = parse_type();
         }
         auto* vd = parse_var_body(ret, name_tok);
         vd->is_constexpr = is_cexpr;
@@ -544,8 +593,36 @@ private:
         }
         consume(token_type::cparen, "Expected ')' after parameters");
 
-        // Optional function qualifiers after ')': noexcept (informational)
+        // Optional function qualifiers after ')': noexcept, attr/derive (proc macro markers)
         while (check(token_type::kw_noexcept)) { advance(); fd->is_noexcept = true; }
+        // Skip proc macro markers (attr/derive/macro/verify) — parsed but not yet implemented
+        while (check(token_type::id) && (peek().value == "attr" || peek().value == "derive" ||
+               peek().value == "macro" || peek().value == "verify")) advance();
+
+        // Trailing return type: auto foo() int { } or auto foo() !int { } or auto foo() E!T { }
+        if (fd->ret_type && fd->ret_type->is_auto) {
+            // Expect the actual return type now
+            if (is_type_start() || check(token_type::not_)) {
+                if (check(token_type::not_)) {
+                    // Inferred error union: !T
+                    advance();
+                    fd->ret_type = parse_type();
+                    fd->is_error_union = true;
+                    fd->err_type = nullptr; // inferred
+                } else if (check(token_type::id) && peek_at(1).type == token_type::not_) {
+                    // Explicit error union: E!T
+                    fd->err_type = parse_type(); // parse E
+                    advance(); // consume !
+                    fd->ret_type = parse_type(); // parse T
+                    fd->is_error_union = true;
+                } else {
+                    fd->ret_type = parse_type();
+                }
+            }
+        } else if (!fd->ret_type || !fd->ret_type->is_auto) {
+            // Even for non-auto leading types, allow trailing type if trailing !T notation
+            // (handled at call site via is_err_union flag)
+        }
 
         if (match(token_type::sm)) {
             fd->body = nullptr; // forward declaration
@@ -835,6 +912,51 @@ private:
         return nd;
     }
 
+    // -------------------------------------------------------- using alias
+    // using name = tokens...;   (contextual alias)
+    using_decl* parse_using_decl() {
+        uint64_t ln = peek().line;
+        advance(); // consume 'using'
+        auto* ud = alloc<using_decl>();
+        ud->line = ln;
+        ud->alias = consume(token_type::id, "Expected alias name after 'using'").value;
+        consume(token_type::assign, "Expected '=' in 'using' declaration");
+        // Collect the RHS as a type if possible, else as raw text
+        if (is_type_start()) {
+            ud->type_alias = parse_type();
+        } else {
+            // Collect raw text until ';'
+            std::string raw;
+            while (!check(token_type::sm) && !is_at_end()) {
+                raw += previous().value + " ";
+                advance();
+            }
+            ud->expansion = raw;
+        }
+        consume(token_type::sm, "Expected ';' after 'using' declaration");
+        return ud;
+    }
+
+    // -------------------------------------------------------- const_resolve macro
+    // const_resolve name { patterns... }
+    ast_node* parse_const_resolve_macro() {
+        uint64_t ln = peek().line;
+        advance(); // consume 'const_resolve'
+        auto* nd = alloc<namespace_decl>(); // reuse namespace_decl as a stub container
+        nd->line = ln;
+        nd->name = "__macro_" + consume(token_type::id, "Expected macro name").value;
+        consume(token_type::obrace, "Expected '{' after macro name");
+        // Skip the body — balance braces and consume raw tokens
+        int depth = 1;
+        while (depth > 0 && !is_at_end()) {
+            if (check(token_type::obrace)) { depth++; advance(); }
+            else if (check(token_type::cbrace)) { if (--depth == 0) break; advance(); }
+            else advance();
+        }
+        consume(token_type::cbrace, "Expected '}' to close macro body");
+        return nd;
+    }
+
     // -------------------------------------------------------- interface
     // interface InterfaceName { rettype methodname(params); ... }
     class_decl* parse_interface_decl() {
@@ -1112,23 +1234,7 @@ private:
                 meth->is_variadic = true;
                 break;
             }
-            // Legacy &self / &const self — still accepted, converted to explicit self
-            if (check(token_type::addr)) {
-                size_t saved = current;
-                advance(); // consume &
-                if (check(token_type::kw_const) && peek_at(1).type == token_type::kw_self) {
-                    advance(); advance(); // const self
-                    meth->has_self = true; meth->self_const = true; meth->self_param_name = "self";
-                    continue;
-                }
-                if (check(token_type::kw_self)) {
-                    advance(); // self
-                    meth->has_self = true; meth->self_param_name = "self";
-                    continue;
-                }
-                current = saved;
-            }
-            // Regular parameter
+                // Regular parameter
             type_node* pt = parse_type();
             // Resolve is_self_type to the actual class name so downstream is uniform
             if (pt->is_self_type && !class_name.empty()) pt->name = class_name;
@@ -1195,8 +1301,16 @@ private:
         advance(); // 'typedef'
         auto* td  = alloc<typedef_decl>();
         td->line  = ln;
-        td->underlying = parse_type();
-        td->alias = consume(token_type::id, "Expected typedef alias").value;
+        // typedef auto Name = Type;  — trailing-type form
+        if (check(token_type::kw_auto)) {
+            advance(); // consume 'auto'
+            td->alias = consume(token_type::id, "Expected typedef alias").value;
+            consume(token_type::assign, "Expected '=' in typedef auto");
+            td->underlying = parse_type();
+        } else {
+            td->underlying = parse_type();
+            td->alias = consume(token_type::id, "Expected typedef alias").value;
+        }
         consume(token_type::sm, "Expected ';' after typedef");
         return td;
     }
@@ -1321,11 +1435,14 @@ private:
     }
 
     bool is_type_start() const {
+        // '?' prefix means nullable type
+        if (peek().type == token_type::question) return true;
         static const std::vector<token_type> type_tokens = {
             token_type::kw_const, token_type::kw_volatile,
             token_type::kw_signed, token_type::kw_unsigned,
             token_type::kw_extern, token_type::kw_extern_std,
             token_type::kw_inline, token_type::kw_register,
+            token_type::kw_auto,   // auto placeholder
             token_type::kw_char,
             token_type::kw_i8,   token_type::kw_i16,  token_type::kw_i32,
             token_type::kw_i64,  token_type::kw_i128, token_type::kw_i256, token_type::kw_i512,
@@ -1393,6 +1510,11 @@ private:
         if (!check(token_type::id) && !check(token_type::kw_self))
             throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) + ": Expected variable name");
         auto name_tok  = advance();
+        // Trailing type: auto name: type = ...
+        if (t->is_auto && check(token_type::colon)) {
+            advance(); // consume ':'
+            t = parse_type();
+        }
         auto* vd       = alloc<var_decl>();
         vd->line       = name_tok.line;
         vd->type       = t;
@@ -1448,10 +1570,58 @@ private:
         return n;
     }
 
-    for_stmt* parse_for() {
-        auto* n = alloc<for_stmt>();
-        n->line = advance().line;
+    ast_node* parse_for() {
+        uint64_t ln = advance().line; // consume 'for'
         consume(token_type::oparen, "Expected '(' after 'for'");
+
+        // Range-based for: for (T name : expr) — detect by lookahead for ':' before ';'
+        // Heuristic: if a type is followed by identifier and then ':', it's range-for.
+        {
+            size_t saved = current;
+            if (is_type_start()) {
+                size_t k = 0;
+                // Skip over the type tokens (rough heuristic: scan for id followed by ':')
+                // We try to parse type + id and see if ':' follows.
+                try {
+                    type_node* elem_t = parse_type();
+                    if (check(token_type::id)) {
+                        std::string vname = advance().value;
+                        // Trailing type for range var: auto name: T
+                        if (elem_t->is_auto && check(token_type::colon)) {
+                            advance(); // consume ':'
+                            elem_t = parse_type();
+                            // Now expect another ':' for range
+                            if (check(token_type::colon)) {
+                                advance(); // consume ':'
+                                auto* fr = alloc<for_range_stmt>();
+                                fr->line = ln;
+                                fr->var_type = elem_t;
+                                fr->var_name = vname;
+                                fr->range = parse_expr();
+                                consume(token_type::cparen, "Expected ')' after range-for");
+                                fr->body = parse_stmt();
+                                return fr;
+                            }
+                        }
+                        if (check(token_type::colon)) {
+                            advance(); // consume ':'
+                            auto* fr = alloc<for_range_stmt>();
+                            fr->line = ln;
+                            fr->var_type = elem_t;
+                            fr->var_name = vname;
+                            fr->range = parse_expr();
+                            consume(token_type::cparen, "Expected ')' after range-for");
+                            fr->body = parse_stmt();
+                            return fr;
+                        }
+                    }
+                } catch (...) {}
+                current = saved; // not range-for; fall through to normal for
+            }
+        }
+
+        auto* n = alloc<for_stmt>();
+        n->line = ln;
         if (!check(token_type::sm)) {
             if (is_type_start()) n->init = parse_local_var_decl();
             else { auto* es = alloc<expr_stmt>(); es->expr = parse_expr(); consume(token_type::sm, "Expected ';'"); n->init = es; }

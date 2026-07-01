@@ -4,7 +4,7 @@ enum io_error {
     fatal .{
         public const i8* msg;
         public i32 code;
-        public i32 get_code(&const self) { return self.code; }
+        public i32 get_code(const fatal* self) { return self.code; }
     },
 }
 

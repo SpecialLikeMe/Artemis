@@ -55,6 +55,12 @@ struct type_node {
 
     // Memstr reference (&memstr name) in function parameters
     bool is_memstr_ref = false;
+
+    // auto placeholder (trailing-type form: the real type is filled in later)
+    bool is_auto = false;
+
+    // Nullable wrapper: ?T — the value may be null
+    bool is_nullable = false;
 };
 
 // ---------- Expressions ----------

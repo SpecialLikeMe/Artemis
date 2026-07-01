@@ -11,13 +11,13 @@ memstr bump {
     u64   used;
     u64   cap;
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(bump* self, u64 capacity) {
         self.base = malloc(capacity);
         self.used = 0;
         self.cap  = capacity;
     }
 
-    void* alloc_raw(&self, u64 size, u64 align) {
+    void* alloc_raw(bump* self, u64 size, u64 align) {
         u64 offset = self.used;
         // Align up: round offset up to the nearest multiple of align
         u64 rem = offset % align;
@@ -28,11 +28,11 @@ memstr bump {
         return ptr;
     }
 
-    void* alloc_bytes(&self, u64 n) { return self.alloc_raw(n, (u64)8); }
+    void* alloc_bytes(bump* self, u64 n) { return self.alloc_raw(n, (u64)8); }
 
-    void reset(&self) { self.used = 0; }
+    void reset(bump* self) { self.used = 0; }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(bump* self) { free(self.base); }
 }
 
 } // alloc

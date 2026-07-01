@@ -13,7 +13,7 @@ memstr pool {
     i32    free_count;
     u64    slot_size;
 
-    void __construct__(&self, i32 n, u64 object_size) {
+    void __construct__(pool* self, i32 n, u64 object_size) {
         // Round up to 8-byte alignment
         u64 rem = object_size % (u64)8;
         if (rem != 0) { self.slot_size = object_size + ((u64)8 - rem); }
@@ -27,23 +27,23 @@ memstr pool {
         }
     }
 
-    void* alloc_slot(&self) {
+    void* alloc_slot(pool* self) {
         if (self.free_count == 0) { return (void*)0; }
         self.free_count = self.free_count - 1;
         return self.free_list[self.free_count];
     }
 
-    void free_slot(&self, void* p) {
+    void free_slot(pool* self, void* p) {
         if (self.free_count >= self.capacity) { return; }
         self.free_list[self.free_count] = p;
         self.free_count = self.free_count + 1;
     }
 
-    bool full(&self)  { return self.free_count == 0; }
-    bool empty(&self) { return self.free_count == self.capacity; }
-    i32  used_count(&self) { return self.capacity - self.free_count; }
+    bool full(pool* self)  { return self.free_count == 0; }
+    bool empty(pool* self) { return self.free_count == self.capacity; }
+    i32  used_count(pool* self) { return self.capacity - self.free_count; }
 
-    void deinit(&self) {
+    void deinit(pool* self) {
         free(self.base);
         free(self.free_list);
     }

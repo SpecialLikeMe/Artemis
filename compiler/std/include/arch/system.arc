@@ -106,9 +106,9 @@ constexpr i32 SIGINT  = 2;
 memstr mmap_alloc {
     u64 total_allocated;
 
-    void __construct__(&self) { self.total_allocated = 0; }
+    void __construct__(mmap_alloc* self) { self.total_allocated = 0; }
 
-    void* sys_alloc(&self, u64 n) {
+    void* sys_alloc(mmap_alloc* self, u64 n) {
 @ifdef _WIN32
         void* p = VirtualAlloc((void*)0, n, MEM_COMMIT | MEM_RESERVE, PAGE_RW);
         if (p != (void*)0) self.total_allocated = self.total_allocated + n;
@@ -120,7 +120,7 @@ memstr mmap_alloc {
 @endif
     }
 
-    void sys_free(&self, void* p, u64 n) {
+    void sys_free(mmap_alloc* self, void* p, u64 n) {
 @ifdef _WIN32
         VirtualFree(p, 0, MEM_RELEASE);
 @else

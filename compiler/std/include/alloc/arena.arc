@@ -12,14 +12,14 @@ memstr arena {
     u64   cap;
     u64   checkpoint;
 
-    void __construct__(&self, u64 capacity) {
+    void __construct__(arena* self, u64 capacity) {
         self.base       = malloc(capacity);
         self.used       = 0;
         self.cap        = capacity;
         self.checkpoint = 0;
     }
 
-    void* alloc_bytes(&self, u64 n) {
+    void* alloc_bytes(arena* self, u64 n) {
         u64 aligned = (n + 7) & ~(u64)7;
         if (self.used + aligned > self.cap) { return (void*)0; }
         void* p = (void*)((u8*)self.base + self.used);
@@ -27,7 +27,7 @@ memstr arena {
         return p;
     }
 
-    void* alloc_zeroed(&self, u64 n) {
+    void* alloc_zeroed(arena* self, u64 n) {
         void* p = self.alloc_bytes(n);
         if (p == (void*)0) { return (void*)0; }
         u8* b = (u8*)p;
@@ -35,13 +35,13 @@ memstr arena {
         return p;
     }
 
-    void save(&self)    { self.checkpoint = self.used; }
-    void restore(&self) { self.used = self.checkpoint; }
-    void reset(&self)   { self.used = 0; self.checkpoint = 0; }
+    void save(arena* self)    { self.checkpoint = self.used; }
+    void restore(arena* self) { self.used = self.checkpoint; }
+    void reset(arena* self)   { self.used = 0; self.checkpoint = 0; }
 
-    u64 remaining(&self) { return self.cap - self.used; }
+    u64 remaining(arena* self) { return self.cap - self.used; }
 
-    void deinit(&self) { free(self.base); }
+    void deinit(arena* self) { free(self.base); }
 }
 
 } // alloc

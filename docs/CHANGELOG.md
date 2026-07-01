@@ -1,3 +1,33 @@
+# 6/30/2026 — new syntax, self-param migration, stdlib migration
+
+## Language
+- **`typedef auto` form**: `typedef auto Alias = Type;` is now accepted as an alternative to `typedef Type Alias;`.
+- **Trailing type for variables**: `auto name: Type = expr;` declares a variable with an explicit trailing type. Works at both global and local scope.
+- **Trailing return type for functions**: `auto foo() RetType { }` specifies the return type after `()`. Also supports error unions: `auto foo() !T { }` and `auto foo() E!T { }`.
+- **`using` contextual aliases**: `using name = Type;` creates a type alias resolvable in variable declarations. e.g. `using var = auto;` then `var x = 5;` infers the type. `using let = const auto;` creates an immutable-auto alias.
+- **`auto` type inference**: Variables declared with `auto` (or a `using` alias that resolves to `auto`) infer their type from the initializer expression.
+- **`?T` nullable types**: Parser and AST support. The `?` prefix marks any type as nullable (`is_nullable = true`). Non-nullable types cannot be null (enforced at compile time — IR implementation pending).
+- **Range-based for loop**: `for (T name : expr) body` — parser and analyzer support. IR codegen emits a counted loop using GEP for pointer ranges.
+- **`@pragma` directive**: Preprocessor silently accepts all `@pragma` directives (e.g. `@pragma once`).
+- **`explicit` keyword**: Re-added as a no-op keyword for backward compatibility with existing code.
+- **`const_resolve` macros**: `const_resolve name { ... }` is parsed (body consumed as opaque tokens). Execution of the macro body is not yet implemented.
+
+## Migration
+- **`&self` / `&const self` removed**: Legacy self-reference syntax is no longer supported. All method self parameters must use the explicit pointer form: `ClassName* self` or `const ClassName* self`.
+- Updated all tests and stdlib files to use explicit self parameters.
+
+## Stdlib
+- All 6 alloc modules (`bump`, `arena`, `pool`, `ring`, `free_list`, `slab`), `arch/system.arc`, and `std/007` test migrated from `&self` to explicit self.
+
+## Cleanup
+- Removed migration Python scripts from project root (`fix_migration.py`, `migrate_self.py`, `qualify_stdlib_tests.py`, `wrap_namespaces.py`).
+
+## Tests
+- Added test 204: new syntax features (`typedef auto`, trailing types, `using` aliases, `auto` type inference).
+- 194 integration tests — all passing.
+
+---
+
 # 6/30/2026 — namespace infrastructure, stdlib namespacing, explicit self
 
 ## Language

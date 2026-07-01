@@ -214,6 +214,79 @@ inline void visit_while_stmt(while_stmt* s, ir_context* ctx) {
 
 // ------------------------------------------------------------------ for
 
+// Range-based for: for (T elem : expr) body
+// Supports static arrays (expr has array_size) and pointer+count iteration.
+inline void visit_for_range_stmt(for_range_stmt* s, ir_context* ctx) {
+    LLVMValueRef      fn      = ctx->current_func;
+    LLVMBasicBlockRef cond_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "range_cond");
+    LLVMBasicBlockRef body_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "range_body");
+    LLVMBasicBlockRef step_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "range_step");
+    LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "range_exit");
+
+    // Evaluate the range expression to get the base pointer/array.
+    LLVMValueRef range_val = visit_expr(s->range, ctx);
+
+    // Determine element type and count.
+    LLVMTypeRef elem_llvm_t = s->var_type ? llvm_type_of(s->var_type, ctx) : LLVMInt8TypeInContext(ctx->llvm_ctx);
+
+    // Try to get count from the array type's size expression.
+    LLVMValueRef count_val = nullptr;
+    if (s->range && s->range->cast_type && s->range->cast_type->array_size.has_value()) {
+        count_val = visit_expr(s->range->cast_type->array_size.value(), ctx);
+    }
+    if (!count_val) {
+        // No count available — zero-iteration loop (safe fallback).
+        count_val = LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 0, 0);
+    }
+    count_val = LLVMBuildIntCast2(ctx->llvm_builder, count_val, LLVMInt64TypeInContext(ctx->llvm_ctx), 0, "range_count");
+
+    // Allocate the index variable.
+    LLVMValueRef idx_alloca = LLVMBuildAlloca(ctx->llvm_builder, LLVMInt64TypeInContext(ctx->llvm_ctx), "range_idx");
+    LLVMBuildStore(ctx->llvm_builder, LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 0, 0), idx_alloca);
+
+    // Allocate the element variable that the body uses.
+    LLVMValueRef elem_alloca = LLVMBuildAlloca(ctx->llvm_builder, elem_llvm_t, s->var_name.c_str());
+
+    LLVMBuildBr(ctx->llvm_builder, cond_bb);
+
+    // Condition: idx < count
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, cond_bb);
+    LLVMValueRef idx_cur = LLVMBuildLoad2(ctx->llvm_builder, LLVMInt64TypeInContext(ctx->llvm_ctx), idx_alloca, "idx");
+    LLVMValueRef cond_v  = LLVMBuildICmp(ctx->llvm_builder, LLVMIntULT, idx_cur, count_val, "range_lt");
+    LLVMBuildCondBr(ctx->llvm_builder, cond_v, body_bb, exit_bb);
+
+    // Body: load arr[idx] into elem, then run body.
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, body_bb);
+    ctx->push_scope();
+    // GEP: ptr to arr[idx]
+    LLVMValueRef zero = LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 0, 0);
+    LLVMValueRef indices[2] = { zero, idx_cur };
+    LLVMValueRef elem_ptr;
+    // If range_val is a pointer to array, use 2-index GEP; if pointer to element, use 1-index.
+    LLVMTypeRef rv_type = LLVMTypeOf(range_val);
+    (void)rv_type;
+    elem_ptr = LLVMBuildGEP2(ctx->llvm_builder, elem_llvm_t, range_val, &idx_cur, 1, "elem_ptr");
+    LLVMValueRef elem_val = LLVMBuildLoad2(ctx->llvm_builder, elem_llvm_t, elem_ptr, "elem");
+    LLVMBuildStore(ctx->llvm_builder, elem_val, elem_alloca);
+
+    // Declare loop variable in scope.
+    ctx->declare_local(s->var_name, elem_alloca, elem_llvm_t, nullptr, false);
+
+    ctx->push_loop(exit_bb, step_bb);
+    visit_stmt(s->body, ctx);
+    ctx->pop_loop();
+    if (!ctx->is_terminated()) LLVMBuildBr(ctx->llvm_builder, step_bb);
+    ctx->pop_scope();
+
+    // Step: idx++
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, step_bb);
+    LLVMValueRef idx_new = LLVMBuildAdd(ctx->llvm_builder, idx_cur, LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 1, 0), "idx_inc");
+    LLVMBuildStore(ctx->llvm_builder, idx_new, idx_alloca);
+    LLVMBuildBr(ctx->llvm_builder, cond_bb);
+
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, exit_bb);
+}
+
 inline void visit_for_stmt(for_stmt* s, ir_context* ctx) {
     LLVMValueRef      fn      = ctx->current_func;
     LLVMBasicBlockRef cond_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "for_cond");
@@ -555,6 +628,7 @@ inline void visit_stmt(ast_node* node, ir_context* ctx) {
     if (auto* n = dynamic_cast<if_stmt*>(node))       { visit_if_stmt(n, ctx);      return; }
     if (auto* n = dynamic_cast<while_stmt*>(node))    { visit_while_stmt(n, ctx);   return; }
     if (auto* n = dynamic_cast<for_stmt*>(node))      { visit_for_stmt(n, ctx);     return; }
+    if (auto* n = dynamic_cast<for_range_stmt*>(node)){ visit_for_range_stmt(n, ctx); return; }
     if (auto* n = dynamic_cast<switch_stmt*>(node))   { visit_switch_stmt(n, ctx);  return; }
     if (auto* n = dynamic_cast<return_stmt*>(node))   { visit_return_stmt(n, ctx);  return; }
     if (auto* n = dynamic_cast<break_stmt*>(node))    { visit_break_stmt(n, ctx);   return; }

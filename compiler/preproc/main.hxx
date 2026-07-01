@@ -310,6 +310,16 @@ inline std::string pr_process(
                 diag.error(lineno, 1, parse_rest(line, pos));
             } else if (kw == "warning") {
                 diag.warning(lineno, 1, parse_rest(line, pos));
+            } else if (kw == "pragma") {
+                // @pragma once  — ignore duplicate includes (file-level guard)
+                // @pragma omp simd — silently accepted (future parallelism hint)
+                // Other pragmas are silently ignored (forward-compatible).
+                std::string pragma_arg = parse_arg(line, pos);
+                if (pragma_arg == "once") {
+                    // Mark this file as included; only honour in the include path
+                    // (already deduplicated by stdlib importer; nothing more to do here)
+                }
+                // All other pragmas are silently accepted (e.g. @pragma omp simd)
             } else {
                 diag.warning(lineno, 1, "unknown preprocessor directive: @" + kw);
             }
