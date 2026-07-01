@@ -834,7 +834,7 @@ Concrete uses are monomorphized: a specialized instance is emitted on first use
 for each distinct set of type arguments (mangled as `name__G_<t1>_<t2>...`).
 Type arguments may be explicit or inferred from argument types.
 
-```
+```c++
 T identity<T>(T x) { return x; }
 i32 a = identity(42);        // T inferred as i32
 i64 b = identity<i64>(99);   // explicit
@@ -901,7 +901,7 @@ The semantic analyser enforces access modifiers on class members:
 
 Accessing a `private` or `protected` member from a disallowed context is a compile-time error:
 
-```c
+```c++
 istruc Wallet {
     private i32 balance;
     public i32 get(&const self) { return self.balance; }  // OK: same class
