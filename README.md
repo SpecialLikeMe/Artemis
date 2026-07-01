@@ -1,3 +1,5 @@
+# CHANGELOG MAY BE INNACURRATE - SEE docs/
+
 # Artemis
 
 Artemis is a compiled, statically-typed, C-like language that targets LLVM IR. It is designed to be simple, explicit, and fast. The compiler is written in C++17 and uses the LLVM C API for code generation.
