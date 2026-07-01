@@ -1,1 +1,0 @@
-Parser Error at line 1: Expected ';' after variable declaration
