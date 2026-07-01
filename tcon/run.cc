@@ -15,25 +15,41 @@
 #  include <sys/wait.h>
 #endif
 
-static std::string artemis_bin() {
+static std::string artemis_bin(const std::string& exe_dir) {
 #if defined(_MSC_VER)
     char* val = nullptr; size_t len = 0;
     _dupenv_s(&val, &len, "ARTEMIS_BIN");
-    std::string r = val ? val : "artemis";
+    std::string r = val ? val : "";
     free(val);
-    return r;
+    if (!r.empty()) return r;
 #else
     const char* e = std::getenv("ARTEMIS_BIN");
-    return e ? e : "artemis";
+    if (e) return e;
 #endif
+    // Try build/artemis.exe relative to the exe's parent directory.
+    namespace fs = std::filesystem;
+    if (!exe_dir.empty()) {
+        fs::path candidate = fs::path(exe_dir).parent_path() / "build" / "artemis.exe";
+        if (fs::exists(candidate)) return candidate.string();
+        candidate = fs::path(exe_dir) / ".." / "build" / "artemis.exe";
+        if (fs::exists(candidate)) return candidate.string();
+    }
+    return "artemis";
 }
 
 static int run_cmd(const std::string& cmd) {
-    std::string full = "(" + cmd + ") 2>nul 1>nul";
-#ifndef _WIN32
-    full = "(" + cmd + ") >/dev/null 2>&1";
+    // Use popen to run silently (avoids nul/dev/null platform issues).
+    // Append stderr redirect so compile errors don't pollute output.
+#ifdef _WIN32
+    std::string full = cmd + " 2>&1";
+#else
+    std::string full = cmd + " 2>&1";
 #endif
-    int rc = std::system(full.c_str());
+    FILE* p = popen(full.c_str(), "r");
+    if (!p) return 1;
+    char buf[256];
+    while (fgets(buf, sizeof(buf), p)) {}  // drain output
+    int rc = pclose(p);
 #ifndef _WIN32
     if (WIFEXITED(rc)) rc = WEXITSTATUS(rc);
     else               rc = 1;
@@ -41,13 +57,34 @@ static int run_cmd(const std::string& cmd) {
     return rc;
 }
 
+// On Windows/cmd.exe, forward slashes in a leading path component are treated
+// as switch prefixes. Convert to backslashes so the binary can be executed.
+static std::string to_native_path(std::string p) {
+#ifdef _WIN32
+    for (char& c : p) if (c == '/') c = '\\';
+#endif
+    return p;
+}
+
 int main(int argc, char** argv) {
     namespace fs = std::filesystem;
 
-    std::string test_dir = "tcon/test";
-    if (argc >= 2) test_dir = argv[1];
+    // Derive paths relative to the executable so the runner works from any CWD.
+    std::string exe_dir;
+    {
+        fs::path ep = fs::path(argv[0]).parent_path();
+        if (!ep.empty()) exe_dir = ep.string();
+    }
 
-    std::string bin = artemis_bin();
+    std::string test_dir;
+    if (argc >= 2) {
+        test_dir = argv[1];
+    } else {
+        fs::path candidate = exe_dir.empty() ? fs::path("test") : (fs::path(exe_dir) / "test");
+        test_dir = fs::is_directory(candidate) ? candidate.string() : "test";
+    }
+
+    std::string bin = artemis_bin(exe_dir);
 
     std::vector<fs::path> files;
     for (const auto& entry : fs::directory_iterator(test_dir)) {
@@ -60,7 +97,7 @@ int main(int argc, char** argv) {
 
     for (const auto& src : files) {
         std::string name   = src.stem().string();
-        std::string srcstr = src.string();
+        std::string srcstr = src.generic_string();
 
 #ifdef _WIN32
         std::string outbin = srcstr + ".exe";
@@ -77,8 +114,8 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        // Run
-        int rrc = run_cmd(outbin);
+        // Run — on Windows, cmd.exe needs backslashes for relative exe paths
+        int rrc = run_cmd(to_native_path(outbin));
         fs::remove(outbin);
 
         if (rrc == 0) {

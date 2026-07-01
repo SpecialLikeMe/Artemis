@@ -1,6 +1,11 @@
 #pragma once
 #include "include.h"
 
+// Forward declarations for generic templates (full defs in parser/main.hxx).
+struct func_decl;
+struct class_decl;
+struct type_node;
+
 // ---- Per-scope variable table ----
 struct ir_scope_frame {
     std::unordered_map<std::string, LLVMValueRef> alloca_ptrs;  // name -> alloca
@@ -38,6 +43,52 @@ struct ir_context {
     std::unordered_map<std::string, LLVMTypeRef>  struct_types;           // name -> LLVMStructType
     std::unordered_map<std::string, std::vector<std::string>> struct_field_names; // for GEP index
     std::unordered_map<std::string, std::vector<LLVMTypeRef>> struct_field_types; // for member load
+    std::unordered_set<std::string> union_names; // union types (single-body LLVM struct)
+    // Non-struct typedef aliases: alias name -> underlying AST type (e.g. Real -> f64,
+    // IntPtr -> i32*). Struct typedefs are handled via struct_types directly.
+    std::unordered_map<std::string, type_node*> typedef_aliases;
+
+    // Class-specific IR state
+    struct class_ir_info {
+        LLVMTypeRef   class_type    = nullptr;  // LLVM struct for the class
+        LLVMTypeRef   vtable_type   = nullptr;  // LLVM struct for the vtable (may be null)
+        LLVMValueRef  vtable_global = nullptr;  // @ClassName_vtable global (may be null)
+        std::vector<std::string>  vtable_slots; // virtual method names in vtable order
+        std::string   base_name;                // base class name (empty if none)
+        bool          has_virtual   = false;
+        // Field layout: includes base fields (if any) then own fields
+        std::vector<std::string>  all_field_names;
+        std::vector<LLVMTypeRef>  all_field_types;
+        // vtable pointer is at index 0 if has_virtual
+    };
+    std::unordered_map<std::string, class_ir_info> class_infos;
+
+    // Defer stack: each scope level has a list of deferred items (exprs/blocks)
+    // stored as pairs of (expr_node*, block_stmt*) — one of which is non-null
+    using defer_item = std::pair<void*, bool>; // ptr, false=expr_node, true=block_stmt
+    std::vector<std::vector<std::pair<void*, bool>>> defer_stack; // per-scope deferred items
+
+    // Current class being emitted (for self parameter lookup)
+    std::string current_class_name;
+
+    // ---- Generics (monomorphization) ----
+    // Active type-parameter substitution while emitting a generic instantiation:
+    //   type-param-name -> concrete LLVM type.
+    std::unordered_map<std::string, LLVMTypeRef> type_subst;
+    // Generic templates collected during pass 1 (keyed by base name).
+    std::unordered_map<std::string, func_decl*>  generic_funcs;
+    std::unordered_map<std::string, class_decl*> generic_classes;
+
+    void push_defer_scope() { defer_stack.emplace_back(); }
+    void add_defer(void* item, bool is_block) {
+        if (!defer_stack.empty()) defer_stack.back().push_back({item, is_block});
+    }
+    std::vector<std::pair<void*, bool>> pop_defer_scope() {
+        if (defer_stack.empty()) return {};
+        auto items = std::move(defer_stack.back());
+        defer_stack.pop_back();
+        return items; // caller must emit these in reverse order
+    }
 
     // ---- scope helpers ----
     void push_scope() { scopes.emplace_back(); }

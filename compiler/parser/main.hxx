@@ -54,6 +54,7 @@ struct if_stmt : ast_node {
     expr_node*  cond      = nullptr;
     ast_node*   then_body = nullptr;
     ast_node*   else_body = nullptr; // optional
+    bool        is_constexpr = false; // constexpr if / if constexpr
 };
 
 struct while_stmt : ast_node {
@@ -83,6 +84,11 @@ struct var_decl : ast_node {
     type_node*              type  = nullptr;
     std::string             name;
     std::optional<expr_node*> init;
+    std::vector<expr_node*> ctor_args;          // implicit ctor: Type v(args...) / v{args...}
+    bool                    ctor_brace = false; // true if {...} form was used
+    bool                    has_ctor_parens = false; // true if () or {} present (even empty)
+    bool                    is_constexpr = false;     // constexpr Type name = expr;
+    bool                    is_consteval = false;     // consteval Type name; — user will call __construct__ manually
 };
 
 struct param_decl {
@@ -92,11 +98,16 @@ struct param_decl {
 };
 
 struct func_decl : ast_node {
-    type_node*               ret_type = nullptr;
+    type_node*               ret_type    = nullptr;
     std::string              name;
     std::vector<param_decl>  params;
     bool                     is_variadic = false;
     block_stmt*              body        = nullptr; // null = forward decl
+    bool                     is_extern_c = false;  // suppress name mangling
+    std::string              mangled_name;          // set by analyzer; empty = use name
+    bool                     is_overloaded = false; // set by analyzer
+    bool                     is_noexcept = false;   // noexcept modifier (informational)
+    std::vector<std::string> type_params;           // generic type parameters <T, U>
 };
 
 struct struct_decl : ast_node {
@@ -106,9 +117,89 @@ struct struct_decl : ast_node {
 
 struct memstr_decl : ast_node {
     std::string            name;
-    var_decl*              ptr;
-    func_decl*             vtable[3];
+    var_decl*              ptr_field  = nullptr; // .ptr field
+    func_decl*             fn_mmap    = nullptr; // .vtable.mmap
+    func_decl*             fn_rmap    = nullptr; // .vtable.rmap
+    func_decl*             fn_deinit  = nullptr; // .vtable.deinit
 };
+
+// ---- defer statement ----
+struct defer_stmt : ast_node {
+    expr_node*  expr = nullptr;  // defer expr;
+    block_stmt* blk  = nullptr;  // defer { ... }
+};
+
+// ---- extern "C" block ----
+struct extern_c_block : ast_node {
+    std::vector<ast_node*> decls;
+};
+
+// ---- access modifier ----
+enum class access_mod { pub, priv, prot };
+
+// ---- class field (var_decl with access info) ----
+struct class_field : ast_node {
+    access_mod  access    = access_mod::pub;
+    bool        is_static  = false;
+    bool        is_virtual = false;
+    type_node*  type       = nullptr;
+    std::string name;
+    std::optional<expr_node*> init;
+};
+
+// ---- initializer list entry ----
+struct init_list_entry {
+    std::string  member_name;
+    expr_node*   value = nullptr;
+};
+
+// ---- class method ----
+struct class_method : ast_node {
+    access_mod  access              = access_mod::pub;
+    bool        is_static           = false;
+    bool        is_virtual          = false;
+    bool        is_mandatory_virtual= false;
+    bool        is_override         = false;
+    bool        is_const_method     = false;
+    bool        is_final            = false;
+    bool        is_constructor      = false;
+    bool        is_destructor       = false;
+    bool        is_noexcept         = false;
+    bool        is_explicit         = false;
+    bool        is_conversion_op    = false;
+    bool        is_operator_overload= false;
+    std::string operator_str;     // e.g. "+", "-", "[]", etc.
+    type_node*  conv_target_type = nullptr; // for conversion operators
+
+    type_node*               ret_type   = nullptr;
+    std::string              name;
+    std::vector<param_decl>  params;   // first param may be &self / &const self
+    bool                     has_self   = false;
+    bool                     self_const = false;
+    bool                     is_variadic= false;
+    block_stmt*              body       = nullptr;
+
+    std::vector<init_list_entry> init_list; // constructor init list
+
+    // Mangled name set by analyzer (empty = use name)
+    std::string mangled_name;
+};
+
+// ---- class declaration (istruc) ----
+struct class_decl : ast_node {
+    std::string                 name;
+    std::string                 base_name;   // empty if no inheritance
+    std::vector<class_field*>   fields;
+    std::vector<class_method*>  methods;
+    std::vector<func_decl*>     local_decls; // 'local' (friend-like) declarations
+
+    // Mangled name set by analyzer for this class's vtable (if any virtual methods)
+    bool has_virtual = false;
+    std::vector<std::string> type_params;  // generic type parameters <T, U>
+};
+
+// ---- extend func_decl with overloading / mangling info ----
+// (added as extensions; original func_decl unchanged for compatibility)
 
 struct enum_decl : ast_node {
     std::string                                name;
@@ -140,6 +231,8 @@ public:
     explicit parser(std::vector<token_t> tokens)
         : tokens(std::move(tokens)), current(0) {}
 
+    bool had_parse_error = false;
+
     program_node* parse() {
         auto* prog = alloc<program_node>();
         while (!is_at_end()) {
@@ -147,6 +240,7 @@ public:
                 prog->decls.push_back(parse_top_level());
             } catch (const std::runtime_error& e) {
                 std::cerr << e.what() << '\n';
+                had_parse_error = true;
                 synchronize();
             }
         }
@@ -156,10 +250,13 @@ public:
 private:
     // -------------------------------------------------------- top-level
     ast_node* parse_top_level() {
-        if (check(token_type::kw_struct))  return parse_struct_decl();
-        if (check(token_type::kw_enum))    return parse_enum_decl();
-        if (check(token_type::kw_union))   return parse_union_decl();
-        if (check(token_type::kw_typedef)) return parse_typedef_decl();
+        if (check(token_type::kw_struct))   return parse_struct_decl();
+        if (check(token_type::kw_enum))     return parse_enum_decl();
+        if (check(token_type::kw_union))    return parse_union_decl();
+        if (check(token_type::kw_typedef))  return parse_typedef_decl();
+        if (check(token_type::kw_istruc))   return parse_class_decl();
+        if (check(token_type::kw_extern_c)) return parse_extern_c_block();
+        if (check(token_type::kw_smem))     return parse_memstr_decl();
         return parse_func_or_var_decl();
     }
 
@@ -167,10 +264,36 @@ private:
     type_node* parse_type() {
         auto* t = alloc<type_node>();
 
+        // Handle &self and &const self (special method parameter types)
+        if (check(token_type::addr)) {
+            size_t saved = current;
+            advance(); // consume &
+            if (check(token_type::kw_const) && peek_at(1).type == token_type::kw_self) {
+                advance(); // const
+                advance(); // self
+                t->is_self_ref = true; t->is_self_ref_const = true;
+                return t;
+            }
+            if (check(token_type::kw_self)) {
+                advance(); // self
+                t->is_self_ref = true;
+                return t;
+            }
+            if (check(token_type::kw_smem)) {
+                advance(); // memstr
+                t->is_memstr_ref = true;
+                return t;
+            }
+            // not &self or &memstr — restore and treat & as bitwise-and (not a type)
+            current = saved;
+        }
+
         // storage class specifiers
         while (check(token_type::kw_extern) || check(token_type::kw_extern_std) ||
-               check(token_type::kw_inline) || check(token_type::kw_register)) {
+               check(token_type::kw_extern_c) || check(token_type::kw_inline) ||
+               check(token_type::kw_register)) {
             if (match(token_type::kw_extern) || match(token_type::kw_extern_std)) t->is_extern = true;
+            else if (match(token_type::kw_extern_c)) { t->is_extern = true; t->is_extern_c = true; }
             else if (match(token_type::kw_inline))   t->is_inline = true;
             else { advance(); t->is_register = true; }
         }
@@ -225,10 +348,60 @@ private:
         if (!found) {
             auto tok = consume(token_type::id, "Expected type name");
             t->name  = tok.value;
+            // Generic instantiation type args:  Name<T, U>
+            if (check(token_type::lt)) {
+                std::vector<type_node*> targs;
+                if (try_parse_type_args(targs)) t->type_args = std::move(targs);
+            }
         }
 
-        // pointer stars
+        // pointer stars (for return type of function pointer)
         while (check(token_type::ast)) { advance(); t->pointer_depth++; }
+
+        // Function pointer type: returntype(params)*
+        // After parsing base return type (with its own pointer stars), if we see '('
+        // followed by a valid param list and ')' then '*', this is a function pointer type.
+        if (check(token_type::oparen)) {
+            size_t saved = current;
+            advance(); // consume (
+            // Try to parse as function pointer params
+            bool ok = true;
+            std::vector<type_node*>  fp_params;
+            std::vector<std::string> fp_names;
+            bool fp_variadic = false;
+            if (!check(token_type::cparen)) {
+                do {
+                    if (check(token_type::dot) && peek_at(1).type == token_type::dot
+                        && peek_at(2).type == token_type::dot) {
+                        advance(); advance(); advance();
+                        fp_variadic = true; break;
+                    }
+                    if (!is_type_start()) { ok = false; break; }
+                    type_node* pt = parse_type();
+                    std::string pname;
+                    if (check(token_type::id)) pname = advance().value;
+                    fp_params.push_back(pt);
+                    fp_names.push_back(pname);
+                } while (ok && match(token_type::comma));
+            }
+            if (ok && check(token_type::cparen)) {
+                advance(); // consume )
+                if (check(token_type::ast)) {
+                    advance(); // consume *
+                    // This IS a function pointer type
+                    auto* fp_t            = alloc<type_node>();
+                    fp_t->is_func_ptr     = true;
+                    fp_t->fp_ret          = t;
+                    fp_t->fp_params       = std::move(fp_params);
+                    fp_t->fp_param_names  = std::move(fp_names);
+                    fp_t->fp_variadic     = fp_variadic;
+                    fp_t->pointer_depth   = 1; // it's a pointer to function
+                    return fp_t;
+                }
+            }
+            // Not a function pointer type; restore and fall through
+            current = saved;
+        }
 
         // array brackets
         if (match(token_type::obracket)) {
@@ -242,18 +415,58 @@ private:
 
     // -------------------------------------------------------- func / var disambiguation
     ast_node* parse_func_or_var_decl() {
+        bool is_cexpr  = false;
+        bool is_ceval  = false;
+        if (check(token_type::kw_constexpr)) { advance(); is_cexpr = true; }
+        if (check(token_type::kw_consteval)) { advance(); is_ceval = true; }
         type_node* ret = parse_type();
         auto name_tok  = consume(token_type::id, "Expected declaration name");
 
-        if (match(token_type::oparen)) return parse_func_body(ret, name_tok);
-        return parse_var_body(ret, name_tok);
+        // Optional generic type parameters: name<T, U>
+        std::vector<std::string> type_params = try_parse_type_params();
+
+        if (match(token_type::oparen)) {
+            auto* fd = parse_func_body(ret, name_tok);
+            fd->type_params = std::move(type_params);
+            return fd;
+        }
+        auto* vd = parse_var_body(ret, name_tok);
+        vd->is_constexpr = is_cexpr;
+        vd->is_consteval = is_ceval;
+        return vd;
     }
 
-    func_decl* parse_func_body(type_node* ret, token_t name_tok) {
+    // Parse optional <T, U, ...> generic type parameter list in a declaration context.
+    // Only treats '<' as type params if it is immediately followed by an identifier list
+    // closed by '>'. Returns empty vector if not a type-param list.
+    std::vector<std::string> try_parse_type_params() {
+        std::vector<std::string> params;
+        if (!check(token_type::lt)) return params;
+        // Lookahead: < id (, id)* >
+        size_t saved = current;
+        advance(); // consume '<'
+        if (!check(token_type::id)) { current = saved; return params; }
+        std::vector<std::string> tmp;
+        tmp.push_back(advance().value);
+        bool ok = true;
+        while (match(token_type::comma)) {
+            if (!check(token_type::id)) { ok = false; break; }
+            tmp.push_back(advance().value);
+        }
+        if (ok && check(token_type::gt)) {
+            advance(); // consume '>'
+            return tmp;
+        }
+        current = saved;
+        return params;
+    }
+
+    func_decl* parse_func_body(type_node* ret, token_t name_tok, bool extern_c = false) {
         auto* fd      = alloc<func_decl>();
         fd->line      = name_tok.line;
         fd->ret_type  = ret;
         fd->name      = name_tok.value;
+        fd->is_extern_c = extern_c || (ret && ret->is_extern_c);
 
         if (!check(token_type::cparen)) {
             do {
@@ -270,6 +483,9 @@ private:
             } while (match(token_type::comma));
         }
         consume(token_type::cparen, "Expected ')' after parameters");
+
+        // Optional function qualifiers after ')': noexcept (informational)
+        while (check(token_type::kw_noexcept)) { advance(); fd->is_noexcept = true; }
 
         if (match(token_type::sm)) {
             fd->body = nullptr; // forward declaration
@@ -292,6 +508,12 @@ private:
         vd->line  = name_tok.line;
         vd->type  = t;
         vd->name  = name_tok.value;
+        // Array size comes after the name: int arr[10]
+        if (match(token_type::obracket)) {
+            if (!check(token_type::cbracket))
+                t->array_size = parse_expr();
+            consume(token_type::cbracket, "Expected ']' after array size");
+        }
         if (match(token_type::assign)) vd->init = parse_expr();
         consume(token_type::sm, "Expected ';' after variable declaration");
         return vd;
@@ -312,6 +534,12 @@ private:
             vd->line      = fname.line;
             vd->type      = ft;
             vd->name      = fname.value;
+            // C-style array field: name[N]
+            if (match(token_type::obracket)) {
+                if (!check(token_type::cbracket))
+                    ft->array_size = parse_expr();
+                consume(token_type::cbracket, "Expected ']' after array size");
+            }
             consume(token_type::sm, "Expected ';' after field");
             sd->fields.push_back(vd);
         }
@@ -359,7 +587,392 @@ private:
     }
 
     memstr_decl* parse_memstr_decl() {
-        consume(token_type::kw_smem)
+        uint64_t ln = peek().line;
+        advance(); // consume 'memstr'
+        auto* md  = alloc<memstr_decl>();
+        md->line  = ln;
+        md->name  = consume(token_type::id, "Expected memstr type name").value;
+        consume(token_type::obrace, "Expected '{' after memstr name");
+
+        while (!check(token_type::cbrace) && !is_at_end()) {
+            // .ptr = EXPR; or .vtable = { ... }; or function definition
+            if (check(token_type::dot)) {
+                advance(); // consume .
+                std::string field = consume(token_type::id, "Expected field name after '.'").value;
+                if (field == "ptr") {
+                    consume(token_type::assign, "Expected '=' after .ptr");
+                    auto* vd = alloc<var_decl>();
+                    vd->line = ln;
+                    auto* t  = alloc<type_node>();
+                    t->is_primitive = true; t->prim = prim_type_t::void_t; t->pointer_depth = 1;
+                    vd->type = t; vd->name = "ptr";
+                    vd->init = parse_expr();
+                    consume(token_type::sm, "Expected ';' after .ptr = expr");
+                    md->ptr_field = vd;
+                } else if (field == "vtable") {
+                    consume(token_type::assign, "Expected '=' after .vtable");
+                    consume(token_type::obrace, "Expected '{' for vtable");
+                    while (!check(token_type::cbrace) && !is_at_end()) {
+                        consume(token_type::dot, "Expected '.' in vtable field");
+                        std::string vf = consume(token_type::id, "Expected vtable field name").value;
+                        consume(token_type::assign, "Expected '='");
+                        expr_node* fptr_expr = parse_expr();
+                        consume(token_type::sm, "Expected ';'");
+                        // store as a synthetic var_decl or just record the function pointer expr
+                        // We'll attach via a trivial func_decl placeholder
+                        auto* fd = alloc<func_decl>();
+                        fd->line = ln; fd->name = vf;
+                        // Store the expression in body as a placeholder (IR will handle it)
+                        // Use a special var_decl approach: store fptr_expr in body's first stmt
+                        auto* es = alloc<expr_stmt>(); es->expr = fptr_expr;
+                        auto* blk = alloc<block_stmt>(); blk->stmts.push_back(es);
+                        fd->body = blk;
+                        if      (vf == "mmap")   md->fn_mmap   = fd;
+                        else if (vf == "rmap")   md->fn_rmap   = fd;
+                        else if (vf == "deinit") md->fn_deinit = fd;
+                    }
+                    consume(token_type::cbrace, "Expected '}' after vtable");
+                    consume(token_type::sm, "Expected ';' after vtable block");
+                } else {
+                    throw std::runtime_error("Parser Error: unknown memstr field '." + field + "'");
+                }
+            } else {
+                // Inline function definitions inside memstr
+                type_node* ret = parse_type();
+                auto name_tok  = consume(token_type::id, "Expected function name");
+                consume(token_type::oparen, "Expected '('");
+                auto* fd = parse_func_body(ret, name_tok);
+                if      (fd->name == md->name + "__mmap"   || fd->name == "mmap")   md->fn_mmap   = fd;
+                else if (fd->name == md->name + "__rmap"   || fd->name == "rmap")   md->fn_rmap   = fd;
+                else if (fd->name == md->name + "__deinit" || fd->name == "deinit") md->fn_deinit = fd;
+            }
+        }
+        consume(token_type::cbrace, "Expected '}' after memstr body");
+        return md;
+    }
+
+    // -------------------------------------------------------- extern "C" block
+    extern_c_block* parse_extern_c_block() {
+        uint64_t ln = peek().line;
+        advance(); // consume 'extern "C"'
+        auto* blk = alloc<extern_c_block>();
+        blk->line = ln;
+        if (match(token_type::obrace)) {
+            while (!check(token_type::cbrace) && !is_at_end()) {
+                try {
+                    ast_node* decl = parse_func_or_var_decl_extern_c();
+                    blk->decls.push_back(decl);
+                } catch (const std::runtime_error& e) {
+                    std::cerr << e.what() << '\n';
+                    synchronize();
+                }
+            }
+            consume(token_type::cbrace, "Expected '}' after extern \"C\" block");
+        } else {
+            // Single declaration: extern "C" rettype name(...)
+            blk->decls.push_back(parse_func_or_var_decl_extern_c());
+        }
+        return blk;
+    }
+
+    ast_node* parse_func_or_var_decl_extern_c() {
+        type_node* ret = parse_type();
+        auto name_tok  = consume(token_type::id, "Expected declaration name");
+        if (match(token_type::oparen)) {
+            auto* fd = parse_func_body(ret, name_tok, /*extern_c=*/true);
+            fd->is_extern_c = true;
+            return fd;
+        }
+        return parse_var_body(ret, name_tok);
+    }
+
+    // -------------------------------------------------------- class (istruc)
+    class_decl* parse_class_decl() {
+        uint64_t ln = peek().line;
+        advance(); // consume 'istruc'
+        auto* cd  = alloc<class_decl>();
+        cd->line  = ln;
+        cd->name  = consume(token_type::id, "Expected class name").value;
+
+        // optional generic type parameters: ClassName<T, U>
+        cd->type_params = try_parse_type_params();
+
+        // optional inheritance: ClassName : BaseName
+        if (match(token_type::colon)) {
+            cd->base_name = consume(token_type::id, "Expected base class name").value;
+        }
+
+        consume(token_type::obrace, "Expected '{' after class name");
+
+        while (!check(token_type::cbrace) && !is_at_end()) {
+            parse_class_member(cd);
+        }
+        consume(token_type::cbrace, "Expected '}' after class body");
+        // Optional semicolon after class body
+        match(token_type::sm);
+        return cd;
+    }
+
+    void parse_class_member(class_decl* cd) {
+        uint64_t ln = peek().line;
+
+        // 'local' declarations (friend-like)
+        if (check(token_type::kw_local)) {
+            advance();
+            type_node* ret = parse_type();
+            auto name_tok  = consume(token_type::id, "Expected declaration name");
+            if (match(token_type::oparen)) {
+                cd->local_decls.push_back(parse_func_body(ret, name_tok));
+            } else {
+                // local variable declaration — just consume it as a var decl
+                auto* vd = parse_var_body(ret, name_tok);
+                (void)vd;
+            }
+            return;
+        }
+
+        // Parse access modifier (optional, default pub)
+        access_mod acc = access_mod::pub;
+        if (check(token_type::kw_public))    { advance(); acc = access_mod::pub;  }
+        else if (check(token_type::kw_private))   { advance(); acc = access_mod::priv; }
+        else if (check(token_type::kw_protected)) { advance(); acc = access_mod::prot; }
+
+        // Parse method/field modifiers (stackable, any order).
+        // virtual/mandatory/static/explicit may precede the return type;
+        // noexcept/const/override/final may appear here too (also accepted after ')').
+        bool is_virtual   = false;
+        bool is_mandatory = false;
+        bool is_static    = false;
+        bool is_explicit  = false;
+        bool is_noexcept  = false;
+        bool pre_const    = false;
+        bool pre_override = false;
+        bool pre_final    = false;
+
+        while (true) {
+            if (check(token_type::kw_virtual))   { advance(); is_virtual = true; }
+            else if (check(token_type::kw_mandatory)) {
+                advance(); is_mandatory = true;
+                if (check(token_type::kw_virtual)) { advance(); is_virtual = true; }
+            }
+            else if (check(token_type::kw_static))   { advance(); is_static = true; }
+            else if (check(token_type::kw_explicit)) { advance(); is_explicit = true; }
+            else if (check(token_type::kw_noexcept)) { advance(); is_noexcept = true; }
+            else if (check(token_type::kw_const))    { advance(); pre_const = true; }
+            else if (check(token_type::kw_override)) { advance(); pre_override = true; is_virtual = true; }
+            else if (check(token_type::kw_final))    { advance(); pre_final = true; }
+            else break;
+        }
+
+        // Conversion operator: operator T() ...
+        if (check(token_type::kw_operator)) {
+            advance(); // consume 'operator'
+            // The next token(s) form a type (conversion target)
+            auto* meth = alloc<class_method>();
+            meth->line = ln; meth->access = acc;
+            meth->is_virtual = is_virtual; meth->is_static = is_static;
+            meth->is_explicit = is_explicit; meth->is_noexcept = is_noexcept;
+            meth->is_const_method = pre_const; meth->is_override = pre_override; meth->is_final = pre_final;
+            if (pre_override) meth->is_virtual = true;
+            meth->is_conversion_op = true;
+            meth->conv_target_type = parse_type();
+            meth->ret_type = meth->conv_target_type;
+            meth->name = "operator " + type_to_string(meth->conv_target_type);
+            consume(token_type::oparen, "Expected '(' in conversion operator");
+            parse_method_params(meth);
+            parse_method_qualifiers(meth);
+            parse_method_body(meth);
+            cd->methods.push_back(meth);
+            return;
+        }
+
+        // Parse return type
+        type_node* ret = parse_type();
+
+        // Operator overload: rettype operator<op>(...)
+        if (check(token_type::kw_operator)) {
+            advance(); // consume 'operator'
+            auto* meth = alloc<class_method>();
+            meth->line = ln; meth->access = acc;
+            meth->is_virtual = is_virtual; meth->is_static = is_static;
+            meth->is_explicit = is_explicit; meth->is_noexcept = is_noexcept;
+            meth->is_const_method = pre_const; meth->is_override = pre_override; meth->is_final = pre_final;
+            if (pre_override) meth->is_virtual = true;
+            meth->is_operator_overload = true;
+            meth->ret_type = ret;
+            meth->operator_str = parse_operator_str();
+            meth->name = "operator" + meth->operator_str;
+            consume(token_type::oparen, "Expected '(' after operator");
+            parse_method_params(meth);
+            parse_method_qualifiers(meth);
+            parse_method_body(meth);
+            cd->methods.push_back(meth);
+            return;
+        }
+
+        auto name_tok = consume(token_type::id, "Expected member name");
+
+        // Method: name followed by '('
+        if (check(token_type::oparen)) {
+            advance(); // consume '('
+            auto* meth = alloc<class_method>();
+            meth->line = ln; meth->access = acc;
+            meth->is_virtual = is_virtual;
+            meth->is_mandatory_virtual = is_mandatory;
+            meth->is_static = is_static;
+            meth->is_explicit = is_explicit; meth->is_noexcept = is_noexcept;
+            meth->is_const_method = pre_const; meth->is_override = pre_override; meth->is_final = pre_final;
+            if (pre_override) meth->is_virtual = true;
+            meth->ret_type  = ret;
+            meth->name      = name_tok.value;
+            meth->is_constructor = (name_tok.value == "__construct__");
+            meth->is_destructor  = (name_tok.value == "__destruct__");
+            parse_method_params(meth);
+            // Optional constructor init list: : member(val), ...
+            if (meth->is_constructor && check(token_type::colon)) {
+                advance(); // consume ':'
+                do {
+                    init_list_entry entry;
+                    entry.member_name = consume(token_type::id, "Expected member name in init list").value;
+                    consume(token_type::oparen, "Expected '(' in init list");
+                    entry.value = parse_expr();
+                    consume(token_type::cparen, "Expected ')' in init list");
+                    meth->init_list.push_back(entry);
+                } while (match(token_type::comma));
+            }
+            parse_method_qualifiers(meth);
+            parse_method_body(meth);
+            cd->methods.push_back(meth);
+            if (is_virtual || is_mandatory) cd->has_virtual = true;
+            return;
+        }
+
+        // Field declaration
+        auto* cf = alloc<class_field>();
+        cf->line     = ln;
+        cf->access   = acc;
+        cf->is_static = is_static;
+        cf->is_virtual = is_virtual;
+        cf->type     = ret;
+        cf->name     = name_tok.value;
+        // C-style array field: name[N]
+        if (match(token_type::obracket)) {
+            if (!check(token_type::cbracket))
+                ret->array_size = parse_expr();
+            consume(token_type::cbracket, "Expected ']' after array size");
+        }
+        if (match(token_type::assign)) cf->init = parse_expr();
+        consume(token_type::sm, "Expected ';' after field declaration");
+        cd->fields.push_back(cf);
+    }
+
+    // Parse operator string after 'operator' keyword  (e.g. "+", "[]", "()", "==", etc.)
+    std::string parse_operator_str() {
+        // Consume the operator token(s) and return a string representation
+        token_t t = peek();
+        switch (t.type) {
+            case token_type::plus:    advance(); return "+";
+            case token_type::minus:   advance(); return "-";
+            case token_type::ast:     advance(); return "*";
+            case token_type::slash:   advance(); return "/";
+            case token_type::mod:     advance(); return "%";
+            case token_type::eq:      advance(); return "==";
+            case token_type::ne:      advance(); return "!=";
+            case token_type::lt:      advance(); return "<";
+            case token_type::gt:      advance(); return ">";
+            case token_type::lte:     advance(); return "<=";
+            case token_type::gte:     advance(); return ">=";
+            case token_type::and_:    advance(); return "&&";
+            case token_type::or_:     advance(); return "||";
+            case token_type::addr:    advance(); return "&";
+            case token_type::bit_or:  advance(); return "|";
+            case token_type::bit_xor: advance(); return "^";
+            case token_type::bit_not: advance(); return "~";
+            case token_type::left:    advance(); return "<<";
+            case token_type::right:   advance(); return ">>";
+            case token_type::assign:  advance(); return "=";
+            case token_type::obracket: {
+                advance();
+                consume(token_type::cbracket, "Expected ']' after '[' in operator[]");
+                return "[]";
+            }
+            case token_type::oparen: {
+                advance();
+                consume(token_type::cparen, "Expected ')' after '(' in operator()");
+                return "()";
+            }
+            default:
+                throw std::runtime_error("Parser Error at line " + std::to_string(t.line)
+                    + ": Expected operator symbol after 'operator'");
+        }
+    }
+
+    void parse_method_params(class_method* meth) {
+        // Already consumed '('; parse until ')'
+        if (check(token_type::cparen)) { advance(); return; }
+        do {
+            // Check for variadic
+            if (check(token_type::dot) && peek_at(1).type == token_type::dot
+                && peek_at(2).type == token_type::dot) {
+                advance(); advance(); advance();
+                meth->is_variadic = true;
+                break;
+            }
+            // Check for &self / &const self
+            if (check(token_type::addr)) {
+                size_t saved = current;
+                advance(); // consume &
+                if (check(token_type::kw_const) && peek_at(1).type == token_type::kw_self) {
+                    advance(); advance(); // const self
+                    meth->has_self = true; meth->self_const = true;
+                    continue;
+                }
+                if (check(token_type::kw_self)) {
+                    advance(); // self
+                    meth->has_self = true;
+                    continue;
+                }
+                current = saved;
+            }
+            // Regular parameter
+            type_node* pt = parse_type();
+            param_decl p;
+            p.type = pt;
+            if (check(token_type::id)) { p.name = advance().value; }
+            p.line = previous().line;
+            meth->params.push_back(p);
+        } while (match(token_type::comma));
+        consume(token_type::cparen, "Expected ')' after method params");
+    }
+
+    void parse_method_qualifiers(class_method* meth) {
+        // After ')': optional const, override, final, noexcept (any order, stackable)
+        while (true) {
+            if (check(token_type::kw_const))    { advance(); meth->is_const_method = true; }
+            else if (check(token_type::kw_override)) { advance(); meth->is_override = true; meth->is_virtual = true; }
+            else if (check(token_type::kw_final))    { advance(); meth->is_final = true; }
+            else if (check(token_type::kw_noexcept)) { advance(); meth->is_noexcept = true; }
+            else break;
+        }
+    }
+
+    void parse_method_body(class_method* meth) {
+        if (match(token_type::sm)) {
+            meth->body = nullptr; // declaration only
+        } else {
+            meth->body = parse_block();
+        }
+    }
+
+    // simple type to string for operator names
+    static std::string type_to_string(const type_node* t) {
+        if (!t) return "void";
+        if (t->is_primitive && t->prim.has_value()) {
+            // reuse prim_to_str but avoid including types.hxx here
+            // just return the name field if available
+        }
+        if (t->name.has_value()) return t->name.value();
+        return "type";
     }
 
     typedef_decl* parse_typedef_decl() {
@@ -396,7 +1009,35 @@ private:
         if (check(token_type::kw_asm))     return parse_asm_stmt();
         if (check(token_type::kw_break))   { auto* n = alloc<break_stmt>();    n->line = advance().line; consume(token_type::sm, "Expected ';'"); return n; }
         if (check(token_type::kw_continue)){ auto* n = alloc<continue_stmt>(); n->line = advance().line; consume(token_type::sm, "Expected ';'"); return n; }
+        if (check(token_type::kw_defer))   return parse_defer_stmt();
 
+        // constexpr statements
+        if (check(token_type::kw_constexpr)) {
+            // constexpr if (cond) {...}
+            if (peek_at(1).type == token_type::kw_if) {
+                advance(); // consume 'constexpr'
+                auto* n = parse_if();
+                n->is_constexpr = true;
+                return n;
+            }
+            // constexpr { ... }  (compile-time execution block — emitted normally)
+            if (peek_at(1).type == token_type::obrace) {
+                advance(); // consume 'constexpr'
+                return parse_block();
+            }
+            // constexpr Type name = expr;
+            advance(); // consume 'constexpr'
+            auto* vd = parse_local_var_decl();
+            vd->is_constexpr = true;
+            return vd;
+        }
+        // consteval Type name; — manual constructor
+        if (check(token_type::kw_consteval)) {
+            advance(); // consume 'consteval'
+            auto* vd = parse_local_var_decl();
+            vd->is_consteval = true;
+            return vd;
+        }
         // local variable declaration: starts with a type keyword or identifier followed by identifier
         if (is_type_start()) return parse_local_var_decl();
 
@@ -406,6 +1047,18 @@ private:
         es->expr  = parse_expr();
         consume(token_type::sm, "Expected ';' after expression");
         return es;
+    }
+
+    defer_stmt* parse_defer_stmt() {
+        auto* n = alloc<defer_stmt>();
+        n->line = advance().line; // consume 'defer'
+        if (check(token_type::obrace)) {
+            n->blk = parse_block();
+        } else {
+            n->expr = parse_expr();
+            consume(token_type::sm, "Expected ';' after defer expression");
+        }
+        return n;
     }
 
     bool is_type_start() const {
@@ -426,11 +1079,34 @@ private:
             token_type::kw_b64,  token_type::kw_b128, token_type::kw_b256, token_type::kw_b512,
             token_type::kw_void,
             token_type::kw_struct, token_type::kw_enum, token_type::kw_union,
+            token_type::kw_smem,
         };
         token_type tt = peek().type;
         for (auto t : type_tokens) if (t == tt) return true;
         // identifier followed by identifier = user-defined type
         if (tt == token_type::id && peek_at(1).type == token_type::id) return true;
+        // identifier followed by one or more * then identifier = pointer to user-defined type
+        if (tt == token_type::id) {
+            size_t k = 1;
+            while (peek_at(k).type == token_type::ast) ++k;
+            if (k > 1 && peek_at(k).type == token_type::id) return true;
+        }
+        // generic type instantiation:  Name< ... > name  (balanced angle scan)
+        if (tt == token_type::id && peek_at(1).type == token_type::lt) {
+            int depth = 0;
+            size_t k = 1;
+            for (; k < 64; ++k) {
+                token_type pt = peek_at(k).type;
+                if (pt == token_type::lt) ++depth;
+                else if (pt == token_type::gt) { if (--depth == 0) { ++k; break; } }
+                else if (pt == token_type::eof || pt == token_type::sm
+                         || pt == token_type::obrace) return false;
+            }
+            if (depth == 0) {
+                token_type after = peek_at(k).type;
+                if (after == token_type::id || after == token_type::ast) return true;
+            }
+        }
         return false;
     }
 
@@ -441,6 +1117,29 @@ private:
         vd->line       = name_tok.line;
         vd->type       = t;
         vd->name       = name_tok.value;
+        // Array size comes after the name: int a[10]
+        if (match(token_type::obracket)) {
+            if (!check(token_type::cbracket))
+                t->array_size = parse_expr();
+            consume(token_type::cbracket, "Expected ']' after array size");
+        }
+        // Implicit constructor call syntax: Type name(args...) or Type name{args...}
+        else if (check(token_type::oparen) || check(token_type::obrace)) {
+            bool brace = check(token_type::obrace);
+            advance(); // consume ( or {
+            token_type closer = brace ? token_type::cbrace : token_type::cparen;
+            vd->ctor_brace = brace;
+            vd->has_ctor_parens = true;
+            if (!check(closer)) {
+                do {
+                    vd->ctor_args.push_back(parse_expr());
+                } while (match(token_type::comma));
+            }
+            consume(closer, brace ? "Expected '}' after constructor arguments"
+                                  : "Expected ')' after constructor arguments");
+            consume(token_type::sm, "Expected ';' after variable declaration");
+            return vd;
+        }
         if (match(token_type::assign)) vd->init = parse_expr();
         consume(token_type::sm, "Expected ';' after variable declaration");
         return vd;
@@ -449,6 +1148,8 @@ private:
     if_stmt* parse_if() {
         auto* n = alloc<if_stmt>();
         n->line = advance().line; // 'if'
+        // 'if constexpr (...)' — compile-time conditional
+        if (check(token_type::kw_constexpr)) { advance(); n->is_constexpr = true; }
         consume(token_type::oparen, "Expected '(' after 'if'");
         n->cond = parse_expr();
         consume(token_type::cparen, "Expected ')' after condition");
@@ -765,7 +1466,45 @@ private:
             n->uop = unary_op::pre_dec; n->operand = parse_unary(); return n;
         }
         if (check(token_type::kw_sizeof)) return parse_sizeof();
+        // noexcept(expr) operator: evaluates to a bool literal (informational -> always true)
+        if (check(token_type::kw_noexcept) && peek_at(1).type == token_type::oparen) {
+            uint64_t ln = advance().line; // 'noexcept'
+            consume(token_type::oparen, "Expected '(' after noexcept");
+            parse_expr(); // operand (ignored)
+            consume(token_type::cparen, "Expected ')' after noexcept operand");
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::bool_lit;
+            n->line = ln;
+            n->bool_val = true;
+            return n;
+        }
         return parse_postfix();
+    }
+
+    // Parse optional <T, U, ...> generic type-argument list. Rolls back fully on failure.
+    bool try_parse_type_args(std::vector<type_node*>& out) {
+        if (!check(token_type::lt)) return false;
+        size_t saved = current;
+        advance(); // consume '<'
+        if (check(token_type::gt)) { current = saved; return false; }
+        std::vector<type_node*> tmp;
+        do {
+            if (!is_type_arg_start()) { current = saved; return false; }
+            tmp.push_back(parse_type());
+        } while (match(token_type::comma));
+        if (!check(token_type::gt)) { current = saved; return false; }
+        advance(); // consume '>'
+        out = std::move(tmp);
+        return true;
+    }
+
+    bool is_type_arg_start() const {
+        token_type tt = peek().type;
+        if (tt == token_type::id) return true;
+        if (tt == token_type::kw_const || tt == token_type::kw_unsigned ||
+            tt == token_type::kw_signed || tt == token_type::kw_void) return true;
+        // primitive numeric/bool type keywords are contiguous: kw_char .. kw_b512
+        return tt >= token_type::kw_char && tt <= token_type::kw_b512;
     }
 
     expr_node* parse_sizeof() {
@@ -786,6 +1525,26 @@ private:
     expr_node* parse_postfix() {
         expr_node* base = parse_primary();
         while (true) {
+            // Generic call: name<TypeArgs>(args)  (only if '<types>' is followed by '(')
+            if (check(token_type::lt) && base->kind == expr_kind::identifier) {
+                size_t saved = current;
+                std::vector<type_node*> targs;
+                if (try_parse_type_args(targs) && check(token_type::oparen)) {
+                    advance(); // consume '('
+                    auto* n   = alloc<expr_node>();
+                    n->kind   = expr_kind::call;
+                    n->line   = previous().line;
+                    n->callee = base;
+                    n->type_args = std::move(targs);
+                    if (!check(token_type::cparen)) {
+                        do { n->args.push_back(parse_expr()); } while (match(token_type::comma));
+                    }
+                    consume(token_type::cparen, "Expected ')' after arguments");
+                    base = n;
+                    continue;
+                }
+                current = saved; // not a generic call; fall through to comparison parsing
+            }
             if (match(token_type::oparen)) {
                 // function call
                 auto* n   = alloc<expr_node>();
@@ -818,6 +1577,25 @@ private:
                 base = n;
                 continue;
             }
+            // -> is syntactic sugar for (*base).member — deprecated, use (*ptr).field instead
+            if (match(token_type::arrow)) {
+                uint64_t arrow_line = previous().line;
+                std::cerr << "Warning at line " << arrow_line
+                          << ": '->' is deprecated; use (*ptr).field instead\n";
+                // Desugar: base->field  =>  (*base).field
+                auto* deref   = alloc<expr_node>();
+                deref->kind   = expr_kind::unary;
+                deref->line   = arrow_line;
+                deref->uop    = unary_op::deref;
+                deref->operand = base;
+                auto* n       = alloc<expr_node>();
+                n->kind       = expr_kind::member;
+                n->line       = arrow_line;
+                n->object     = deref;
+                n->member_name = consume(token_type::id, "Expected member name after '->'").value;
+                base = n;
+                continue;
+            }
             if (check(token_type::inc)) {
                 auto* n = alloc<expr_node>(); n->kind = expr_kind::unary;
                 n->line = advance().line; n->uop = unary_op::post_inc; n->operand = base;
@@ -828,9 +1606,50 @@ private:
                 n->line = advance().line; n->uop = unary_op::post_dec; n->operand = base;
                 base = n; continue;
             }
+            // ClassName::method(args) — static method call, deprecated; use ClassName.method() instead
+            if (match(token_type::scope_res)) {
+                uint64_t res_line = previous().line;
+                std::cerr << "Warning at line " << res_line
+                          << ": '::' is deprecated for static method calls; use ClassName.method() instead\n";
+                std::string class_name = (base->kind == expr_kind::identifier) ? base->str_val : "";
+                auto meth_tok = consume(token_type::id, "Expected method name after '::'");
+                // Build an identifier node for the mangled static method name.
+                auto* callee_n    = alloc<expr_node>();
+                callee_n->kind    = expr_kind::identifier;
+                callee_n->line    = meth_tok.line;
+                callee_n->str_val = class_name + "__MT_" + meth_tok.value;
+                // Build the call expression.
+                auto* call_n    = alloc<expr_node>();
+                call_n->kind    = expr_kind::call;
+                call_n->line    = meth_tok.line;
+                call_n->callee  = callee_n;
+                consume(token_type::oparen, "Expected '(' after static method name");
+                if (!check(token_type::cparen)) {
+                    do { call_n->args.push_back(parse_expr()); } while (match(token_type::comma));
+                }
+                consume(token_type::cparen, "Expected ')' after arguments");
+                base = call_n;
+                continue;
+            }
             break;
         }
         return base;
+    }
+
+    // Parse '{ .field = val, ... }' into n->field_inits. '{' is the current token.
+    void parse_class_init_fields(expr_node* n) {
+        consume(token_type::obrace, "Expected '{' in class initializer");
+        if (!check(token_type::cbrace)) {
+            do {
+                if (check(token_type::cbrace)) break; // trailing comma
+                consume(token_type::dot, "Expected '.' before field name in class initializer");
+                std::string fname = consume(token_type::id, "Expected field name in class initializer").value;
+                consume(token_type::assign, "Expected '=' after field name in class initializer");
+                expr_node* val = parse_expr();
+                n->field_inits.emplace_back(fname, val);
+            } while (match(token_type::comma));
+        }
+        consume(token_type::cbrace, "Expected '}' after class initializer");
     }
 
     expr_node* parse_primary() {
@@ -900,12 +1719,34 @@ private:
             n->int_val = 0;
             return n;
         }
-        if (check(token_type::id)) {
+        // Context-inferred class init:  .{ .field = val, ... }
+        if (check(token_type::dot) && peek_at(1).type == token_type::obrace) {
+            uint64_t ln = advance().line; // consume '.'
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::class_init;
+            n->line = ln;
+            n->init_type = nullptr; // infer from context
+            parse_class_init_fields(n);
+            return n;
+        }
+        if (check(token_type::id) || check(token_type::kw_self)) {
             auto tok = advance();
+            // Named-field class init:  TypeName { .field = val, ... }
+            if (tok.type == token_type::id && check(token_type::obrace)
+                && peek_at(1).type == token_type::dot) {
+                auto* n = alloc<expr_node>();
+                n->kind = expr_kind::class_init;
+                n->line = tok.line;
+                auto* tn = alloc<type_node>();
+                tn->name = tok.value;
+                n->init_type = tn;
+                parse_class_init_fields(n);
+                return n;
+            }
             auto* n  = alloc<expr_node>();
             n->kind  = expr_kind::identifier;
             n->line  = tok.line;
-            n->str_val = tok.value;
+            n->str_val = (tok.type == token_type::kw_self) ? "self" : tok.value;
             return n;
         }
         if (check(token_type::at)) {
@@ -947,8 +1788,9 @@ private:
         while (!is_at_end()) {
             if (previous().type == token_type::sm) return;
             switch (peek().type) {
-                case token_type::kw_struct: case token_type::kw_enum:
-                case token_type::kw_union:  case token_type::kw_typedef:
+                case token_type::kw_struct:  case token_type::kw_enum:
+                case token_type::kw_union:   case token_type::kw_typedef:
+                case token_type::kw_istruc:  case token_type::kw_extern_c:
                 case token_type::kw_if:     case token_type::kw_while:
                 case token_type::kw_for:    case token_type::kw_return:
                     return;

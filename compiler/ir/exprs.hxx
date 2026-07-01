@@ -1,43 +1,106 @@
 #pragma once
 #include "types.hxx"
+#include "names.hxx"
 
 // Forward declare the dispatcher so recursive expressions compile.
 inline LLVMValueRef visit_expr(expr_node* e, ir_context* ctx);
 // Forward declare lvalue helper used by assign/unary addr_of.
 inline LLVMValueRef visit_lvalue(expr_node* e, ir_context* ctx);
+// Forward declare subscript address helper (handles array vs pointer bases).
+inline LLVMValueRef subscript_elem_ptr(expr_node* e, ir_context* ctx, LLVMTypeRef& elem_t_out);
+// Forward declare generic-function instantiation (defined in decls.hxx).
+inline void emit_generic_func_instance(func_decl* fd, const std::vector<LLVMTypeRef>& targs,
+                                       const std::string& mangled, ir_context* ctx);
 
 // ------------------------------------------------------------------ integer coercion helpers
 
-// Truncate or sign-extend an integer value to match dst_t's width.
-// No-op if either side is not an integer type, or widths already match.
-inline LLVMValueRef coerce_int_val(LLVMValueRef val, LLVMTypeRef dst_t, LLVMBuilderRef b) {
-    LLVMTypeRef src_t = LLVMTypeOf(val);
-    if (LLVMGetTypeKind(src_t) != LLVMIntegerTypeKind ||
-        LLVMGetTypeKind(dst_t) != LLVMIntegerTypeKind) return val;
-    unsigned sw = LLVMGetIntTypeWidth(src_t), dw = LLVMGetIntTypeWidth(dst_t);
-    if (sw == dw) return val;
-    if (dw < sw)  return LLVMBuildTrunc(b, val, dst_t, "itrunc");
-    return LLVMBuildSExt(b, val, dst_t, "isext");
+// Bit width of an LLVM floating-point type (for FPExt/FPTrunc decisions).
+inline unsigned llvm_float_bits(LLVMTypeRef t) {
+    switch (LLVMGetTypeKind(t)) {
+        case LLVMHalfTypeKind:    return 16;
+        case LLVMBFloatTypeKind:  return 16;
+        case LLVMFloatTypeKind:   return 32;
+        case LLVMDoubleTypeKind:  return 64;
+        case LLVMX86_FP80TypeKind:return 80;
+        case LLVMFP128TypeKind:   return 128;
+        case LLVMPPC_FP128TypeKind:return 128;
+        default:                  return 0;
+    }
 }
 
-// Widen the narrower of two integer operands to the wider type (ZExt).
-// Required before any binary integer instruction that needs matching types.
-// No-op if either operand is not an integer or they already match.
-inline void homogenize_int_widths(LLVMValueRef& a, LLVMValueRef& b, LLVMBuilderRef builder) {
+// Coerce a value to dst_t, handling int<->int (trunc/sext/zext), float<->float
+// (fpext/fptrunc) and int<->float (sitofp/fptosi). No-op when already matching
+// or when no sensible conversion applies (e.g. pointers).
+inline LLVMValueRef coerce_int_val(LLVMValueRef val, LLVMTypeRef dst_t, LLVMBuilderRef b) {
+    LLVMTypeRef src_t = LLVMTypeOf(val);
+    if (src_t == dst_t) return val;
+    bool si = LLVMGetTypeKind(src_t) == LLVMIntegerTypeKind;
+    bool di = LLVMGetTypeKind(dst_t) == LLVMIntegerTypeKind;
+    bool sf = llvm_is_float(src_t);
+    bool df = llvm_is_float(dst_t);
+
+    if (si && di) {
+        unsigned sw = LLVMGetIntTypeWidth(src_t), dw = LLVMGetIntTypeWidth(dst_t);
+        if (sw == dw) return val;
+        if (dw < sw)  return LLVMBuildTrunc(b, val, dst_t, "itrunc");
+        // i1 (boolean comparison result) must zero-extend so true = 1, not -1.
+        if (sw == 1)  return LLVMBuildZExt(b, val, dst_t, "zext");
+        return LLVMBuildSExt(b, val, dst_t, "isext");
+    }
+    if (sf && df) {
+        unsigned sw = llvm_float_bits(src_t), dw = llvm_float_bits(dst_t);
+        if (sw == dw) return val;
+        return dw < sw ? LLVMBuildFPTrunc(b, val, dst_t, "fptrunc")
+                       : LLVMBuildFPExt(b,   val, dst_t, "fpext");
+    }
+    if (si && df) return LLVMBuildSIToFP(b, val, dst_t, "sitofp");
+    if (sf && di) return LLVMBuildFPToSI(b, val, dst_t, "fptosi");
+    return val;
+}
+
+// Bring two operands to a common type before a binary instruction.
+// is_cmp=true: truncate the wider operand to the narrower type (sign-safe for eq/ne).
+// is_cmp=false: zero-extend the narrower to the wider (for arithmetic).
+inline void homogenize_int_widths(LLVMValueRef& a, LLVMValueRef& b, LLVMBuilderRef builder, bool is_cmp = false) {
     LLVMTypeRef ta = LLVMTypeOf(a), tb = LLVMTypeOf(b);
-    if (LLVMGetTypeKind(ta) != LLVMIntegerTypeKind ||
-        LLVMGetTypeKind(tb) != LLVMIntegerTypeKind) return;
-    unsigned wa = LLVMGetIntTypeWidth(ta), wb = LLVMGetIntTypeWidth(tb);
-    if (wa == wb) return;
-    if (wa < wb) a = LLVMBuildZExt(builder, a, tb, "zext");
-    else         b = LLVMBuildZExt(builder, b, ta, "zext");
+    bool ai = LLVMGetTypeKind(ta) == LLVMIntegerTypeKind;
+    bool bi = LLVMGetTypeKind(tb) == LLVMIntegerTypeKind;
+    bool af = llvm_is_float(ta), bf = llvm_is_float(tb);
+
+    if (ai && bi) {
+        unsigned wa = LLVMGetIntTypeWidth(ta), wb = LLVMGetIntTypeWidth(tb);
+        if (wa == wb) return;
+        if (is_cmp) {
+            // Truncate wider to narrower so signed/unsigned comparison is type-safe.
+            if (wa < wb) b = LLVMBuildTrunc(builder, b, ta, "itrunc");
+            else         a = LLVMBuildTrunc(builder, a, tb, "itrunc");
+        } else {
+            if (wa < wb) a = LLVMBuildZExt(builder, a, tb, "zext");
+            else         b = LLVMBuildZExt(builder, b, ta, "zext");
+        }
+        return;
+    }
+    if (af && bf) {
+        unsigned wa = llvm_float_bits(ta), wb = llvm_float_bits(tb);
+        if (wa == wb) return;
+        if (wa < wb) a = LLVMBuildFPExt(builder, a, tb, "fpext");
+        else         b = LLVMBuildFPExt(builder, b, ta, "fpext");
+        return;
+    }
+    if (af && bi) { b = LLVMBuildSIToFP(builder, b, ta, "sitofp"); return; }
+    if (bf && ai) { a = LLVMBuildSIToFP(builder, a, tb, "sitofp"); return; }
 }
 
 // ------------------------------------------------------------------ literals
 
 inline LLVMValueRef visit_int_lit(expr_node* e, ir_context* ctx) {
+    int64_t v = e->int_val;
+    if (v < -2147483648LL || v > 2147483647LL) {
+        LLVMTypeRef i64 = LLVMInt64TypeInContext(ctx->llvm_ctx);
+        return LLVMConstInt(i64, static_cast<unsigned long long>(v), /*sign-extend=*/1);
+    }
     LLVMTypeRef i32 = LLVMInt32TypeInContext(ctx->llvm_ctx);
-    return LLVMConstInt(i32, static_cast<unsigned long long>(e->int_val), /*sign-extend=*/1);
+    return LLVMConstInt(i32, static_cast<unsigned long long>(v), /*sign-extend=*/1);
 }
 
 inline LLVMValueRef visit_float_lit(expr_node* e, ir_context* ctx) {
@@ -68,14 +131,27 @@ inline LLVMValueRef visit_identifier_expr(expr_node* e, ir_context* ctx) {
     // Local variable: load from alloca.
     LLVMValueRef ptr  = ctx->lookup_local(e->str_val);
     LLVMTypeRef  type = ctx->lookup_local_type(e->str_val);
-    if (ptr && type)
+    if (ptr && type) {
+        // Array-to-pointer decay: an array used as a value yields a pointer to its
+        // first element (the alloca address), not a load of the aggregate.
+        if (LLVMIsAAllocaInst(ptr) &&
+            LLVMGetTypeKind(LLVMGetAllocatedType(ptr)) == LLVMArrayTypeKind)
+            return ptr;
         return LLVMBuildLoad2(ctx->llvm_builder, type, ptr, e->str_val.c_str());
+    }
 
     // Global variable: load from global.
+    // Enum constants are declared as global constants — return the initializer directly
+    // so they can be used as case labels in switch instructions.
     auto git = ctx->global_vars.find(e->str_val);
     if (git != ctx->global_vars.end()) {
-        LLVMTypeRef gt = LLVMGlobalGetValueType(git->second);
-        return LLVMBuildLoad2(ctx->llvm_builder, gt, git->second, e->str_val.c_str());
+        LLVMValueRef gv = git->second;
+        if (LLVMIsGlobalConstant(gv)) {
+            LLVMValueRef init = LLVMGetInitializer(gv);
+            if (init) return init;
+        }
+        LLVMTypeRef gt = LLVMGlobalGetValueType(gv);
+        return LLVMBuildLoad2(ctx->llvm_builder, gt, gv, e->str_val.c_str());
     }
 
     // Function reference (when used as a value, e.g. for function pointers).
@@ -84,6 +160,74 @@ inline LLVMValueRef visit_identifier_expr(expr_node* e, ir_context* ctx) {
         return fit->second;
 
     throw std::runtime_error("IR: Unknown identifier '" + e->str_val + "'");
+}
+
+// ------------------------------------------------------------------ struct name inference
+
+// Recursively infer the struct name for a member/subscript expression.
+// Returns "" if not determinable.
+inline std::string infer_struct_tname(expr_node* e, ir_context* ctx) {
+    switch (e->kind) {
+        case expr_kind::identifier: {
+            LLVMTypeRef t = ctx->lookup_local_type(e->str_val);
+            if (t && LLVMGetTypeKind(t) == LLVMStructTypeKind) {
+                const char* n = LLVMGetStructName(t); return n ? n : "";
+            }
+            LLVMTypeRef dt = ctx->lookup_deref_type(e->str_val);
+            if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind) {
+                const char* n = LLVMGetStructName(dt); return n ? n : "";
+            }
+            return "";
+        }
+        case expr_kind::member: {
+            std::string pn = infer_struct_tname(e->object, ctx);
+            if (pn.empty()) return "";
+            auto ni = ctx->struct_field_names.find(pn);
+            auto ti = ctx->struct_field_types.find(pn);
+            if (ni == ctx->struct_field_names.end() || ti == ctx->struct_field_types.end()) return "";
+            const auto& ns = ni->second; const auto& ts = ti->second;
+            for (unsigned i = 0; i < ns.size(); i++) {
+                if (ns[i] == e->member_name && i < ts.size()) {
+                    LLVMTypeRef ft = ts[i];
+                    if (ft && LLVMGetTypeKind(ft) == LLVMStructTypeKind) {
+                        const char* n = LLVMGetStructName(ft); return n ? n : "";
+                    }
+                    return "";
+                }
+            }
+            return "";
+        }
+        case expr_kind::subscript: {
+            if (e->object->kind == expr_kind::identifier) {
+                LLVMTypeRef t = ctx->lookup_local_type(e->object->str_val);
+                if (t) {
+                    if (LLVMGetTypeKind(t) == LLVMArrayTypeKind) {
+                        LLVMTypeRef el = LLVMGetElementType(t);
+                        if (el && LLVMGetTypeKind(el) == LLVMStructTypeKind) {
+                            const char* n = LLVMGetStructName(el); return n ? n : "";
+                        }
+                    } else if (LLVMGetTypeKind(t) == LLVMStructTypeKind) {
+                        // Array locals store elem_t (the struct type) directly.
+                        const char* n = LLVMGetStructName(t); return n ? n : "";
+                    }
+                }
+                LLVMTypeRef dt = ctx->lookup_deref_type(e->object->str_val);
+                if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind) {
+                    const char* n = LLVMGetStructName(dt); return n ? n : "";
+                }
+            }
+            return "";
+        }
+        case expr_kind::unary:
+            if (e->uop == unary_op::deref && e->operand && e->operand->kind == expr_kind::identifier) {
+                LLVMTypeRef dt = ctx->lookup_deref_type(e->operand->str_val);
+                if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind) {
+                    const char* n = LLVMGetStructName(dt); return n ? n : "";
+                }
+            }
+            return "";
+        default: return "";
+    }
 }
 
 // ------------------------------------------------------------------ lvalue address
@@ -96,6 +240,9 @@ inline LLVMValueRef visit_lvalue(expr_node* e, ir_context* ctx) {
             if (ptr) return ptr;
             auto git = ctx->global_vars.find(e->str_val);
             if (git != ctx->global_vars.end()) return git->second;
+            // Functions are valid lvalues for addr-of: &funcname
+            auto fit = ctx->global_funcs.find(e->str_val);
+            if (fit != ctx->global_funcs.end()) return fit->second;
             throw std::runtime_error("IR: Unknown lvalue '" + e->str_val + "'");
         }
         case expr_kind::unary:
@@ -103,33 +250,75 @@ inline LLVMValueRef visit_lvalue(expr_node* e, ir_context* ctx) {
             return visit_expr(e->operand, ctx);
 
         case expr_kind::subscript: {
-            LLVMValueRef base_ptr = visit_lvalue(e->object, ctx);
-            LLVMValueRef idx      = visit_expr(e->index, ctx);
-            LLVMTypeRef  elem_t   = ctx->lookup_local_type(e->object->str_val);
-            if (!elem_t) elem_t = LLVMInt8TypeInContext(ctx->llvm_ctx);
-            return LLVMBuildGEP2(ctx->llvm_builder, elem_t, base_ptr, &idx, 1, "elemptr");
+            LLVMTypeRef elem_t = nullptr;
+            return subscript_elem_ptr(e, ctx, elem_t);
         }
         case expr_kind::member: {
             // GEP into a struct.
             LLVMValueRef struct_ptr = visit_lvalue(e->object, ctx);
             // Look up the struct type from object's identifier name (best-effort).
             std::string tname;
+            bool ptr_needs_load = false; // true when struct_ptr is ptr-to-ptr (e.g. self: Point**)
             if (e->object->kind == expr_kind::identifier) {
                 LLVMTypeRef elem = ctx->lookup_local_type(e->object->str_val);
-                if (elem) tname = LLVMGetStructName(elem) ? LLVMGetStructName(elem) : "";
+                // Only call LLVMGetStructName on actual struct types — calling it on a pointer or
+                // other type is undefined behavior (LLVM uses a static cast internally).
+                if (elem && LLVMGetTypeKind(elem) == LLVMStructTypeKind)
+                    tname = LLVMGetStructName(elem) ? LLVMGetStructName(elem) : "";
+                // If direct type is a pointer (e.g. self: Point*), check deref type for struct name.
+                // Also need to load the pointer before GEP-ing into it.
+                if (tname.empty()) {
+                    LLVMTypeRef deref_t = ctx->lookup_deref_type(e->object->str_val);
+                    if (deref_t && LLVMGetTypeKind(deref_t) == LLVMStructTypeKind) {
+                        tname = LLVMGetStructName(deref_t) ? LLVMGetStructName(deref_t) : "";
+                        ptr_needs_load = !tname.empty();
+                    }
+                }
+            } else if (e->object->kind == expr_kind::unary &&
+                       e->object->uop == unary_op::deref &&
+                       e->object->operand->kind == expr_kind::identifier) {
+                // (*ptr).field — look up through the pointer's deref type
+                LLVMTypeRef deref_t = ctx->lookup_deref_type(e->object->operand->str_val);
+                if (deref_t && LLVMGetTypeKind(deref_t) == LLVMStructTypeKind)
+                    tname = LLVMGetStructName(deref_t) ? LLVMGetStructName(deref_t) : "";
+            }
+            // Fallback: recursively infer struct name for nested member/subscript expressions.
+            if (tname.empty())
+                tname = infer_struct_tname(e->object, ctx);
+            // For self.x where self is Point*: struct_ptr is Point** (alloca of self).
+            // Load once to get the actual Point* before GEP.
+            if (ptr_needs_load) {
+                LLVMTypeRef ptr_t = ctx->lookup_local_type(e->object->str_val);
+                struct_ptr = LLVMBuildLoad2(ctx->llvm_builder, ptr_t, struct_ptr, "selfload");
             }
             auto fit = ctx->struct_field_names.find(tname);
             if (fit == ctx->struct_field_names.end())
                 throw std::runtime_error("IR: Struct '" + tname + "' not registered");
             const auto& fields = fit->second;
+            // Unions: the LLVM struct has only 1 body element; always GEP with index 0.
+            bool is_union = ctx->union_names.count(tname) > 0;
             for (unsigned i = 0; i < fields.size(); i++) {
                 if (fields[i] == e->member_name) {
                     LLVMTypeRef struct_t = ctx->struct_types[tname];
+                    unsigned gep_idx = is_union ? 0 : i;
                     LLVMValueRef indices[2] = {
                         LLVMConstInt(LLVMInt32TypeInContext(ctx->llvm_ctx), 0, 0),
-                        LLVMConstInt(LLVMInt32TypeInContext(ctx->llvm_ctx), i, 0)
+                        LLVMConstInt(LLVMInt32TypeInContext(ctx->llvm_ctx), gep_idx, 0)
                     };
-                    return LLVMBuildGEP2(ctx->llvm_builder, struct_t, struct_ptr, indices, 2, "fieldptr");
+                    LLVMValueRef gep = LLVMBuildGEP2(ctx->llvm_builder, struct_t, struct_ptr, indices, 2, "fieldptr");
+                    // For union non-first fields: bitcast the pointer to the field's actual type.
+                    if (is_union && i > 0) {
+                        auto ti = ctx->struct_field_types.find(tname);
+                        if (ti != ctx->struct_field_types.end() && i < ti->second.size()) {
+                            LLVMTypeRef field_t = ti->second[i];
+                            if (field_t && LLVMGetTypeKind(field_t) != LLVMGetTypeKind(
+                                    ctx->struct_field_types[tname][0])) {
+                                gep = LLVMBuildBitCast(ctx->llvm_builder, gep,
+                                    LLVMPointerType(field_t, 0), "unioncast");
+                            }
+                        }
+                    }
+                    return gep;
                 }
             }
             throw std::runtime_error("IR: No field '" + e->member_name + "' in struct '" + tname + "'");
@@ -283,10 +472,79 @@ inline LLVMValueRef visit_binary_expr(expr_node* e, ir_context* ctx) {
     if (e->bop == binary_op::log_and) return visit_log_and(e, ctx);
     if (e->bop == binary_op::log_or)  return visit_log_or(e, ctx);
 
+    // Check for class operator overloads: if lhs is a struct, look for ClassName__MT_operator<op>.
+    auto bop_suffix = [](binary_op op) -> std::string {
+        switch (op) {
+            case binary_op::add: return "+";  case binary_op::sub: return "-";
+            case binary_op::mul: return "*";  case binary_op::div: return "/";
+            case binary_op::mod: return "%";  case binary_op::eq:  return "==";
+            case binary_op::ne:  return "!="; case binary_op::lt:  return "<";
+            case binary_op::lte: return "<="; case binary_op::gt:  return ">";
+            case binary_op::gte: return ">=";
+            default: return "";
+        }
+    };
+    if (e->lhs->kind == expr_kind::identifier || e->lhs->kind == expr_kind::member ||
+        e->lhs->kind == expr_kind::subscript) {
+        // Try to get the lhs struct name.
+        std::string lhs_class;
+        if (e->lhs->kind == expr_kind::identifier) {
+            LLVMTypeRef lt = ctx->lookup_local_type(e->lhs->str_val);
+            if (lt && LLVMGetTypeKind(lt) == LLVMStructTypeKind)
+                lhs_class = LLVMGetStructName(lt) ? LLVMGetStructName(lt) : "";
+        }
+        if (!lhs_class.empty()) {
+            std::string op_str = bop_suffix(e->bop);
+            if (!op_str.empty()) {
+                std::string mt_name = lhs_class + "__MT_operator" + op_str;
+                auto fit = ctx->global_funcs.find(mt_name);
+                if (fit != ctx->global_funcs.end()) {
+                    LLVMValueRef self_ptr = visit_lvalue(e->lhs, ctx);
+                    LLVMValueRef rhs_val  = visit_expr(e->rhs, ctx);
+                    LLVMValueRef mt_args[2] = { self_ptr, rhs_val };
+                    LLVMTypeRef mt_fn_t = ctx->global_func_types[mt_name];
+                    bool mt_void = LLVMGetTypeKind(LLVMGetReturnType(mt_fn_t)) == LLVMVoidTypeKind;
+                    return LLVMBuildCall2(ctx->llvm_builder, mt_fn_t, fit->second,
+                                         mt_args, 2, mt_void ? "" : "opcall");
+                }
+            }
+        }
+    }
+
     // Evaluate both sides (left-to-right) for all other operators.
     LLVMValueRef lv = visit_expr(e->lhs, ctx);
     LLVMValueRef rv = visit_expr(e->rhs, ctx);
-    homogenize_int_widths(lv, rv, ctx->llvm_builder);
+
+    LLVMTypeKind lk = LLVMGetTypeKind(LLVMTypeOf(lv));
+    LLVMTypeKind rk = LLVMGetTypeKind(LLVMTypeOf(rv));
+    bool l_ptr = lk == LLVMPointerTypeKind;
+    bool r_ptr = rk == LLVMPointerTypeKind;
+
+    // ---- pointer arithmetic: ptr +/- int  -> GEP ----
+    if ((e->bop == binary_op::add || e->bop == binary_op::sub) && (l_ptr ^ r_ptr)) {
+        LLVMValueRef pv  = l_ptr ? lv : rv;
+        LLVMValueRef iv  = l_ptr ? rv : lv;
+        // Determine the pointed-to element type from the pointer operand's declaration.
+        expr_node* pexpr = l_ptr ? e->lhs : e->rhs;
+        LLVMTypeRef elem_t = nullptr;
+        if (pexpr->kind == expr_kind::identifier)
+            elem_t = ctx->lookup_deref_type(pexpr->str_val);
+        if (!elem_t) elem_t = LLVMInt8TypeInContext(ctx->llvm_ctx);
+        if (e->bop == binary_op::sub)
+            iv = LLVMBuildNeg(ctx->llvm_builder, iv, "negidx");
+        return LLVMBuildGEP2(ctx->llvm_builder, elem_t, pv, &iv, 1, "ptradd");
+    }
+
+    // ---- pointer vs integer comparison (e.g. p == 0): make both pointers ----
+    if (l_ptr && rk == LLVMIntegerTypeKind)
+        rv = LLVMBuildIntToPtr(ctx->llvm_builder, rv, LLVMTypeOf(lv), "inttoptr");
+    else if (r_ptr && lk == LLVMIntegerTypeKind)
+        lv = LLVMBuildIntToPtr(ctx->llvm_builder, lv, LLVMTypeOf(rv), "inttoptr");
+
+    bool is_cmp_op = (e->bop == binary_op::eq || e->bop == binary_op::ne ||
+                      e->bop == binary_op::lt || e->bop == binary_op::gt ||
+                      e->bop == binary_op::lte || e->bop == binary_op::gte);
+    homogenize_int_widths(lv, rv, ctx->llvm_builder, is_cmp_op);
     bool is_fp = llvm_is_float(LLVMTypeOf(lv));
 
     switch (e->bop) {
@@ -341,22 +599,72 @@ inline LLVMValueRef visit_binary_expr(expr_node* e, ir_context* ctx) {
 
 // ------------------------------------------------------------------ assignment
 
+// Best-effort LLVM element type of an assignable location, so RHS values can be
+// coerced to the storage type (e.g. a double literal stored into a float field).
+inline LLVMTypeRef lvalue_elem_type(expr_node* e, ir_context* ctx) {
+    if (!e) return nullptr;
+    switch (e->kind) {
+        case expr_kind::identifier:
+            return ctx->lookup_local_type(e->str_val);
+        case expr_kind::unary:
+            if (e->uop == unary_op::deref && e->operand &&
+                e->operand->kind == expr_kind::identifier)
+                return ctx->lookup_deref_type(e->operand->str_val);
+            return nullptr;
+        case expr_kind::subscript:
+            if (e->object && e->object->kind == expr_kind::identifier) {
+                LLVMTypeRef dt = ctx->lookup_deref_type(e->object->str_val);
+                if (dt) return dt;                                   // pointer subscript
+                return ctx->lookup_local_type(e->object->str_val);  // array element
+            }
+            return nullptr;
+        case expr_kind::member: {
+            std::string tname;
+            expr_node* obj = e->object;
+            if (obj && obj->kind == expr_kind::identifier) {
+                LLVMTypeRef elem = ctx->lookup_local_type(obj->str_val);
+                if (elem && LLVMGetTypeKind(elem) == LLVMStructTypeKind)
+                    tname = LLVMGetStructName(elem) ? LLVMGetStructName(elem) : "";
+                if (tname.empty()) {
+                    LLVMTypeRef dt = ctx->lookup_deref_type(obj->str_val);
+                    if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind)
+                        tname = LLVMGetStructName(dt) ? LLVMGetStructName(dt) : "";
+                }
+            } else if (obj && obj->kind == expr_kind::unary &&
+                       obj->uop == unary_op::deref && obj->operand &&
+                       obj->operand->kind == expr_kind::identifier) {
+                LLVMTypeRef dt = ctx->lookup_deref_type(obj->operand->str_val);
+                if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind)
+                    tname = LLVMGetStructName(dt) ? LLVMGetStructName(dt) : "";
+            }
+            auto fit = ctx->struct_field_names.find(tname);
+            auto tyit = ctx->struct_field_types.find(tname);
+            if (fit != ctx->struct_field_names.end() && tyit != ctx->struct_field_types.end()) {
+                const auto& names = fit->second;
+                for (unsigned i = 0; i < names.size(); ++i)
+                    if (names[i] == e->member_name && i < tyit->second.size())
+                        return tyit->second[i];
+            }
+            return nullptr;
+        }
+        default: return nullptr;
+    }
+}
+
 inline LLVMValueRef visit_assign_expr(expr_node* e, ir_context* ctx) {
     LLVMValueRef rhs = visit_expr(e->rhs, ctx);
     LLVMValueRef ptr = visit_lvalue(e->lhs, ctx);
     bool is_fp = llvm_is_float(LLVMTypeOf(rhs));
 
     if (e->bop == binary_op::assign) {
-        LLVMTypeRef elem_t = ctx->lookup_local_type(
-            e->lhs->kind == expr_kind::identifier ? e->lhs->str_val : "");
+        LLVMTypeRef elem_t = lvalue_elem_type(e->lhs, ctx);
         if (elem_t) rhs = coerce_int_val(rhs, elem_t, ctx->llvm_builder);
         LLVMBuildStore(ctx->llvm_builder, rhs, ptr);
         return rhs;
     }
 
     // Compound: load lhs, apply op, store back.
-    LLVMTypeRef elem_t = ctx->lookup_local_type(
-        e->lhs->kind == expr_kind::identifier ? e->lhs->str_val : "");
+    LLVMTypeRef elem_t = lvalue_elem_type(e->lhs, ctx);
     if (!elem_t) elem_t = LLVMTypeOf(rhs);
 
     LLVMValueRef lhs = LLVMBuildLoad2(ctx->llvm_builder, elem_t, ptr, "cmp_lhs");
@@ -398,17 +706,182 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
     for (auto* arg : e->args)
         args.push_back(visit_expr(arg, ctx));
 
-    // Callee must be a named function (function pointers are an extension).
-    if (e->callee->kind != expr_kind::identifier)
-        throw std::runtime_error("IR: Only named function calls are supported at this stage");
+    LLVMValueRef fn   = nullptr;
+    LLVMTypeRef  fn_t = nullptr;
+
+    // Case 1a: method call via member expression — obj.method(args) or obj->method(args)
+    if (e->callee->kind == expr_kind::member) {
+        expr_node* obj_expr    = e->callee->object;
+        const std::string& mname = e->callee->member_name;
+
+        // Resolve the class name from the object expression.
+        std::string class_name;
+        if (obj_expr->kind == expr_kind::identifier) {
+            LLVMTypeRef elem = ctx->lookup_local_type(obj_expr->str_val);
+            if (elem && LLVMGetTypeKind(elem) == LLVMStructTypeKind)
+                class_name = LLVMGetStructName(elem) ? LLVMGetStructName(elem) : "";
+            if (class_name.empty()) {
+                LLVMTypeRef dt = ctx->lookup_deref_type(obj_expr->str_val);
+                if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind)
+                    class_name = LLVMGetStructName(dt) ? LLVMGetStructName(dt) : "";
+            }
+            // ClassName.staticMethod(args): identifier not a local variable but IS a known class
+            // (static call via dot syntax). Dispatch directly to ClassName__MT_method.
+            if (class_name.empty() && ctx->class_infos.count(obj_expr->str_val)) {
+                std::string mt_name = obj_expr->str_val + "__MT_" + mname;
+                auto mfit = ctx->global_funcs.find(mt_name);
+                if (mfit != ctx->global_funcs.end()) {
+                    LLVMTypeRef mt_fn_t = ctx->global_func_types[mt_name];
+                    bool mt_void = LLVMGetTypeKind(LLVMGetReturnType(mt_fn_t)) == LLVMVoidTypeKind;
+                    return LLVMBuildCall2(ctx->llvm_builder, mt_fn_t, mfit->second,
+                                         args.data(), static_cast<unsigned>(args.size()),
+                                         mt_void ? "" : "stcall");
+                }
+            }
+        } else if (obj_expr->kind == expr_kind::unary &&
+                   obj_expr->uop == unary_op::deref &&
+                   obj_expr->operand->kind == expr_kind::identifier) {
+            // (*ptr).method(args) — deref of a pointer-to-struct identifier
+            LLVMTypeRef dt = ctx->lookup_deref_type(obj_expr->operand->str_val);
+            if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind)
+                class_name = LLVMGetStructName(dt) ? LLVMGetStructName(dt) : "";
+        }
+
+        if (!class_name.empty()) {
+            // Walk inheritance chain: look for ClassName__MT_method, then BaseClass__MT_method, etc.
+            std::string search = class_name;
+            while (!search.empty()) {
+                std::string mt_name = search + "__MT_" + mname;
+                auto mfit = ctx->global_funcs.find(mt_name);
+                if (mfit != ctx->global_funcs.end()) {
+                    // Prepend &obj as self. The self pointer is always cast to the declaring
+                    // class pointer by the IR (both have compatible layout due to inheritance).
+                    LLVMValueRef self_ptr = visit_lvalue(obj_expr, ctx);
+                    std::vector<LLVMValueRef> mt_args = { self_ptr };
+                    mt_args.insert(mt_args.end(), args.begin(), args.end());
+                    LLVMTypeRef mt_fn_t = ctx->global_func_types[mt_name];
+                    bool mt_void = LLVMGetTypeKind(LLVMGetReturnType(mt_fn_t)) == LLVMVoidTypeKind;
+                    return LLVMBuildCall2(ctx->llvm_builder, mt_fn_t, mfit->second,
+                                         mt_args.data(), static_cast<unsigned>(mt_args.size()),
+                                         mt_void ? "" : "mtcall");
+                }
+                // Try base class
+                auto ci = ctx->class_infos.find(search);
+                search = (ci != ctx->class_infos.end()) ? ci->second.base_name : "";
+            }
+        }
+    }
+
+    // Case 1: function pointer call (callee is a non-identifier expression)
+    if (e->callee->kind != expr_kind::identifier) {
+        LLVMValueRef fp_val = visit_expr(e->callee, ctx);
+        LLVMTypeRef fp_t = LLVMTypeOf(fp_val);
+        if (LLVMGetTypeKind(fp_t) == LLVMPointerTypeKind) {
+            // It's a pointer: load and call (function pointer stored in memory)
+            LLVMTypeRef pointed_t = LLVMGetElementType(fp_t);
+            if (LLVMGetTypeKind(pointed_t) == LLVMFunctionTypeKind) {
+                // It's a direct function pointer
+                fn   = fp_val;
+                fn_t = pointed_t;
+            } else {
+                // Load through pointer
+                LLVMValueRef loaded = LLVMBuildLoad2(ctx->llvm_builder, pointed_t, fp_val, "fpload");
+                LLVMTypeRef loaded_t = LLVMTypeOf(loaded);
+                if (LLVMGetTypeKind(loaded_t) == LLVMPointerTypeKind) {
+                    fn   = loaded;
+                    fn_t = LLVMGetElementType(loaded_t);
+                } else {
+                    fn = loaded; fn_t = loaded_t;
+                }
+            }
+        } else {
+            fn = fp_val; fn_t = fp_t;
+        }
+        if (!fn_t || LLVMGetTypeKind(fn_t) != LLVMFunctionTypeKind)
+            throw std::runtime_error("IR: Callee expression is not callable");
+        bool is_void = LLVMGetTypeKind(LLVMGetReturnType(fn_t)) == LLVMVoidTypeKind;
+        return LLVMBuildCall2(ctx->llvm_builder, fn_t, fn,
+                              args.data(), static_cast<unsigned>(args.size()),
+                              is_void ? "" : "calltmp");
+    }
 
     const std::string& fname = e->callee->str_val;
-    auto fit = ctx->global_funcs.find(fname);
-    if (fit == ctx->global_funcs.end())
-        throw std::runtime_error("IR: Call to undeclared function '" + fname + "'");
 
-    LLVMValueRef fn    = fit->second;
-    LLVMTypeRef  fn_t  = ctx->global_func_types[fname];
+    // Case 1b: generic function call — monomorphize on demand.
+    {
+        auto git = ctx->generic_funcs.find(fname);
+        if (git != ctx->generic_funcs.end()) {
+            func_decl* tmpl = git->second;
+            std::vector<LLVMTypeRef> targs;
+            if (!e->type_args.empty()) {
+                for (auto* ta : e->type_args) targs.push_back(llvm_type_of(ta, ctx));
+            } else {
+                // Infer each type parameter from argument types.
+                targs.assign(tmpl->type_params.size(), nullptr);
+                for (size_t pi = 0; pi < tmpl->params.size() && pi < args.size(); ++pi) {
+                    auto* pt = tmpl->params[pi].type;
+                    if (pt && !pt->is_primitive && pt->name && pt->pointer_depth == 0) {
+                        for (size_t ti = 0; ti < tmpl->type_params.size(); ++ti) {
+                            if (tmpl->type_params[ti] == *pt->name && !targs[ti])
+                                targs[ti] = LLVMTypeOf(args[pi]);
+                        }
+                    }
+                }
+                for (auto& t : targs)
+                    if (!t) t = LLVMInt32TypeInContext(ctx->llvm_ctx);
+            }
+            std::string mangled = generic_func_mangled(tmpl->name, targs);
+            if (ctx->global_funcs.find(mangled) == ctx->global_funcs.end())
+                emit_generic_func_instance(tmpl, targs, mangled, ctx);
+            LLVMValueRef gfn  = ctx->global_funcs[mangled];
+            LLVMTypeRef  gft  = ctx->global_func_types[mangled];
+            // Coerce integer args to the concrete parameter widths.
+            unsigned np = LLVMCountParamTypes(gft);
+            std::vector<LLVMTypeRef> pts(np);
+            LLVMGetParamTypes(gft, pts.data());
+            for (unsigned i = 0; i < args.size() && i < np; ++i)
+                args[i] = coerce_int_val(args[i], pts[i], ctx->llvm_builder);
+            bool gv = LLVMGetTypeKind(LLVMGetReturnType(gft)) == LLVMVoidTypeKind;
+            return LLVMBuildCall2(ctx->llvm_builder, gft, gfn,
+                                  args.data(), static_cast<unsigned>(args.size()),
+                                  gv ? "" : "gcall");
+        }
+    }
+
+    // Case 2: resolved overload (set by analyzer)
+    std::string ir_name = fname;
+    if (e->resolved_overload) {
+        ir_name = ir_func_name(e->resolved_overload);
+    }
+
+    // Look up in global_funcs
+    auto fit = ctx->global_funcs.find(ir_name);
+    if (fit == ctx->global_funcs.end()) {
+        // Try original name as fallback
+        fit = ctx->global_funcs.find(fname);
+        if (fit == ctx->global_funcs.end()) {
+            // Try as a local function pointer variable: fp(args)
+            LLVMValueRef fp_alloca = ctx->lookup_local(fname);
+            LLVMTypeRef  fp_ptr_t  = ctx->lookup_local_type(fname);
+            if (fp_alloca && fp_ptr_t && LLVMGetTypeKind(fp_ptr_t) == LLVMPointerTypeKind) {
+                // Use deref_type (stored at declaration time) for LLVM opaque pointer compat.
+                LLVMTypeRef fn_elem_t = ctx->lookup_deref_type(fname);
+                if (!fn_elem_t) fn_elem_t = LLVMGetElementType(fp_ptr_t);
+                if (fn_elem_t && LLVMGetTypeKind(fn_elem_t) == LLVMFunctionTypeKind) {
+                    LLVMValueRef fp_val = LLVMBuildLoad2(ctx->llvm_builder, fp_ptr_t, fp_alloca, "fp");
+                    bool is_void_fp = LLVMGetTypeKind(LLVMGetReturnType(fn_elem_t)) == LLVMVoidTypeKind;
+                    return LLVMBuildCall2(ctx->llvm_builder, fn_elem_t, fp_val,
+                                         args.data(), static_cast<unsigned>(args.size()),
+                                         is_void_fp ? "" : "calltmp");
+                }
+            }
+            throw std::runtime_error("IR: Call to undeclared function '" + fname + "'");
+        }
+        ir_name = fname;
+    }
+
+    fn   = fit->second;
+    fn_t = ctx->global_func_types[ir_name];
     bool is_void = LLVMGetTypeKind(LLVMGetReturnType(fn_t)) == LLVMVoidTypeKind;
 
     return LLVMBuildCall2(ctx->llvm_builder, fn_t, fn,
@@ -418,14 +891,59 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
 
 // ------------------------------------------------------------------ subscript
 
-inline LLVMValueRef visit_subscript_expr(expr_node* e, ir_context* ctx) {
-    LLVMValueRef base_ptr = visit_lvalue(e->object, ctx);
-    LLVMValueRef idx      = visit_expr(e->index, ctx);
-    LLVMTypeRef  elem_t   = ctx->lookup_local_type(
-        e->object->kind == expr_kind::identifier ? e->object->str_val : "");
-    if (!elem_t) elem_t = LLVMInt8TypeInContext(ctx->llvm_ctx);
+// Compute the address of element e->object[e->index], handling both array bases
+// (GEP from the array's address) and pointer bases (load the pointer, then GEP).
+inline LLVMValueRef subscript_elem_ptr(expr_node* e, ir_context* ctx, LLVMTypeRef& elem_t_out) {
+    LLVMValueRef idx = visit_expr(e->index, ctx);
+    const std::string oname =
+        e->object->kind == expr_kind::identifier ? e->object->str_val : "";
 
-    LLVMValueRef gep = LLVMBuildGEP2(ctx->llvm_builder, elem_t, base_ptr, &idx, 1, "elemptr");
+    // Pointer base: the variable holds a pointer; load it, then index with deref type.
+    LLVMTypeRef dt = oname.empty() ? nullptr : ctx->lookup_deref_type(oname);
+    if (dt) {
+        LLVMValueRef base = visit_expr(e->object, ctx); // loads the pointer value
+        elem_t_out = dt;
+        return LLVMBuildGEP2(ctx->llvm_builder, dt, base, &idx, 1, "elemptr");
+    }
+
+    // Member-field array base (e.g. self.arr_field[i]): look up the field's LLVM type
+    // so we can emit a correct 2-index GEP into the [N x T] array.
+    if (e->object->kind == expr_kind::member && !e->object->member_name.empty()) {
+        std::string pname = infer_struct_tname(e->object->object, ctx);
+        auto nfit = ctx->struct_field_names.find(pname);
+        auto tfit = ctx->struct_field_types.find(pname);
+        if (nfit != ctx->struct_field_names.end() && tfit != ctx->struct_field_types.end()) {
+            const auto& fnames = nfit->second;
+            const auto& ftypes = tfit->second;
+            for (unsigned i = 0; i < fnames.size(); i++) {
+                if (fnames[i] == e->object->member_name && i < ftypes.size()) {
+                    LLVMTypeRef field_t = ftypes[i];
+                    if (field_t && LLVMGetTypeKind(field_t) == LLVMArrayTypeKind) {
+                        LLVMTypeRef elem_t = LLVMGetElementType(field_t);
+                        LLVMValueRef base_ptr = visit_lvalue(e->object, ctx);
+                        LLVMValueRef indices[2] = {
+                            LLVMConstInt(LLVMInt32TypeInContext(ctx->llvm_ctx), 0, 0), idx
+                        };
+                        elem_t_out = elem_t;
+                        return LLVMBuildGEP2(ctx->llvm_builder, field_t, base_ptr, indices, 2, "elemptr");
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Array (or fallback) base: index from the aggregate's address.
+    LLVMValueRef base_ptr = visit_lvalue(e->object, ctx);
+    LLVMTypeRef  elem_t   = oname.empty() ? nullptr : ctx->lookup_local_type(oname);
+    if (!elem_t) elem_t = LLVMInt8TypeInContext(ctx->llvm_ctx);
+    elem_t_out = elem_t;
+    return LLVMBuildGEP2(ctx->llvm_builder, elem_t, base_ptr, &idx, 1, "elemptr");
+}
+
+inline LLVMValueRef visit_subscript_expr(expr_node* e, ir_context* ctx) {
+    LLVMTypeRef elem_t = nullptr;
+    LLVMValueRef gep = subscript_elem_ptr(e, ctx, elem_t);
     return LLVMBuildLoad2(ctx->llvm_builder, elem_t, gep, "elem");
 }
 
@@ -438,8 +956,22 @@ inline LLVMValueRef visit_member_expr(expr_node* e, ir_context* ctx) {
     std::string tname;
     if (e->object->kind == expr_kind::identifier) {
         LLVMTypeRef elem = ctx->lookup_local_type(e->object->str_val);
-        if (elem) tname = LLVMGetStructName(elem) ? LLVMGetStructName(elem) : "";
+        if (elem && LLVMGetTypeKind(elem) == LLVMStructTypeKind)
+            tname = LLVMGetStructName(elem) ? LLVMGetStructName(elem) : "";
+        if (tname.empty()) {
+            LLVMTypeRef deref_t = ctx->lookup_deref_type(e->object->str_val);
+            if (deref_t && LLVMGetTypeKind(deref_t) == LLVMStructTypeKind)
+                tname = LLVMGetStructName(deref_t) ? LLVMGetStructName(deref_t) : "";
+        }
+    } else if (e->object->kind == expr_kind::unary &&
+               e->object->uop == unary_op::deref &&
+               e->object->operand->kind == expr_kind::identifier) {
+        LLVMTypeRef deref_t = ctx->lookup_deref_type(e->object->operand->str_val);
+        if (deref_t && LLVMGetTypeKind(deref_t) == LLVMStructTypeKind)
+            tname = LLVMGetStructName(deref_t) ? LLVMGetStructName(deref_t) : "";
     }
+    if (tname.empty())
+        tname = infer_struct_tname(e->object, ctx);
 
     LLVMTypeRef field_t = LLVMInt8TypeInContext(ctx->llvm_ctx); // fallback
     auto names_it = ctx->struct_field_names.find(tname);
@@ -458,6 +990,31 @@ inline LLVMValueRef visit_member_expr(expr_node* e, ir_context* ctx) {
 // ------------------------------------------------------------------ cast
 
 inline LLVMValueRef visit_cast_expr(expr_node* e, ir_context* ctx) {
+    // Check for a conversion operator: if operand is a struct, look for ClassName__MT_operator T.
+    if (e->operand->kind == expr_kind::identifier) {
+        LLVMTypeRef src_local = ctx->lookup_local_type(e->operand->str_val);
+        if (src_local && LLVMGetTypeKind(src_local) == LLVMStructTypeKind) {
+            const char* sname = LLVMGetStructName(src_local);
+            if (sname) {
+                LLVMTypeRef dst_t_check = llvm_type_of(e->cast_type, ctx);
+                // Build the conversion operator function name: ClassName__MT_operator <type_str>
+                // Try by looking for any ClassName__MT_operator* whose return type matches dst_t.
+                std::string prefix = std::string(sname) + "__MT_operator";
+                for (auto& [fname, fval] : ctx->global_funcs) {
+                    if (fname.rfind(prefix, 0) == 0) {  // starts with prefix
+                        LLVMTypeRef fn_t = ctx->global_func_types[fname];
+                        LLVMTypeRef ret_t = LLVMGetReturnType(fn_t);
+                        if (ret_t == dst_t_check) {
+                            LLVMValueRef self_ptr = visit_lvalue(e->operand, ctx);
+                            return LLVMBuildCall2(ctx->llvm_builder, fn_t, fval,
+                                                  &self_ptr, 1, "convop");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     LLVMValueRef val     = visit_expr(e->operand, ctx);
     LLVMTypeRef  src_t   = LLVMTypeOf(val);
     LLVMTypeRef  dst_t   = llvm_type_of(e->cast_type, ctx);
@@ -537,6 +1094,50 @@ inline LLVMValueRef visit_annotation_expr(expr_node* e, ir_context* ctx) {
     return LLVMConstNull(LLVMInt32TypeInContext(ctx->llvm_ctx));
 }
 
+// ------------------------------------------------------------------ class initializer
+
+// Emit field stores for a class_init expression into an already-allocated struct pointer.
+// `struct_t` is the LLVM struct type and `tname` its registered name.
+inline void emit_class_init_into(expr_node* e, LLVMValueRef dest_ptr,
+                                 LLVMTypeRef struct_t, const std::string& tname,
+                                 ir_context* ctx) {
+    // Zero-initialise first.
+    LLVMBuildStore(ctx->llvm_builder, LLVMConstNull(struct_t), dest_ptr);
+
+    auto fnit = ctx->struct_field_names.find(tname);
+    if (fnit == ctx->struct_field_names.end()) return;
+    const auto& fnames = fnit->second;
+    LLVMTypeRef i32 = LLVMInt32TypeInContext(ctx->llvm_ctx);
+
+    for (auto& [fname, val_expr] : e->field_inits) {
+        for (unsigned fi = 0; fi < fnames.size(); ++fi) {
+            if (fnames[fi] == fname) {
+                LLVMValueRef idx[2] = { LLVMConstInt(i32, 0, 0), LLVMConstInt(i32, fi, 0) };
+                LLVMValueRef fptr = LLVMBuildGEP2(ctx->llvm_builder, struct_t, dest_ptr, idx, 2, "ci.field");
+                LLVMValueRef v = visit_expr(val_expr, ctx);
+                LLVMTypeRef ft = LLVMStructGetTypeAtIndex(struct_t, fi);
+                v = coerce_int_val(v, ft, ctx->llvm_builder);
+                LLVMBuildStore(ctx->llvm_builder, v, fptr);
+                break;
+            }
+        }
+    }
+}
+
+inline LLVMValueRef visit_class_init(expr_node* e, ir_context* ctx) {
+    // Determine the target struct type name (init_type may be null for inferred .{...},
+    // in which case visit_local_var_decl handles it directly; as a bare rvalue we require a type).
+    std::string tname;
+    if (e->init_type && e->init_type->name) tname = *e->init_type->name;
+    auto it = ctx->struct_types.find(tname);
+    if (it == ctx->struct_types.end())
+        throw std::runtime_error("IR: class initializer for unknown type '" + tname + "'");
+    LLVMTypeRef struct_t = it->second;
+    LLVMValueRef tmp = LLVMBuildAlloca(ctx->llvm_builder, struct_t, "ci.tmp");
+    emit_class_init_into(e, tmp, struct_t, tname, ctx);
+    return LLVMBuildLoad2(ctx->llvm_builder, struct_t, tmp, "ci.val");
+}
+
 // ------------------------------------------------------------------ dispatcher
 
 inline LLVMValueRef visit_expr(expr_node* e, ir_context* ctx) {
@@ -557,6 +1158,7 @@ inline LLVMValueRef visit_expr(expr_node* e, ir_context* ctx) {
         case expr_kind::sizeof_e:   return visit_sizeof_expr(e, ctx);
         case expr_kind::ternary:    return visit_ternary_expr(e, ctx);
         case expr_kind::annotation: return visit_annotation_expr(e, ctx);
+        case expr_kind::class_init: return visit_class_init(e, ctx);
         default:
             throw std::runtime_error("IR: Unknown expr_kind");
     }

@@ -466,6 +466,10 @@ int main(int argc, char** argv) {
         diag.finish();
         return 1;
     }
+    if (par.had_parse_error) {
+        diag.finish();
+        return 1;
+    }
 
     // ---- emit-ast ----
     if (opts.emit_ast) {

@@ -81,13 +81,28 @@ inline std::string apply_one_macro(const std::string& text, const macro_def& def
 // Parse the next whitespace-delimited token from `line` starting at `pos`.
 // If the token starts with '<', reads until the matching '>'.
 inline std::string parse_arg(const std::string& line, size_t& pos) {
-    while (pos < line.size() && line[pos] == ' ') ++pos;
+    while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) ++pos;
     if (pos >= line.size()) return {};
     if (line[pos] == '<' || line[pos] == '(') {
+        const char close = (line[pos] == '<') ? '>' : ')';
         size_t start = ++pos;
-        while (pos < line.size() && (line[pos] != '>' || line[pos] != ')')) ++pos;
-        std::string arg = line.substr(start, pos - start);
-        if (pos < line.size()) ++pos; // consume '>'||')'
+        // The replacement/pattern may itself contain the close char (e.g. a regex
+        // replacement like "%1 > %2"). Choose the close delimiter that is followed
+        // (after whitespace) by end-of-line or the start of the next argument.
+        size_t best = std::string::npos;
+        for (size_t i = start; i < line.size(); ++i) {
+            if (line[i] == close) {
+                size_t j = i + 1;
+                while (j < line.size() && (line[j] == ' ' || line[j] == '\t')) ++j;
+                if (j >= line.size() || line[j] == '<' || line[j] == '(') { best = i; break; }
+            }
+        }
+        if (best == std::string::npos) {
+            best = line.rfind(close);
+            if (best == std::string::npos || best < start) best = line.size();
+        }
+        std::string arg = line.substr(start, best - start);
+        pos = (best < line.size()) ? best + 1 : best;
         return arg;
     }
     size_t start = pos;

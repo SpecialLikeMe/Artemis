@@ -134,3 +134,159 @@ TEST(Analyzer, MainVoidRejected) {
 TEST(Analyzer, MainI32OK) {
     compile_ok("i32 main() { return 0; }");
 }
+
+// ------------------------------------------------------------------ Method Overloading
+
+TEST(Analyzer, OverloadTwoFunctions) {
+    compile_ok(
+        "i32 add(i32 a) { return a; }"
+        "i32 add(i32 a, i32 b) { return a + b; }"
+        "void run() { add(1); add(1, 2); }"
+    );
+}
+
+TEST(Analyzer, OverloadDifferentParamTypes) {
+    compile_ok(
+        "void print(i32 x) {}"
+        "void print(f64 x) {}"
+        "void run() { print(1); }"
+    );
+}
+
+TEST(Analyzer, OverloadNoMangleWhenUnique) {
+    // A function that is NOT overloaded should not have a mangled name applied.
+    compile_ok(
+        "void unique_func(i32 x) {}"
+        "void run() { unique_func(1); }"
+    );
+}
+
+TEST(Analyzer, OverloadAmbiguousCallFails) {
+    // Calling an overloaded function with args that match no overload must fail.
+    ASSERT_THROWS(compile_fail(
+        "void f(i32 x) {}"
+        "void f(i32 a, i32 b) {}"
+        "void run() { f(); }"  // zero args — no overload matches
+    ), std::runtime_error);
+}
+
+// ------------------------------------------------------------------ extern "C"
+
+TEST(Analyzer, ExternCBlockDecl) {
+    compile_ok(
+        "extern \"C\" { void c_foo(i32 x); }"
+        "void run() { c_foo(5); }"
+    );
+}
+
+TEST(Analyzer, ExternCBlockMultiple) {
+    compile_ok(
+        "extern \"C\" {"
+        "  void c_a(i32 x);"
+        "  i32 c_b(i32 a, i32 b);"
+        "}"
+        "void run() { c_a(1); c_b(2, 3); }"
+    );
+}
+
+// ------------------------------------------------------------------ istruc (classes)
+
+TEST(Analyzer, IstrucBasicDecl) {
+    compile_ok(
+        "istruc Point {"
+        "  i32 x;"
+        "  i32 y;"
+        "}"
+        "void f() { Point p; }"
+    );
+}
+
+TEST(Analyzer, IstrucMethodEmptyBody) {
+    compile_ok(
+        "istruc Counter {"
+        "  i32 value;"
+        "  void reset(&self) {}"
+        "}"
+    );
+}
+
+TEST(Analyzer, IstrucInheritance) {
+    compile_ok(
+        "istruc Animal {"
+        "  i32 legs;"
+        "}"
+        "istruc Dog : Animal {"
+        "  i32 fur_length;"
+        "}"
+    );
+}
+
+TEST(Analyzer, IstrucUnknownBaseClassFails) {
+    ASSERT_THROWS(compile_fail(
+        "istruc Dog : NoSuchClass { i32 x; }"
+    ), std::runtime_error);
+}
+
+TEST(Analyzer, IstrucMandatoryVirtualRequiresVirtual) {
+    ASSERT_THROWS(compile_fail(
+        "istruc Base { mandatory void foo(); }"
+    ), std::runtime_error);
+}
+
+TEST(Analyzer, IstrucOverrideMissingBaseFails) {
+    ASSERT_THROWS(compile_fail(
+        "istruc A { void foo() override {} }"
+    ), std::runtime_error);
+}
+
+// ------------------------------------------------------------------ Function Pointers
+
+TEST(Analyzer, FuncPtrDecl) {
+    compile_ok("void f() { void(i32 x)* fp; }");
+}
+
+TEST(Analyzer, FuncPtrAssignAddrOf) {
+    compile_ok(
+        "void target(i32 x) {}"
+        "void f() { void(i32 x)* fp = &target; }"
+    );
+}
+
+TEST(Analyzer, FuncPtrReturnType) {
+    compile_ok(
+        "i32 add(i32 a, i32 b) { return a + b; }"
+        "void f() { i32(i32 a, i32 b)* fp = &add; }"
+    );
+}
+
+// ------------------------------------------------------------------ defer
+
+TEST(Analyzer, DeferBlock) {
+    compile_ok(
+        "void cleanup() {}"
+        "void f() { defer { cleanup(); } i32 x = 1; }"
+    );
+}
+
+TEST(Analyzer, DeferExpr) {
+    compile_ok(
+        "void cleanup() {}"
+        "void f() { defer cleanup(); i32 x = 1; }"
+    );
+}
+
+// ------------------------------------------------------------------ Arrow operator (desugared to (*base).field)
+
+TEST(Analyzer, ArrowOperatorBasic) {
+    compile_ok(
+        "struct P { i32 x; i32 y; }"
+        "void f() { P* p; i32 v = p->x; }"
+    );
+}
+
+TEST(Analyzer, ArrowOperatorAssign) {
+    compile_ok(
+        "struct Node { i32 val; }"
+        "void f() { Node* n; n->val = 42; }"
+    );
+}

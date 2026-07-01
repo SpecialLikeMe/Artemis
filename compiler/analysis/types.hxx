@@ -162,6 +162,20 @@ inline bool types_equal(const type_node* a, const type_node* b) {
 inline bool assignable(const type_node* lhs, const type_node* rhs) {
     if (!lhs || !rhs) return false;
 
+    // array-to-pointer decay: T[] decays to T* (and T[]* etc.)
+    if (rhs->array_size.has_value() && lhs->pointer_depth == rhs->pointer_depth + 1) {
+        if (lhs->is_primitive && rhs->is_primitive) {
+            if (lhs->prim == rhs->prim) return true;
+            if (lhs->prim == prim_type_t::void_t) return true; // void* <- T[]
+        } else if (!lhs->is_primitive && !rhs->is_primitive) {
+            if (lhs->name.value_or("") == rhs->name.value_or("")) return true;
+        }
+    }
+
+    // null pointer constant: any integer can be assigned to a pointer (e.g. return 0 from void*)
+    if (lhs->pointer_depth > 0 && rhs->pointer_depth == 0 &&
+        rhs->is_primitive && is_int_prim(rhs->prim.value())) return true;
+
     // pointer assignment
     if (lhs->pointer_depth > 0 || rhs->pointer_depth > 0) {
         if (lhs->pointer_depth != rhs->pointer_depth) return false;
@@ -183,9 +197,10 @@ inline bool assignable(const type_node* lhs, const type_node* rhs) {
     if (lp == rp) return true;
 
     if (is_int_prim(lp)   && is_int_prim(rp))   return true; // implicit integer conversion
-    if (is_float_prim(lp) && is_float_prim(rp)) return float_rank(lp) >= float_rank(rp);
+    if (is_float_prim(lp) && is_float_prim(rp)) return true; // implicit float narrowing/widening
     if (is_float_prim(lp) && is_int_prim(rp))   return true; // int -> float
     if (is_int_prim(lp)   && is_bool_prim(rp))  return true; // bool -> int
+    if (is_bool_prim(lp)  && is_int_prim(rp))   return true; // int -> bool
     if (is_bool_prim(lp)  && is_bool_prim(rp))  return true;
 
     return false;

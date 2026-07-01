@@ -7,6 +7,7 @@
 // Forward declarations
 struct expr_node;
 struct type_node;
+struct func_decl; // needed for resolved_overload in expr_node
 
 // ---------- Type representation ----------
 
@@ -27,10 +28,27 @@ struct type_node {
     bool is_extern    = false;
     bool is_inline    = false;
     bool is_register  = false;
+    bool is_extern_c  = false; // extern "C" linkage (no name mangling)
     std::optional<prim_type_t>  prim;
     std::optional<std::string>  name; // custom / struct / enum / union
     int  pointer_depth = 0;           // number of * decorators
     std::optional<expr_node*>   array_size; // non-null => array type
+    std::vector<type_node*>     type_args;  // generic instantiation args: q<int>
+
+
+    // Function pointer: returntype(params)* varname
+    bool                          is_func_ptr  = false;
+    type_node*                    fp_ret       = nullptr; // return type
+    std::vector<type_node*>       fp_params;              // parameter types
+    std::vector<std::string>      fp_param_names;         // parameter names (optional)
+    bool                          fp_variadic  = false;
+
+    // Self reference (&self / &const self) in method parameters
+    bool is_self_ref       = false;
+    bool is_self_ref_const = false;
+
+    // Memstr reference (&memstr name) in function parameters
+    bool is_memstr_ref = false;
 };
 
 // ---------- Expressions ----------
@@ -52,6 +70,7 @@ enum class expr_kind {
     assign,
     ternary,    // cond ? then : else
     annotation, // @identifier
+    class_init, // TypeName { .field = val, ... } or .{ .field = val }
 };
 
 enum class unary_op  { neg, pos, bit_not, log_not, pre_inc, pre_dec, post_inc, post_dec, deref, addr_of };
@@ -84,6 +103,7 @@ struct expr_node {
     // call
     expr_node*                  callee   = nullptr;
     std::vector<expr_node*>     args;
+    func_decl*                  resolved_overload = nullptr; // set by analyzer for overload resolution
 
     // subscript / member
     expr_node*                  object   = nullptr;
@@ -97,4 +117,13 @@ struct expr_node {
     expr_node*                  cond     = nullptr;
     expr_node*                  then_e   = nullptr;
     expr_node*                  else_e   = nullptr;
+
+    // class_init: TypeName { .field = val, ... }
+    type_node*                                          init_type   = nullptr; // null => infer from context (.{...})
+    std::vector<std::pair<std::string, expr_node*>>     field_inits;           // named field initializers
+
+    // call: explicit generic type arguments  f<T>(...)
+    std::vector<type_node*>     type_args;
+    // constexpr marker (for constexpr-evaluated expressions, informational)
+    bool                        is_constexpr = false;
 };

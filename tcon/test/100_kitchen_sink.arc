@@ -3,22 +3,22 @@ struct Stack {
     i32 top;
 }
 
-void stack_init(Stack* s) { s->top = 0; }
+void stack_init(Stack* s) { (*s).top = 0; }
 
 void stack_push(Stack* s, i32 v) {
-    if (s->top < 16) {
-        s->data[s->top] = v;
-        s->top = s->top + 1;
+    if ((*s).top < 16) {
+        (*s).data[(*s).top] = v;
+        (*s).top = (*s).top + 1;
     }
 }
 
 i32 stack_pop(Stack* s) {
-    if (s->top == 0) { return -1; }
-    s->top = s->top - 1;
-    return s->data[s->top];
+    if ((*s).top == 0) { return -1; }
+    (*s).top = (*s).top - 1;
+    return (*s).data[(*s).top];
 }
 
-i32 stack_size(Stack* s) { return s->top; }
+i32 stack_size(Stack* s) { return (*s).top; }
 
 typedef i32 Result;
 

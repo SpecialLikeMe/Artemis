@@ -4,7 +4,7 @@ struct Node {
 }
 
 void set_val(Node* n, i32 v) {
-    n->val = v;
+    (*n).val = v;
 }
 
 i32 main() {
@@ -16,7 +16,7 @@ i32 main() {
     Node nd2;
     nd2.val = 10;
     Node* p = &nd2;
-    p->val = p->val * 3;
+    (*p).val = (*p).val * 3;
     if (nd2.val != 30) { return 2; }
     return 0;
 }

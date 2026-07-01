@@ -92,10 +92,10 @@ inline int run_all_tests() {
     int passed = 0, failed = 0;
 
     for (auto& t : tests) {
-        printf("[ RUN  ] %s.%s\n", t.suite, t.name);
+        printf("[ RUN  ] %s.%s\n", t.suite, t.name); fflush(stdout);
         try {
             t.fn();
-            printf("[ PASS ] %s.%s\n", t.suite, t.name);
+            printf("[ PASS ] %s.%s\n", t.suite, t.name); fflush(stdout);
             ++passed;
         } catch (const assertion_error& e) {
             printf("[ FAIL ] %s.%s\n  %s\n", t.suite, t.name, e.what());

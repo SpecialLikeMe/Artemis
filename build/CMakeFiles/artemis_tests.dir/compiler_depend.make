@@ -12,6 +12,7 @@ CMakeFiles/artemis_tests.dir/test/runner.cpp.obj: C:/Users/devon/Artemis/test/ru
   C:/Users/devon/Artemis/compiler/ir/exprs.hxx \
   C:/Users/devon/Artemis/compiler/ir/include.h \
   C:/Users/devon/Artemis/compiler/ir/main.hxx \
+  C:/Users/devon/Artemis/compiler/ir/names.hxx \
   C:/Users/devon/Artemis/compiler/ir/stmts.hxx \
   C:/Users/devon/Artemis/compiler/ir/types.hxx \
   C:/Users/devon/Artemis/compiler/lexer/main.hxx \
@@ -113,6 +114,7 @@ CMakeFiles/artemis_tests.dir/test/runner.cpp.obj: C:/Users/devon/Artemis/test/ru
   C:/msys64/mingw64/include/c++/15.2.0/bits/stringfwd.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/unique_ptr.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/unordered_map.h \
+  C:/msys64/mingw64/include/c++/15.2.0/bits/unordered_set.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/uses_allocator.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/uses_allocator_args.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/utility.h \
@@ -166,6 +168,7 @@ CMakeFiles/artemis_tests.dir/test/runner.cpp.obj: C:/Users/devon/Artemis/test/ru
   C:/msys64/mingw64/include/c++/15.2.0/type_traits \
   C:/msys64/mingw64/include/c++/15.2.0/typeinfo \
   C:/msys64/mingw64/include/c++/15.2.0/unordered_map \
+  C:/msys64/mingw64/include/c++/15.2.0/unordered_set \
   C:/msys64/mingw64/include/c++/15.2.0/variant \
   C:/msys64/mingw64/include/c++/15.2.0/vector \
   C:/msys64/mingw64/include/c++/15.2.0/x86_64-w64-mingw32/bits/atomic_word.h \
@@ -299,6 +302,8 @@ C:/Users/devon/Artemis/compiler/ir/decls.hxx:
 
 C:/Users/devon/Artemis/compiler/ir/exprs.hxx:
 
+C:/Users/devon/Artemis/compiler/ir/names.hxx:
+
 C:/msys64/mingw64/include/llvm-c/Target.h:
 
 C:/Users/devon/Artemis/compiler/ir/include.h:
@@ -391,10 +396,6 @@ C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_lockfree_defines.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/invoke.h:
 
-C:/msys64/mingw64/include/time.h:
-
-C:/msys64/mingw64/include/c++/15.2.0/bits/localefwd.h:
-
 C:/msys64/mingw64/include/c++/15.2.0/bits/locale_facets.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_wait.h:
@@ -409,6 +410,8 @@ C:/msys64/mingw64/include/llvm-c/Analysis.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/cpp_type_traits.h:
 
+C:/msys64/mingw64/include/c++/15.2.0/bits/unordered_set.h:
+
 C:/msys64/mingw64/include/c++/15.2.0/bits/cxxabi_forced.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/cxxabi_init_exception.h:
@@ -422,6 +425,10 @@ C:/msys64/mingw64/include/c++/15.2.0/bits/exception.h:
 C:/msys64/mingw64/include/c++/15.2.0/bits/istream.tcc:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/locale_classes.h:
+
+C:/msys64/mingw64/include/time.h:
+
+C:/msys64/mingw64/include/c++/15.2.0/bits/localefwd.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/max_size_type.h:
 
@@ -586,6 +593,8 @@ C:/msys64/mingw64/include/c++/15.2.0/ext/type_traits.h:
 C:/msys64/mingw64/include/sched.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/fstream:
+
+C:/msys64/mingw64/include/c++/15.2.0/unordered_set:
 
 C:/msys64/mingw64/include/c++/15.2.0/functional:
 

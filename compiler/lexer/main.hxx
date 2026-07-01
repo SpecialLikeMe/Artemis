@@ -21,6 +21,7 @@ enum class token_type {
     cparen,     // )
     sm,         // ;
     colon,      // :
+    scope_res,  // ::
     question,   // ?
 
     //operators
@@ -116,6 +117,30 @@ enum class token_type {
 
     kw_asm,     // __asm__
     asm_body,   // raw { ... } body following __asm__
+
+    // OOP / class keywords
+    kw_istruc,      // istruc  (class)
+    kw_public,      // public
+    kw_private,     // private
+    kw_protected,   // protected
+    kw_virtual,     // virtual
+    kw_override,    // override
+    kw_final,       // final
+    kw_static,      // static
+    kw_mandatory,   // mandatory (for mandatory virtual)
+    kw_noexcept,    // noexcept
+    kw_explicit,    // explicit
+    kw_constexpr,   // constexpr
+    kw_consteval,   // consteval — marks a var as manually-constructed
+    kw_sta,         // sta (comptime type-erased param)
+    kw_local,       // local (friend-like)
+    kw_operator,    // operator
+    kw_self,        // self
+
+    // Misc
+    kw_defer,       // defer
+    kw_extern_c,    // extern "C"
+    arrow,          // ->
 };
 
 struct token_t {
@@ -266,6 +291,24 @@ private:
             {"typedef",    token_type::kw_typedef},
             {"memstr",     token_type::kw_smem},
             {"__asm__",    token_type::kw_asm},
+            {"istruc",     token_type::kw_istruc},
+            {"public",     token_type::kw_public},
+            {"private",    token_type::kw_private},
+            {"protected",  token_type::kw_protected},
+            {"virtual",    token_type::kw_virtual},
+            {"override",   token_type::kw_override},
+            {"final",      token_type::kw_final},
+            {"static",     token_type::kw_static},
+            {"mandatory",  token_type::kw_mandatory},
+            {"noexcept",   token_type::kw_noexcept},
+            {"explicit",   token_type::kw_explicit},
+            {"constexpr",  token_type::kw_constexpr},
+            {"consteval",  token_type::kw_consteval},
+            {"sta",        token_type::kw_sta},
+            {"local",      token_type::kw_local},
+            {"operator",   token_type::kw_operator},
+            {"self",       token_type::kw_self},
+            {"defer",      token_type::kw_defer},
         };
         return m;
     }
@@ -276,12 +319,25 @@ private:
         while (!is_at_end() && (std::isalnum(peek()) || peek() == '_')) advance();
         std::string value = src.substr(start, cursor - start);
 
-        // Check for "extern std"
+        // Check for "extern std" and extern "C"
         if (value == "extern") {
             size_t save = cursor;
             int    save_line = line;
             // skip whitespace
             while (!is_at_end() && (peek() == ' ' || peek() == '\t')) advance();
+            // Check for extern "C"
+            if (!is_at_end() && peek() == '"') {
+                size_t q_save = cursor; int ql_save = line;
+                advance(); // consume opening "
+                if (!is_at_end() && peek() == 'C') {
+                    advance(); // consume C
+                    if (!is_at_end() && peek() == '"') {
+                        advance(); // consume closing "
+                        return {token_type::kw_extern_c, "extern \"C\"", tok_line};
+                    }
+                }
+                cursor = q_save; line = ql_save; // roll back quote attempt
+            }
             size_t id_start = cursor;
             while (!is_at_end() && (std::isalnum(peek()) || peek() == '_')) advance();
             std::string next = src.substr(id_start, cursor - id_start);
@@ -397,7 +453,8 @@ private:
             case '^': return match_next('=') ? token_t{token_type::caret_eq,  "^=", tok_line}
                                              : token_t{token_type::bit_xor,  "^",  tok_line};
             case '?': return {token_type::question,  "?", tok_line};
-            case ':': return {token_type::colon,     ":", tok_line};
+            case ':': return match_next(':') ? token_t{token_type::scope_res, "::", tok_line}
+                                           : token_t{token_type::colon,     ":",  tok_line};
             case '%': return match_next('=') ? token_t{token_type::mod_eq,   "%=", tok_line}
                                              : token_t{token_type::mod,      "%",  tok_line};
             case '+':
@@ -407,6 +464,7 @@ private:
             case '-':
                 if (match_next('-')) return {token_type::dec,      "--", tok_line};
                 if (match_next('=')) return {token_type::minus_eq, "-=", tok_line};
+                if (match_next('>')) return {token_type::arrow,    "->", tok_line};
                 return {token_type::minus, "-", tok_line};
             case '*':
                 return match_next('=') ? token_t{token_type::star_eq,  "*=", tok_line}

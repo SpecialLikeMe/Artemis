@@ -5,11 +5,16 @@
 #include <stdexcept>
 #include <string>
 
+// Keep parsers alive so returned program_node* (owned by the parser's arena) remains valid.
+static std::vector<std::unique_ptr<parser>> _live_parsers;
+
 static program_node* do_parse(const std::string& src) {
     lexer l(src);
     auto toks = l.tokenize();
-    parser p(std::move(toks));
-    return p.parse();
+    auto p = std::make_unique<parser>(std::move(toks));
+    program_node* prog = p->parse();
+    _live_parsers.push_back(std::move(p));
+    return prog;
 }
 
 TEST(Parser, EmptyProgram) {
@@ -270,4 +275,110 @@ TEST(Parser, UnexpectedToken) {
     auto* prog = do_parse("i32 @@;");
     // Either empty or contains valid partial parse; main check: no crash.
     ASSERT_TRUE(prog != nullptr);
+}
+
+// ------------------------------------------------------------------ New feature: istruc
+
+TEST(Parser, IstrucBasic) {
+    auto* prog = do_parse("istruc Point { i32 x; i32 y; }");
+    ASSERT_EQ(prog->decls.size(), 1u);
+    auto* cd = dynamic_cast<class_decl*>(prog->decls[0]);
+    ASSERT_TRUE(cd != nullptr);
+    ASSERT_EQ(cd->name, "Point");
+    ASSERT_EQ(cd->fields.size(), 2u);
+    ASSERT_EQ(cd->base_name, "");
+}
+
+TEST(Parser, IstrucInheritance) {
+    auto* prog = do_parse("istruc Dog : Animal { i32 age; }");
+    auto* cd = dynamic_cast<class_decl*>(prog->decls[0]);
+    ASSERT_TRUE(cd != nullptr);
+    ASSERT_EQ(cd->base_name, "Animal");
+}
+
+TEST(Parser, IstrucWithMethod) {
+    auto* prog = do_parse(
+        "istruc Counter { i32 value; void reset(&self) {} }"
+    );
+    auto* cd = dynamic_cast<class_decl*>(prog->decls[0]);
+    ASSERT_TRUE(cd != nullptr);
+    ASSERT_EQ(cd->methods.size(), 1u);
+    ASSERT_TRUE(cd->methods[0]->has_self);
+}
+
+// ------------------------------------------------------------------ New feature: extern "C"
+
+TEST(Parser, ExternCBlockSingle) {
+    auto* prog = do_parse("extern \"C\" { void c_func(i32 x); }");
+    ASSERT_EQ(prog->decls.size(), 1u);
+    auto* ecb = dynamic_cast<extern_c_block*>(prog->decls[0]);
+    ASSERT_TRUE(ecb != nullptr);
+    ASSERT_EQ(ecb->decls.size(), 1u);
+}
+
+TEST(Parser, ExternCBlockMultiple) {
+    auto* prog = do_parse(
+        "extern \"C\" { void a(); i32 b(i32 x); }"
+    );
+    auto* ecb = dynamic_cast<extern_c_block*>(prog->decls[0]);
+    ASSERT_TRUE(ecb != nullptr);
+    ASSERT_EQ(ecb->decls.size(), 2u);
+}
+
+// ------------------------------------------------------------------ New feature: function pointers
+
+TEST(Parser, FuncPtrVarDecl) {
+    auto* prog = do_parse("void f() { void(i32 x)* fp; }");
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[0]);
+    auto* blk = dynamic_cast<block_stmt*>(fn->body);
+    auto* vd = dynamic_cast<var_decl*>(blk->stmts[0]);
+    ASSERT_TRUE(vd != nullptr);
+    ASSERT_TRUE(vd->type->is_func_ptr);
+}
+
+TEST(Parser, FuncPtrAddrOf) {
+    auto* prog = do_parse("void f() { void(i32 x)* fp = &target; }");
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[0]);
+    auto* blk = dynamic_cast<block_stmt*>(fn->body);
+    auto* vd = dynamic_cast<var_decl*>(blk->stmts[0]);
+    ASSERT_TRUE(vd != nullptr);
+    ASSERT_TRUE(vd->init.has_value());
+    ASSERT_EQ(static_cast<int>(vd->init.value()->kind), static_cast<int>(expr_kind::unary));
+}
+
+// ------------------------------------------------------------------ New feature: defer
+
+TEST(Parser, DeferBlock) {
+    auto* prog = do_parse("void f() { defer { i32 x = 0; } }");
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[0]);
+    auto* blk = dynamic_cast<block_stmt*>(fn->body);
+    auto* ds = dynamic_cast<defer_stmt*>(blk->stmts[0]);
+    ASSERT_TRUE(ds != nullptr);
+    ASSERT_TRUE(ds->blk != nullptr);
+    ASSERT_TRUE(ds->expr == nullptr);
+}
+
+TEST(Parser, DeferExpr) {
+    auto* prog = do_parse("void f() { defer cleanup(); }");
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[0]);
+    auto* blk = dynamic_cast<block_stmt*>(fn->body);
+    auto* ds = dynamic_cast<defer_stmt*>(blk->stmts[0]);
+    ASSERT_TRUE(ds != nullptr);
+    ASSERT_TRUE(ds->expr != nullptr);
+    ASSERT_TRUE(ds->blk == nullptr);
+}
+
+// ------------------------------------------------------------------ New feature: arrow operator (desugar)
+
+TEST(Parser, ArrowDesugaredToDerefMember) {
+    auto* prog = do_parse("void f() { p->x; }");
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[0]);
+    auto* blk = dynamic_cast<block_stmt*>(fn->body);
+    auto* es = dynamic_cast<expr_stmt*>(blk->stmts[0]);
+    // p->x desugars to (*p).x — should be a member expr whose object is a deref
+    ASSERT_EQ(static_cast<int>(es->expr->kind), static_cast<int>(expr_kind::member));
+    ASSERT_EQ(es->expr->member_name, "x");
+    auto* obj = es->expr->object;
+    ASSERT_EQ(static_cast<int>(obj->kind), static_cast<int>(expr_kind::unary));
+    ASSERT_EQ(static_cast<int>(obj->uop), static_cast<int>(unary_op::deref));
 }

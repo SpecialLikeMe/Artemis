@@ -13,6 +13,7 @@ CMakeFiles/artemis.dir/src/main.cpp.obj: C:/Users/devon/Artemis/src/main.cpp \
   C:/Users/devon/Artemis/compiler/ir/exprs.hxx \
   C:/Users/devon/Artemis/compiler/ir/include.h \
   C:/Users/devon/Artemis/compiler/ir/main.hxx \
+  C:/Users/devon/Artemis/compiler/ir/names.hxx \
   C:/Users/devon/Artemis/compiler/ir/stmts.hxx \
   C:/Users/devon/Artemis/compiler/ir/types.hxx \
   C:/Users/devon/Artemis/compiler/lexer/main.hxx \
@@ -342,6 +343,8 @@ C:/Users/devon/Artemis/compiler/ir/decls.hxx:
 
 C:/Users/devon/Artemis/compiler/ir/exprs.hxx:
 
+C:/Users/devon/Artemis/compiler/ir/names.hxx:
+
 C:/msys64/mingw64/include/llvm-c/Target.h:
 
 C:/Users/devon/Artemis/compiler/ir/include.h:
@@ -436,9 +439,9 @@ C:/msys64/mingw64/include/c++/15.2.0/bits/allocator.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_base.h:
 
-C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_lockfree_defines.h:
-
 C:/msys64/mingw64/include/c++/15.2.0/bits/invoke.h:
+
+C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_lockfree_defines.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/atomic_wait.h:
 
