@@ -1,5 +1,6 @@
 #pragma once
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <stdexcept>
@@ -18,6 +19,8 @@ public:
     std::unordered_map<std::string, union_decl*>   unions;
     std::unordered_map<std::string, typedef_decl*> typedefs;
     std::unordered_map<std::string, class_decl*>   classes;
+    std::unordered_set<std::string>                namespaces;
+    std::unordered_set<std::string>                memstrs; // memstr-declared allocator types
 
     void push() { frames.emplace_back(); }
     void pop()  { if (!frames.empty()) frames.pop_back(); }
@@ -127,8 +130,8 @@ public:
                 "Semantic Error at line " + std::to_string(d->line) +
                 ": Redeclaration of enum '" + d->name + "'");
         enums[d->name] = d;
-        for (auto& [vname, vval] : d->variants)
-            enum_variants[vname] = d;
+        for (auto* ev : d->variants)
+            enum_variants[ev->name] = d;
     }
 
     void declare_union(union_decl* d) {
@@ -150,6 +153,16 @@ public:
     bool is_known_type(const std::string& name) const {
         return structs.count(name) || enums.count(name) ||
                unions.count(name) || typedefs.count(name) ||
-               classes.count(name);
+               classes.count(name) || memstrs.count(name);
     }
+
+    void declare_namespace(const std::string& name) {
+        namespaces.insert(name);
+    }
+    bool is_namespace(const std::string& name) const {
+        return namespaces.count(name) > 0;
+    }
+
+    void declare_memstr(const std::string& name) { memstrs.insert(name); }
+    bool is_memstr_type(const std::string& name) const { return memstrs.count(name) > 0; }
 };

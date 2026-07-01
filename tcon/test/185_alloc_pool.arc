@@ -1,6 +1,7 @@
 // Fixed-size pool allocator: pre-allocates N slots, O(1) alloc/free
 // Free-slot stack stores void* pointers directly (no pointer arithmetic needed).
-extern "C" { void* malloc(u64 size); void free(void* ptr); }
+extern void* malloc(u64 size);
+extern void free(void* ptr);
 
 istruc Pool {
     void* free_slots[16];   // stack of available slot pointers

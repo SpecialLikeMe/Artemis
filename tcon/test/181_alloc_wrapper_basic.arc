@@ -1,5 +1,6 @@
 // Custom allocator: istruc wrapping malloc/free
-extern "C" { void* malloc(u64 size); void free(void* ptr); }
+extern void* malloc(u64 size);
+extern void free(void* ptr);
 
 istruc HeapAlloc {
     i32 count;

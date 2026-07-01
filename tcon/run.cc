@@ -86,6 +86,22 @@ int main(int argc, char** argv) {
 
     std::string bin = artemis_bin(exe_dir);
 
+    // Compute stdlib include path (repo_root/compiler/std/include)
+    std::string std_include;
+    {
+        fs::path repo_root = fs::path(exe_dir).parent_path();
+        fs::path candidate = repo_root / "compiler" / "std" / "include";
+        if (fs::is_directory(candidate))
+            std_include = " -I " + candidate.generic_string();
+    }
+
+    // Extra -I flags from command line (argv[2..])
+    std::string extra_flags;
+    for (int i = 2; i < argc; ++i) {
+        extra_flags += " ";
+        extra_flags += argv[i];
+    }
+
     std::vector<fs::path> files;
     for (const auto& entry : fs::directory_iterator(test_dir)) {
         if (entry.path().extension() == ".arc")
@@ -106,7 +122,7 @@ int main(int argc, char** argv) {
 #endif
 
         // Compile
-        std::string compile_cmd = bin + " " + srcstr + " -o " + outbin;
+        std::string compile_cmd = bin + std_include + extra_flags + " " + srcstr + " -o " + outbin;
         int crc = run_cmd(compile_cmd);
         if (crc != 0) {
             printf("FAIL::%d  %s  (compile error)\n", crc, name.c_str());

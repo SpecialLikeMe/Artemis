@@ -9,6 +9,51 @@
 #include "types.hxx"
 #include "../parser/main.hxx"
 
+// ------------------------------------------------------------------ heap-use detection helpers
+
+static bool heap_expr(const expr_node* e);
+static bool heap_block(const block_stmt* blk);
+
+static bool heap_stmt(const ast_node* n) {
+    if (!n) return false;
+    if (auto* e = dynamic_cast<const expr_stmt*>(n))  return heap_expr(e->expr);
+    if (auto* r = dynamic_cast<const return_stmt*>(n)) return r->value.has_value() && heap_expr(r->value.value());
+    if (auto* b = dynamic_cast<const block_stmt*>(n))  return heap_block(b);
+    if (auto* i = dynamic_cast<const if_stmt*>(n))
+        return heap_expr(i->cond) || heap_stmt(i->then_body) || heap_stmt(i->else_body);
+    if (auto* w = dynamic_cast<const while_stmt*>(n))
+        return heap_expr(w->cond) || heap_stmt(w->body);
+    if (auto* f = dynamic_cast<const for_stmt*>(n))
+        return heap_stmt(f->init) || heap_expr(f->cond) || heap_expr(f->step) || heap_stmt(f->body);
+    if (auto* v = dynamic_cast<const var_decl*>(n)) {
+        if (v->init.has_value() && heap_expr(v->init.value())) return true;
+        for (auto* a : v->ctor_args) if (heap_expr(a)) return true;
+        return false;
+    }
+    return false;
+}
+static bool heap_block(const block_stmt* blk) {
+    if (!blk) return false;
+    for (auto* s : blk->stmts) if (heap_stmt(s)) return true;
+    return false;
+}
+static bool heap_expr(const expr_node* e) {
+    if (!e) return false;
+    if (e->kind == expr_kind::call && e->callee &&
+        e->callee->kind == expr_kind::identifier) {
+        const auto& n = e->callee->str_val;
+        if (n == "malloc" || n == "calloc" || n == "realloc") return true;
+    }
+    if (heap_expr(e->operand)) return true;
+    if (heap_expr(e->object))  return true;
+    if (heap_expr(e->index))   return true;
+    if (heap_expr(e->lhs))     return true;
+    if (heap_expr(e->rhs))     return true;
+    if (e->callee && heap_expr(e->callee)) return true;
+    for (auto* a : e->args) if (heap_expr(a)) return true;
+    return false;
+}
+
 class analyzer {
 public:
     void analyze(program_node* prog) {
@@ -165,11 +210,21 @@ private:
             }
             return;
         }
+        if (auto* d = dynamic_cast<namespace_decl*>(node)) {
+            scope.declare_namespace(d->name);
+            for (auto* decl : d->decls) {
+                if (auto* fd = dynamic_cast<func_decl*>(decl))
+                    fd->name = d->name + "__NS_" + fd->name;
+                register_decl(decl);
+            }
+            return;
+        }
         // global var_decl registered in pass 2 (needs type resolution first)
     }
 
     void register_class_decl(class_decl* d) {
         scope.declare_class(d);
+        if (d->is_memstr) scope.declare_memstr(d->name);
         // Register methods as global functions with mangled names ClassName__MT_methodname
         for (auto* m : d->methods) {
             // Build a synthetic func_decl for each method so call resolution works
@@ -209,6 +264,7 @@ private:
         if (auto* d = dynamic_cast<class_decl*>(node))     { visit_class_decl(d);       return; }
         if (auto* d = dynamic_cast<extern_c_block*>(node)) { visit_extern_c_block(d);   return; }
         if (dynamic_cast<memstr_decl*>(node))               { return; } // stub: just skip for now
+        if (auto* d = dynamic_cast<namespace_decl*>(node)) { visit_namespace_decl(d); return; }
         throw std::runtime_error(err(node->line, "Unrecognised top-level declaration"));
     }
 
@@ -216,6 +272,14 @@ private:
         for (auto* d : blk->decls) {
             if (auto* fd = dynamic_cast<func_decl*>(d)) { fd->is_extern_c = true; visit_func_decl(fd); }
             else visit_top_level(d);
+        }
+    }
+
+    void visit_namespace_decl(namespace_decl* d) {
+        for (auto* decl : d->decls) {
+            if (auto* fd = dynamic_cast<func_decl*>(decl)) visit_func_decl(fd);
+            else if (auto* vd = dynamic_cast<var_decl*>(decl)) visit_global_var_decl(vd);
+            else if (auto* sd = dynamic_cast<struct_decl*>(decl)) visit_struct_decl(sd);
         }
     }
 
@@ -301,10 +365,13 @@ private:
     }
 
     void visit_struct_decl(struct_decl* d) {
+        // struct is a pure data record — no methods allowed.
+        // The parser enforces this structurally (struct_decl has no methods vector).
+        // This check validates field types and rejects initializers.
         for (auto* f : d->fields) {
             check_var_type(f->type, f->line);
             if (f->init.has_value())
-                throw std::runtime_error(err(f->line, "Struct field cannot have an initializer"));
+                throw std::runtime_error(err(f->line, "Struct field cannot have an initializer (use istruc for classes)"));
         }
     }
 
@@ -317,12 +384,31 @@ private:
     }
 
     void visit_enum_decl(enum_decl* d) {
-        for (auto& [name, val] : d->variants) {
-            if (val.has_value()) {
-                type_node* vt = visit_expr(val.value());
-                if (!vt->is_primitive || !is_int_prim(vt->prim.value()))
-                    throw std::runtime_error(err(d->line,
-                        "Enum variant value must be an integer expression"));
+        for (auto* ev : d->variants) {
+            switch (ev->kind) {
+            case enum_variant_kind::plain:
+                if (ev->plain_val.has_value()) {
+                    type_node* vt = visit_expr(ev->plain_val.value());
+                    if (!vt->is_primitive || !is_int_prim(vt->prim.value()))
+                        throw std::runtime_error(err(ev->line,
+                            "Enum variant value must be an integer expression"));
+                }
+                break;
+            case enum_variant_kind::tuple:
+                for (auto* tt : ev->tuple_types)
+                    check_type_known(tt, ev->line);
+                break;
+            case enum_variant_kind::named_struct:
+                for (auto* f : ev->struct_fields) {
+                    check_var_type(f->type, f->line);
+                    if (f->init.has_value())
+                        throw std::runtime_error(err(f->line,
+                            "ADT enum struct-variant fields cannot have initializers"));
+                }
+                break;
+            case enum_variant_kind::istruc_body:
+                // istruc variants are validated by the class analysis path
+                break;
             }
         }
     }
@@ -362,6 +448,21 @@ private:
 
         // Params and function body share one scope frame so that re-declaring a
         // param name inside the body is caught as a redeclaration.
+        // Heap-use check: top-level functions that call malloc/calloc/realloc must
+        // accept a &memstr allocator parameter (istruc methods are exempt).
+        if (fd->body && fd->name != "main" && !fd->is_extern_c) {
+            if (heap_block(fd->body)) {
+                bool has_alloc = false;
+                for (auto& p : fd->params)
+                    if (p.type && p.type->is_memstr_ref) { has_alloc = true; break; }
+                if (!has_alloc)
+                    throw std::runtime_error(err(fd->line,
+                        "Function '" + fd->name + "' allocates from the heap (malloc/calloc/realloc) "
+                        "but declares no allocator parameter (&memstr). "
+                        "Accept a '&memstr' parameter or implement allocation inside an istruc."));
+            }
+        }
+
         scope.push();
         for (auto& p : fd->params) {
             check_var_type(p.type, p.line);
@@ -588,6 +689,19 @@ private:
         // are handled by the IR. Returns the named type (or void for context-inferred .{}).
         for (auto& fi : e->field_inits) visit_expr(fi.second);
         if (e->init_type) return e->init_type;
+        // ADT enum named-struct/istruc variant init: EnumName::VariantName { .field = val }
+        // The object field holds the member expr (EnumName::VariantName).
+        if (e->object && e->object->kind == expr_kind::member &&
+            e->object->object && e->object->object->kind == expr_kind::identifier) {
+            const std::string& enum_name = e->object->object->str_val;
+            auto eit = scope.enums.find(enum_name);
+            if (eit != scope.enums.end() && eit->second->is_adt && !scope.lookup_var(enum_name)) {
+                auto* t = make_type(type_node{});
+                t->is_primitive = false;
+                t->name = enum_name;
+                return t;
+            }
+        }
         return prim(prim_type_t::void_t);
     }
 
@@ -623,6 +737,14 @@ private:
         // Enum variant used as integer constant
         if (scope.enum_variants.count(e->str_val))
             return prim(prim_type_t::i32);
+
+        // Enum type name used as scope qualifier (EnumName::VariantName)
+        if (scope.enums.count(e->str_val)) {
+            auto* t = make_type(type_node{});
+            t->is_primitive = false;
+            t->name = e->str_val;
+            return t;
+        }
 
         throw std::runtime_error(err(e->line,
             "Undeclared identifier '" + e->str_val + "'"));
@@ -669,6 +791,10 @@ private:
                 // Resolve typedef aliases so `typedef i32* IntPtr; *p` works.
                 if (ot && !ot->is_primitive && ot->pointer_depth == 0 && ot->name.has_value())
                     ot = resolve_typedef(ot, ln);
+                // ADT enum pseudo-deref: (*x) where x is an ADT enum — passthrough for (*x)[N].
+                if (ot && !ot->is_primitive && ot->pointer_depth == 0 && ot->name.has_value()
+                    && scope.enums.count(*ot->name) && scope.enums.at(*ot->name)->is_adt)
+                    return ot; // keep the enum type; subscript will resolve tuple field
                 if (ot->pointer_depth < 1)
                     throw std::runtime_error(err(ln,
                         "Cannot dereference non-pointer type '" + type_to_str(ot) + "'"));
@@ -905,16 +1031,28 @@ private:
     type_node* visit_call(expr_node* e) {
         uint64_t ln = e->line;
 
-        // Static method call via dot: ClassName.method(args) where ClassName is a class, not a var.
+        // Static method call via dot: ClassName.method(args) or Namespace.func(args).
         // Rewrite callee in-place so the rest of visit_call sees it as an identifier call.
         if (e->callee->kind == expr_kind::member &&
             e->callee->object &&
             e->callee->object->kind == expr_kind::identifier) {
-            const std::string& maybe_class = e->callee->object->str_val;
-            if (!scope.lookup_var(maybe_class) && scope.classes.count(maybe_class)) {
-                std::string mangled = maybe_class + "__MT_" + e->callee->member_name;
-                e->callee->kind    = expr_kind::identifier;
-                e->callee->str_val = mangled;
+            const std::string& maybe_ns = e->callee->object->str_val;
+            if (!scope.lookup_var(maybe_ns)) {
+                if (scope.enums.count(maybe_ns)) {
+                    // ADT enum variant constructor call: EnumName::VariantName(args...)
+                    // Type-check args and return the enum type.
+                    for (auto* arg : e->args) visit_expr(arg);
+                    auto* t = make_type(type_node{});
+                    t->is_primitive = false;
+                    t->name = maybe_ns;
+                    return t;
+                } else if (scope.classes.count(maybe_ns)) {
+                    e->callee->kind    = expr_kind::identifier;
+                    e->callee->str_val = maybe_ns + "__MT_" + e->callee->member_name;
+                } else if (scope.is_namespace(maybe_ns)) {
+                    e->callee->kind    = expr_kind::identifier;
+                    e->callee->str_val = maybe_ns + "__NS_" + e->callee->member_name;
+                }
             }
         }
 
@@ -1032,6 +1170,19 @@ private:
                     std::to_string(expected) + ", got " + std::to_string(got)));
         }
 
+        // Check that &memstr parameters receive a memstr-typed argument (not an istruc)
+        for (size_t i = 0; i < std::min(arg_types.size(), fd->params.size()); ++i) {
+            if (!fd->params[i].type || !fd->params[i].type->is_memstr_ref) continue;
+            type_node* at = arg_types[i];
+            bool ok = at && !at->is_primitive && at->name.has_value()
+                   && scope.is_memstr_type(*at->name);
+            if (!ok)
+                throw std::runtime_error(err(ln,
+                    "Argument " + std::to_string(i + 1) + " to '" + fname +
+                    "' must be a memstr allocator type; got '" +
+                    (at ? type_to_str(at) : "?") + "' (declare it with 'memstr', not 'istruc')"));
+        }
+
         return fd->ret_type;
     }
 
@@ -1075,9 +1226,29 @@ private:
 
     type_node* visit_subscript(expr_node* e) {
         type_node* ot = visit_expr(e->object);
-        type_node* it = visit_expr(e->index);
         uint64_t   ln = e->line;
 
+        // ADT enum tuple payload access: (*x)[N] where x is an ADT enum variable.
+        // ot is the enum's named type (pointer_depth == 0).
+        if (ot && !ot->is_primitive && ot->pointer_depth == 0 && ot->name.has_value()) {
+            auto eit = scope.enums.find(*ot->name);
+            if (eit != scope.enums.end() && eit->second->is_adt) {
+                // Index must be a compile-time integer literal to determine field type.
+                // For semantic checking just return void* (actual type resolved in IR).
+                if (e->index->kind == expr_kind::int_lit) {
+                    unsigned idx = static_cast<unsigned>(e->index->int_val);
+                    // Find first tuple variant and return its Nth type.
+                    for (auto* ev : eit->second->variants) {
+                        if (ev->kind == enum_variant_kind::tuple && idx < ev->tuple_types.size())
+                            return ev->tuple_types[idx];
+                    }
+                }
+                visit_expr(e->index);
+                return prim(prim_type_t::void_t); // fallback
+            }
+        }
+
+        type_node* it = visit_expr(e->index);
         if (ot->pointer_depth < 1 && !ot->array_size.has_value())
             throw std::runtime_error(err(ln,
                 "Subscript operator requires a pointer or array type, got '" +
@@ -1093,6 +1264,30 @@ private:
     }
 
     type_node* visit_member(expr_node* e) {
+        // Enum scope resolution: short-circuit before visiting object as an expression.
+        // For plain enums, returns i32. For ADT enums, returns the enum type itself.
+        if (e->object->kind == expr_kind::identifier) {
+            const std::string& obj = e->object->str_val;
+            auto eit = scope.enums.find(obj);
+            if (eit != scope.enums.end() && !scope.lookup_var(obj)) {
+                enum_decl* ed = eit->second;
+                for (auto* ev : ed->variants) {
+                    if (ev->name == e->member_name) {
+                        if (ed->is_adt) {
+                            // ADT variant used without a call — return the enum type
+                            auto* t = make_type(type_node{});
+                            t->is_primitive = false;
+                            t->name = ed->name;
+                            return t;
+                        }
+                        return prim(prim_type_t::i32);
+                    }
+                }
+                throw std::runtime_error(err(e->line,
+                    "No variant '" + e->member_name + "' in enum '" + obj + "'"));
+            }
+        }
+
         type_node* ot = visit_expr(e->object);
         uint64_t   ln = e->line;
 
@@ -1174,6 +1369,35 @@ private:
             throw std::runtime_error(err(ln,
                 "No member '" + e->member_name + "' in class '" + tname + "'"));
         }
+        // Enum member access: either scope resolution (non-ADT) or payload field (ADT).
+        if (scope.enums.count(tname)) {
+            auto* ed = scope.enums[tname];
+            // Check plain variant name first (scope resolution for non-ADT or tag access)
+            for (auto* ev : ed->variants)
+                if (ev->name == e->member_name) return prim(prim_type_t::i32);
+            // For ADT enums: search all variant payload fields
+            if (ed->is_adt) {
+                for (auto* ev : ed->variants) {
+                    for (auto* f : ev->struct_fields)
+                        if (f->name == e->member_name) return f->type;
+                    if (ev->istruc_body) {
+                        for (auto* cf : ev->istruc_body->fields)
+                            if (cf->name == e->member_name) return cf->type;
+                        for (auto* m : ev->istruc_body->methods)
+                            if (m->name == e->member_name) {
+                                auto* fpt = make_type(type_node{});
+                                fpt->is_func_ptr = true; fpt->fp_ret = m->ret_type;
+                                for (auto& p : m->params) fpt->fp_params.push_back(p.type);
+                                fpt->pointer_depth = 1;
+                                return fpt;
+                            }
+                    }
+                }
+            }
+            throw std::runtime_error(err(ln,
+                "No variant or field '" + e->member_name + "' in enum '" + tname + "'"));
+        }
+
         throw std::runtime_error(err(ln,
             "Type '" + tname + "' is not a struct, union, or class"));
     }

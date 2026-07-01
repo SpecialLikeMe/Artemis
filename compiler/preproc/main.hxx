@@ -131,7 +131,8 @@ inline std::string pr_process(
     std::unordered_map<std::string, macro_def>& defines,
     diag_engine& diag,
     int depth = 0,
-    const std::unordered_set<std::string>* predefined = nullptr
+    const std::unordered_set<std::string>* predefined = nullptr,
+    const std::vector<std::string>* include_paths = nullptr
 );
 
 inline std::string pr_process(
@@ -140,7 +141,8 @@ inline std::string pr_process(
     std::unordered_map<std::string, macro_def>& defines,
     diag_engine& diag,
     int depth,
-    const std::unordered_set<std::string>* predefined
+    const std::unordered_set<std::string>* predefined,
+    const std::vector<std::string>* include_paths
 ) {
     if (depth > 64) {
         diag.error(0, 0, "maximum include depth exceeded (possible circular @include)");
@@ -173,10 +175,41 @@ inline std::string pr_process(
         // Non-directive lines
         if (line.empty() || line[0] != '@') {
             if (active()) {
-                std::string processed = line;
-                for (const auto& [_, def] : defines)
-                    processed = apply_one_macro(processed, def);
-                out << processed << '\n';
+                // stdlib import: extern std.<dotpath>;
+                // e.g. "extern std.alloc.pool;" → include alloc/pool.arc from stdlib path
+                static const std::regex std_import(
+                    R"(^\s*extern\s+std\.([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*;\s*$)");
+                std::smatch sm;
+                if (std::regex_match(line, sm, std_import)) {
+                    std::string dotpath = sm[1].str();
+                    std::string filepath;
+                    for (char c : dotpath) filepath += (c == '.') ? '/' : c;
+                    filepath += ".arc";
+                    bool found = false;
+                    if (include_paths) {
+                        for (const auto& idir : *include_paths) {
+                            auto candidate = std::filesystem::path(idir) / filepath;
+                            if (std::filesystem::exists(candidate)) {
+                                try {
+                                    const std::string content = read_file(candidate.string());
+                                    out << pr_process(content, candidate.string(), defines, diag,
+                                                      depth + 1, predefined, include_paths);
+                                } catch (const std::runtime_error& e) {
+                                    diag.error(lineno, 1, e.what());
+                                }
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found)
+                        diag.error(lineno, 1, "unknown stdlib module: std." + dotpath);
+                } else {
+                    std::string processed = line;
+                    for (const auto& [_, def] : defines)
+                        processed = apply_one_macro(processed, def);
+                    out << processed << '\n';
+                }
             }
             continue;
         }
@@ -228,17 +261,30 @@ inline std::string pr_process(
             if (kw == "include") {
                 const std::string fname = parse_arg(line, pos);
                 const auto base = std::filesystem::path(filename).parent_path();
-                const auto full = base / fname;
+                std::filesystem::path full = base / fname;
+                // If not found relative to source, search include paths
+                if (!std::filesystem::exists(full) && include_paths) {
+                    for (const auto& idir : *include_paths) {
+                        auto candidate = std::filesystem::path(idir) / fname;
+                        if (std::filesystem::exists(candidate)) { full = candidate; break; }
+                    }
+                }
                 try {
                     const std::string content = read_file(full.string());
-                    out << pr_process(content, full.string(), defines, diag, depth + 1, predefined);
+                    out << pr_process(content, full.string(), defines, diag, depth + 1, predefined, include_paths);
                 } catch (const std::runtime_error& e) {
                     diag.error(lineno, 1, e.what());
                 }
             } else if (kw == "embed") {
                 const std::string fname = parse_arg(line, pos);
                 const auto base = std::filesystem::path(filename).parent_path();
-                const auto full = base / fname;
+                std::filesystem::path full = base / fname;
+                if (!std::filesystem::exists(full) && include_paths) {
+                    for (const auto& idir : *include_paths) {
+                        auto candidate = std::filesystem::path(idir) / fname;
+                        if (std::filesystem::exists(candidate)) { full = candidate; break; }
+                    }
+                }
                 try {
                     out << read_file(full.string());
                 } catch (const std::runtime_error& e) {
@@ -283,11 +329,13 @@ inline std::string pr_main(
     const std::string& input,
     const std::string& filename,
     diag_engine& diag,
-    const std::unordered_set<std::string>& predefined = {}
+    const std::unordered_set<std::string>& predefined = {},
+    const std::vector<std::string>& include_paths = {}
 ) {
     std::unordered_map<std::string, macro_def> defines;
     return pr_process(input, filename, defines, diag, 0,
-                      predefined.empty() ? nullptr : &predefined);
+                      predefined.empty() ? nullptr : &predefined,
+                      include_paths.empty() ? nullptr : &include_paths);
 }
 
 } // namespace preproc

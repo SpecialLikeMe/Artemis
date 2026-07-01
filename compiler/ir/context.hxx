@@ -4,6 +4,7 @@
 // Forward declarations for generic templates (full defs in parser/main.hxx).
 struct func_decl;
 struct class_decl;
+struct enum_decl;
 struct type_node;
 
 // ---- Per-scope variable table ----
@@ -78,6 +79,9 @@ struct ir_context {
     // Generic templates collected during pass 1 (keyed by base name).
     std::unordered_map<std::string, func_decl*>  generic_funcs;
     std::unordered_map<std::string, class_decl*> generic_classes;
+
+    // ADT enum registry: enum name -> enum_decl* (for payload-access codegen)
+    std::unordered_map<std::string, enum_decl*> adt_enums;
 
     void push_defer_scope() { defer_stack.emplace_back(); }
     void add_defer(void* item, bool is_block) {

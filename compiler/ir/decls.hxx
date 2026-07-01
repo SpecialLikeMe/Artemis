@@ -63,25 +63,140 @@ inline void visit_union_decl(union_decl* d, ir_context* ctx) {
 // ------------------------------------------------------------------ enum
 
 inline void visit_enum_decl(enum_decl* d, ir_context* ctx) {
-    // Enum variants become i32 global constants.
-    LLVMTypeRef i32 = LLVMInt32TypeInContext(ctx->llvm_ctx);
-    int next_val = 0;
+    LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i8t  = LLVMInt8TypeInContext(ctx->llvm_ctx);
 
-    for (auto& [name, init_expr] : d->variants) {
-        if (init_expr.has_value()) {
-            LLVMValueRef cv = visit_expr(init_expr.value(), ctx);
-            // Extract constant value when possible.
-            if (LLVMIsConstant(cv))
-                next_val = static_cast<int>(LLVMConstIntGetSExtValue(cv));
+    if (!d->is_adt) {
+        // Simple C-style enum: variants become i32 global constants.
+        int next_val = 0;
+        for (auto* ev : d->variants) {
+            if (ev->plain_val.has_value()) {
+                LLVMValueRef cv = visit_expr(ev->plain_val.value(), ctx);
+                if (LLVMIsConstant(cv))
+                    next_val = static_cast<int>(LLVMConstIntGetSExtValue(cv));
+            }
+            std::string qname = d->name + "::" + ev->name;
+            LLVMValueRef global = LLVMAddGlobal(ctx->llvm_mod, i32t, qname.c_str());
+            LLVMSetInitializer(global, LLVMConstInt(i32t, next_val, 1));
+            LLVMSetGlobalConstant(global, 1);
+            LLVMSetLinkage(global, LLVMInternalLinkage);
+            ctx->global_vars[ev->name] = global;
+            ctx->global_vars[qname]    = global;
+            next_val++;
+        }
+        return;
+    }
+
+    // ADT enum: { i32 tag, [N x i8] payload } (packed)
+    unsigned max_payload = 0;
+    int tag_idx = 0;
+    for (auto* ev : d->variants) {
+        std::string qname = d->name + "::" + ev->name;
+        LLVMValueRef tg = LLVMAddGlobal(ctx->llvm_mod, i32t, (qname + "__tag").c_str());
+        LLVMSetInitializer(tg, LLVMConstInt(i32t, tag_idx, 0));
+        LLVMSetGlobalConstant(tg, 1);
+        LLVMSetLinkage(tg, LLVMInternalLinkage);
+        ctx->global_vars[ev->name + "__tag"] = tg;
+        ctx->global_vars[qname + "__tag"]    = tg;
+
+        unsigned payload = 0;
+        switch (ev->kind) {
+        case enum_variant_kind::plain: payload = 0; break;
+        case enum_variant_kind::tuple:
+            for (auto* tt : ev->tuple_types)
+                payload += adt_type_byte_size(llvm_type_of(tt, ctx), ctx);
+            break;
+        case enum_variant_kind::named_struct:
+            for (auto* f : ev->struct_fields)
+                payload += adt_type_byte_size(llvm_type_of(f->type, ctx), ctx);
+            break;
+        case enum_variant_kind::istruc_body:
+            if (ev->istruc_body)
+                for (auto* cf : ev->istruc_body->fields)
+                    payload += adt_type_byte_size(llvm_type_of(cf->type, ctx), ctx);
+            break;
+        }
+        if (payload > max_payload) max_payload = payload;
+        tag_idx++;
+    }
+
+    // Build LLVM struct type { i32, [max_payload x i8] }
+    LLVMTypeRef adt_t = LLVMStructCreateNamed(ctx->llvm_ctx, d->name.c_str());
+    std::vector<LLVMTypeRef> body;
+    body.push_back(i32t);
+    if (max_payload > 0) body.push_back(LLVMArrayType(i8t, max_payload));
+    LLVMStructSetBody(adt_t, body.data(), (unsigned)body.size(), /*packed=*/1);
+    ctx->struct_types[d->name] = adt_t;
+
+    ctx->struct_field_names[d->name] = {"__tag", "__payload"};
+    std::vector<LLVMTypeRef> ftv = {i32t};
+    if (max_payload > 0) ftv.push_back(LLVMArrayType(i8t, max_payload));
+    ctx->struct_field_types[d->name] = std::move(ftv);
+
+    // Register in adt_enums for expression-level payload access
+    ctx->adt_enums[d->name] = d;
+
+    // Emit constructor functions for non-plain variants
+    tag_idx = 0;
+    for (auto* ev : d->variants) {
+        if (ev->kind == enum_variant_kind::plain) { tag_idx++; continue; }
+
+        std::vector<LLVMTypeRef> params;
+        std::vector<std::string> pnames;
+        switch (ev->kind) {
+        case enum_variant_kind::tuple:
+            for (size_t i = 0; i < ev->tuple_types.size(); i++) {
+                params.push_back(llvm_type_of(ev->tuple_types[i], ctx));
+                pnames.push_back("_t" + std::to_string(i));
+            }
+            break;
+        case enum_variant_kind::named_struct:
+            for (auto* f : ev->struct_fields) {
+                params.push_back(llvm_type_of(f->type, ctx));
+                pnames.push_back(f->name);
+            }
+            break;
+        case enum_variant_kind::istruc_body:
+            if (ev->istruc_body)
+                for (auto* cf : ev->istruc_body->fields) {
+                    params.push_back(llvm_type_of(cf->type, ctx));
+                    pnames.push_back(cf->name);
+                }
+            break;
+        default: break;
         }
 
-        LLVMValueRef global = LLVMAddGlobal(ctx->llvm_mod, i32, name.c_str());
-        LLVMSetInitializer(global, LLVMConstInt(i32, next_val, /*sign-extend=*/1));
-        LLVMSetGlobalConstant(global, 1);
-        LLVMSetLinkage(global, LLVMInternalLinkage);
+        std::string ctor = d->name + "__" + ev->name + "__ctor";
+        LLVMTypeRef fn_t = LLVMFunctionType(adt_t,
+            params.empty() ? nullptr : params.data(),
+            (unsigned)params.size(), 0);
+        LLVMValueRef fn = LLVMAddFunction(ctx->llvm_mod, ctor.c_str(), fn_t);
+        LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "entry");
+        LLVMPositionBuilderAtEnd(ctx->llvm_builder, bb);
 
-        ctx->global_vars[name] = global;
-        next_val++;
+        LLVMValueRef alloca = LLVMBuildAlloca(ctx->llvm_builder, adt_t, "adt");
+        LLVMValueRef tag_ptr = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, alloca, 0, "tagp");
+        LLVMBuildStore(ctx->llvm_builder, LLVMConstInt(i32t, tag_idx, 0), tag_ptr);
+
+        if (!params.empty() && max_payload > 0) {
+            LLVMValueRef payload_ptr = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, alloca, 1, "payp");
+            unsigned byte_off = 0;
+            for (size_t i = 0; i < params.size(); i++) {
+                LLVMValueRef pv = LLVMGetParam(fn, (unsigned)i);
+                LLVMValueRef of = LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), byte_off, 0);
+                LLVMValueRef fp = LLVMBuildGEP2(ctx->llvm_builder, i8t, payload_ptr, &of, 1, "fp");
+                LLVMValueRef fc = LLVMBuildBitCast(ctx->llvm_builder, fp,
+                    LLVMPointerType(params[i], 0), "fc");
+                LLVMBuildStore(ctx->llvm_builder, pv, fc);
+                byte_off += adt_type_byte_size(params[i], ctx);
+            }
+        }
+
+        LLVMValueRef ret_v = LLVMBuildLoad2(ctx->llvm_builder, adt_t, alloca, "adtv");
+        LLVMBuildRet(ctx->llvm_builder, ret_v);
+        ctx->global_funcs[ctor]      = fn;
+        ctx->global_func_types[ctor] = fn_t;
+        tag_idx++;
     }
 }
 
@@ -601,16 +716,19 @@ inline void visit_top_level_decl(ast_node* node, ir_context* ctx) {
     if (auto* d = dynamic_cast<func_decl*>(node))     { visit_func_decl(d, ctx);     return; }
     if (auto* d = dynamic_cast<class_decl*>(node))    { /* handled in two-pass */ (void)d; return; }
     if (auto* d = dynamic_cast<extern_c_block*>(node)){ visit_extern_c_block(d, ctx); return; }
-    if (dynamic_cast<memstr_decl*>(node))              { return; } // stub
+    if (dynamic_cast<memstr_decl*>(node))               { return; } // stub
+    if (dynamic_cast<namespace_decl*>(node))            { return; } // already flattened
     throw std::runtime_error("IR: Unknown top-level declaration kind");
 }
 
 // ------------------------------------------------------------------ program
 
-// Collect all nodes in extern "C" blocks, flattened
+// Collect all nodes in extern "C" blocks and namespaces, flattened
 static void flatten_extern_c(ast_node* node, std::vector<ast_node*>& out) {
     if (auto* blk = dynamic_cast<extern_c_block*>(node)) {
         for (auto* d : blk->decls) flatten_extern_c(d, out);
+    } else if (auto* ns = dynamic_cast<namespace_decl*>(node)) {
+        for (auto* d : ns->decls) flatten_extern_c(d, out);
     } else {
         out.push_back(node);
     }
@@ -636,10 +754,50 @@ inline void visit_program(program_node* prog, ir_context* ctx) {
         if (auto* d = dynamic_cast<class_decl*>(node))   { if (d->type_params.empty()) visit_class_decl_types(d, ctx); continue; }
     }
 
+    // Pass 1a.5: Register istruc_body variants of ADT enums as class types
+    // (so their methods can be called like istruc methods)
+    for (auto* node : all_decls) {
+        if (auto* d = dynamic_cast<enum_decl*>(node)) {
+            if (!d->is_adt) continue;
+            for (auto* ev : d->variants) {
+                if (ev->kind == enum_variant_kind::istruc_body && ev->istruc_body) {
+                    // Use the enum's LLVM type as the class type (ADT struct reuse)
+                    // Register the ADT struct type under the variant name so method
+                    // prototypes (which use d->name) can look it up via struct_types.
+                    ctx->struct_types[ev->istruc_body->name] = ctx->struct_types[d->name];
+
+                    auto& info = ctx->class_infos[ev->istruc_body->name];
+                    info.class_type = ctx->struct_types[d->name];
+                    info.base_name  = "";
+                    info.has_virtual = false;
+                    // Field layout: tag + fields
+                    info.all_field_names = {"__tag"};
+                    info.all_field_types = {LLVMInt32TypeInContext(ctx->llvm_ctx)};
+                    for (auto* cf : ev->istruc_body->fields) {
+                        info.all_field_names.push_back(cf->name);
+                        info.all_field_types.push_back(llvm_type_of(cf->type, ctx));
+                    }
+                    ctx->struct_field_names[ev->istruc_body->name] = info.all_field_names;
+                    ctx->struct_field_types[ev->istruc_body->name] = info.all_field_types;
+                }
+            }
+        }
+    }
+
     // Pass 1b: Register function/method prototypes (after types are known)
     for (auto* node : all_decls) {
         if (auto* d = dynamic_cast<func_decl*>(node))  { if (d->type_params.empty()) visit_func_decl_prototype(d, ctx); continue; }
         if (auto* d = dynamic_cast<class_decl*>(node)) { if (d->type_params.empty()) visit_class_decl_methods_prototype(d, ctx); continue; }
+    }
+    // Register istruc_body variant method prototypes
+    for (auto* node : all_decls) {
+        if (auto* d = dynamic_cast<enum_decl*>(node)) {
+            if (!d->is_adt) continue;
+            for (auto* ev : d->variants) {
+                if (ev->kind == enum_variant_kind::istruc_body && ev->istruc_body)
+                    visit_class_decl_methods_prototype(ev->istruc_body, ctx);
+            }
+        }
     }
 
     // Pass 2: Emit global variables and function/method bodies
@@ -647,5 +805,15 @@ inline void visit_program(program_node* prog, ir_context* ctx) {
         if (auto* d = dynamic_cast<var_decl*>(node))   { visit_global_var_decl(d, ctx);      continue; }
         if (auto* d = dynamic_cast<func_decl*>(node))  { if (d->type_params.empty()) visit_func_decl(d, ctx); continue; }
         if (auto* d = dynamic_cast<class_decl*>(node)) { if (d->type_params.empty()) visit_class_decl_methods_body(d, ctx); continue; }
+    }
+    // Emit istruc_body variant method bodies
+    for (auto* node : all_decls) {
+        if (auto* d = dynamic_cast<enum_decl*>(node)) {
+            if (!d->is_adt) continue;
+            for (auto* ev : d->variants) {
+                if (ev->kind == enum_variant_kind::istruc_body && ev->istruc_body)
+                    visit_class_decl_methods_body(ev->istruc_body, ctx);
+            }
+        }
     }
 }

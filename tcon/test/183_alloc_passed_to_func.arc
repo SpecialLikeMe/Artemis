@@ -1,5 +1,6 @@
 // Passing a custom allocator to functions (Zig-style allocator pattern)
-extern "C" { void* malloc(u64 size); void free(void* ptr); }
+extern void* malloc(u64 size);
+extern void free(void* ptr);
 
 istruc Alloc {
     i32 total_allocs;

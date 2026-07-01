@@ -1,5 +1,6 @@
 // Allocator factory via static methods using the new dot syntax
-extern "C" { void* malloc(u64 n); void free(void* p); }
+extern void* malloc(u64 n);
+extern void free(void* p);
 
 istruc BufAlloc {
     i32 alloc_count;

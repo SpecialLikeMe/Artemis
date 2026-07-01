@@ -185,7 +185,7 @@ struct class_method : ast_node {
     std::string mangled_name;
 };
 
-// ---- class declaration (istruc) ----
+// ---- class declaration (istruc / memstr) ----
 struct class_decl : ast_node {
     std::string                 name;
     std::string                 base_name;   // empty if no inheritance
@@ -195,15 +195,41 @@ struct class_decl : ast_node {
 
     // Mangled name set by analyzer for this class's vtable (if any virtual methods)
     bool has_virtual = false;
+    bool is_memstr   = false; // declared with `memstr` keyword (valid as &memstr)
     std::vector<std::string> type_params;  // generic type parameters <T, U>
 };
 
 // ---- extend func_decl with overloading / mangling info ----
 // (added as extensions; original func_decl unchanged for compatibility)
 
+// ADT enum variant kinds
+enum class enum_variant_kind {
+    plain,       // success
+    tuple,       // failure(T1, T2, ...)
+    named_struct,// error { T1 f1; T2 f2; }
+    istruc_body  // terminal_error .{ public T f; public void m() {} }
+};
+
+struct enum_variant : ast_node {
+    std::string             name;
+    enum_variant_kind       kind = enum_variant_kind::plain;
+    std::optional<expr_node*> plain_val;  // plain: optional integer value
+
+    // tuple fields (anonymous): types in order
+    std::vector<type_node*> tuple_types;
+
+    // named struct fields
+    std::vector<var_decl*>  struct_fields;
+
+    // istruc body: reuse class_decl for fields + methods
+    class_decl*             istruc_body = nullptr;
+};
+
 struct enum_decl : ast_node {
-    std::string                                name;
-    std::vector<std::pair<std::string, std::optional<expr_node*>>> variants;
+    std::string                  name;
+    std::vector<enum_variant*>   variants;
+    // Legacy simple enum support: if all variants are plain, this is a C-style enum.
+    bool                         is_adt = false;
 };
 
 struct union_decl : ast_node {
@@ -216,6 +242,11 @@ struct typedef_decl : ast_node {
     std::string alias;
 };
 
+
+struct namespace_decl : ast_node {
+    std::string            name;
+    std::vector<ast_node*> decls;
+};
 
 // top-level program
 struct program_node : ast_node {
@@ -255,8 +286,9 @@ private:
         if (check(token_type::kw_union))    return parse_union_decl();
         if (check(token_type::kw_typedef))  return parse_typedef_decl();
         if (check(token_type::kw_istruc))   return parse_class_decl();
-        if (check(token_type::kw_extern_c)) return parse_extern_c_block();
-        if (check(token_type::kw_smem))     return parse_memstr_decl();
+        if (check(token_type::kw_extern_c))  return parse_extern_c_block();
+        if (check(token_type::kw_smem))      return parse_memstr_decl();
+        if (check(token_type::kw_namespace)) return parse_namespace_decl();
         return parse_func_or_var_decl();
     }
 
@@ -466,7 +498,7 @@ private:
         fd->line      = name_tok.line;
         fd->ret_type  = ret;
         fd->name      = name_tok.value;
-        fd->is_extern_c = extern_c || (ret && ret->is_extern_c);
+        fd->is_extern_c = extern_c || (ret && (ret->is_extern_c || ret->is_extern));
 
         if (!check(token_type::cparen)) {
             do {
@@ -552,13 +584,58 @@ private:
         advance(); // 'enum'
         auto* ed = alloc<enum_decl>();
         ed->line = ln;
+        ed->is_adt = false;
         ed->name = consume(token_type::id, "Expected enum name").value;
         consume(token_type::obrace, "Expected '{' after enum name");
         while (!check(token_type::cbrace) && !is_at_end()) {
-            std::string vname = consume(token_type::id, "Expected variant name").value;
-            std::optional<expr_node*> val;
-            if (match(token_type::assign)) val = parse_expr();
-            ed->variants.push_back({vname, val});
+            auto* ev = alloc<enum_variant>();
+            ev->line = peek().line;
+            ev->name = consume(token_type::id, "Expected variant name").value;
+
+            if (check(token_type::oparen)) {
+                // Tuple variant: failure(T1, T2, ...)
+                advance(); // (
+                ev->kind = enum_variant_kind::tuple;
+                ed->is_adt = true;
+                while (!check(token_type::cparen) && !is_at_end()) {
+                    ev->tuple_types.push_back(parse_type());
+                    if (!check(token_type::cparen))
+                        consume(token_type::comma, "Expected ',' between tuple types");
+                }
+                consume(token_type::cparen, "Expected ')' after tuple types");
+            } else if (check(token_type::obrace)) {
+                // Named struct variant: error { T f1; T f2; }
+                advance(); // {
+                ev->kind = enum_variant_kind::named_struct;
+                ed->is_adt = true;
+                while (!check(token_type::cbrace) && !is_at_end()) {
+                    type_node* ft = parse_type();
+                    auto fname = consume(token_type::id, "Expected field name");
+                    auto* vd = alloc<var_decl>();
+                    vd->line = fname.line; vd->type = ft; vd->name = fname.value;
+                    consume(token_type::sm, "Expected ';' after field");
+                    ev->struct_fields.push_back(vd);
+                }
+                consume(token_type::cbrace, "Expected '}' after named struct variant");
+            } else if (check(token_type::dot) && peek_at(1).type == token_type::obrace) {
+                // istruc variant: terminal_error .{ ... }
+                advance(); // .
+                advance(); // {
+                ev->kind = enum_variant_kind::istruc_body;
+                ed->is_adt = true;
+                auto* cd = alloc<class_decl>();
+                cd->line = ev->line;
+                cd->name = ev->name;
+                while (!check(token_type::cbrace) && !is_at_end()) parse_class_member(cd);
+                consume(token_type::cbrace, "Expected '}' after istruc variant body");
+                ev->istruc_body = cd;
+            } else {
+                // Plain variant: success  or  success = 42
+                ev->kind = enum_variant_kind::plain;
+                if (match(token_type::assign)) ev->plain_val = parse_expr();
+            }
+
+            ed->variants.push_back(ev);
             if (!check(token_type::cbrace)) consume(token_type::comma, "Expected ',' between enum variants");
         }
         consume(token_type::cbrace, "Expected '}' after enum body");
@@ -586,69 +663,79 @@ private:
         return ud;
     }
 
-    memstr_decl* parse_memstr_decl() {
+    ast_node* parse_memstr_decl() {
         uint64_t ln = peek().line;
         advance(); // consume 'memstr'
-        auto* md  = alloc<memstr_decl>();
-        md->line  = ln;
-        md->name  = consume(token_type::id, "Expected memstr type name").value;
+        std::string name = consume(token_type::id, "Expected memstr type name").value;
         consume(token_type::obrace, "Expected '{' after memstr name");
 
-        while (!check(token_type::cbrace) && !is_at_end()) {
-            // .ptr = EXPR; or .vtable = { ... }; or function definition
-            if (check(token_type::dot)) {
-                advance(); // consume .
-                std::string field = consume(token_type::id, "Expected field name after '.'").value;
-                if (field == "ptr") {
-                    consume(token_type::assign, "Expected '=' after .ptr");
-                    auto* vd = alloc<var_decl>();
-                    vd->line = ln;
-                    auto* t  = alloc<type_node>();
-                    t->is_primitive = true; t->prim = prim_type_t::void_t; t->pointer_depth = 1;
-                    vd->type = t; vd->name = "ptr";
-                    vd->init = parse_expr();
-                    consume(token_type::sm, "Expected ';' after .ptr = expr");
-                    md->ptr_field = vd;
-                } else if (field == "vtable") {
-                    consume(token_type::assign, "Expected '=' after .vtable");
-                    consume(token_type::obrace, "Expected '{' for vtable");
-                    while (!check(token_type::cbrace) && !is_at_end()) {
-                        consume(token_type::dot, "Expected '.' in vtable field");
-                        std::string vf = consume(token_type::id, "Expected vtable field name").value;
-                        consume(token_type::assign, "Expected '='");
-                        expr_node* fptr_expr = parse_expr();
-                        consume(token_type::sm, "Expected ';'");
-                        // store as a synthetic var_decl or just record the function pointer expr
-                        // We'll attach via a trivial func_decl placeholder
-                        auto* fd = alloc<func_decl>();
-                        fd->line = ln; fd->name = vf;
-                        // Store the expression in body as a placeholder (IR will handle it)
-                        // Use a special var_decl approach: store fptr_expr in body's first stmt
-                        auto* es = alloc<expr_stmt>(); es->expr = fptr_expr;
-                        auto* blk = alloc<block_stmt>(); blk->stmts.push_back(es);
-                        fd->body = blk;
-                        if      (vf == "mmap")   md->fn_mmap   = fd;
-                        else if (vf == "rmap")   md->fn_rmap   = fd;
-                        else if (vf == "deinit") md->fn_deinit = fd;
+        // Detect syntax: if first token is '.', use legacy vtable syntax -> memstr_decl*
+        if (check(token_type::dot)) {
+            auto* md  = alloc<memstr_decl>();
+            md->line  = ln;
+            md->name  = name;
+            while (!check(token_type::cbrace) && !is_at_end()) {
+                if (check(token_type::dot)) {
+                    advance();
+                    std::string field = consume(token_type::id, "Expected field name after '.'").value;
+                    if (field == "ptr") {
+                        consume(token_type::assign, "Expected '=' after .ptr");
+                        auto* vd = alloc<var_decl>();
+                        vd->line = ln;
+                        auto* t  = alloc<type_node>();
+                        t->is_primitive = true; t->prim = prim_type_t::void_t; t->pointer_depth = 1;
+                        vd->type = t; vd->name = "ptr";
+                        vd->init = parse_expr();
+                        consume(token_type::sm, "Expected ';' after .ptr = expr");
+                        md->ptr_field = vd;
+                    } else if (field == "vtable") {
+                        consume(token_type::assign, "Expected '=' after .vtable");
+                        consume(token_type::obrace, "Expected '{' for vtable");
+                        while (!check(token_type::cbrace) && !is_at_end()) {
+                            consume(token_type::dot, "Expected '.' in vtable field");
+                            std::string vf = consume(token_type::id, "Expected vtable field name").value;
+                            consume(token_type::assign, "Expected '='");
+                            expr_node* fptr_expr = parse_expr();
+                            consume(token_type::sm, "Expected ';'");
+                            auto* fd = alloc<func_decl>();
+                            fd->line = ln; fd->name = vf;
+                            auto* es = alloc<expr_stmt>(); es->expr = fptr_expr;
+                            auto* blk = alloc<block_stmt>(); blk->stmts.push_back(es);
+                            fd->body = blk;
+                            if      (vf == "mmap")   md->fn_mmap   = fd;
+                            else if (vf == "rmap")   md->fn_rmap   = fd;
+                            else if (vf == "deinit") md->fn_deinit = fd;
+                        }
+                        consume(token_type::cbrace, "Expected '}' after vtable");
+                        consume(token_type::sm, "Expected ';' after vtable block");
+                    } else {
+                        throw std::runtime_error("Parser Error: unknown memstr field '." + field + "'");
                     }
-                    consume(token_type::cbrace, "Expected '}' after vtable");
-                    consume(token_type::sm, "Expected ';' after vtable block");
                 } else {
-                    throw std::runtime_error("Parser Error: unknown memstr field '." + field + "'");
+                    type_node* ret = parse_type();
+                    auto name_tok  = consume(token_type::id, "Expected function name");
+                    consume(token_type::oparen, "Expected '('");
+                    auto* fd = parse_func_body(ret, name_tok);
+                    if      (fd->name == "mmap")   md->fn_mmap   = fd;
+                    else if (fd->name == "rmap")   md->fn_rmap   = fd;
+                    else if (fd->name == "deinit") md->fn_deinit = fd;
                 }
-            } else {
-                // Inline function definitions inside memstr
-                type_node* ret = parse_type();
-                auto name_tok  = consume(token_type::id, "Expected function name");
-                consume(token_type::oparen, "Expected '('");
-                auto* fd = parse_func_body(ret, name_tok);
-                if      (fd->name == md->name + "__mmap"   || fd->name == "mmap")   md->fn_mmap   = fd;
-                else if (fd->name == md->name + "__rmap"   || fd->name == "rmap")   md->fn_rmap   = fd;
-                else if (fd->name == md->name + "__deinit" || fd->name == "deinit") md->fn_deinit = fd;
             }
+            consume(token_type::cbrace, "Expected '}' after memstr body");
+            return md;
+        }
+
+        // New class-body syntax: parse like istruc, return class_decl with is_memstr = true
+        auto* cd    = alloc<class_decl>();
+        cd->line     = ln;
+        cd->name     = name;
+        cd->is_memstr = true;
+        while (!check(token_type::cbrace) && !is_at_end()) {
+            parse_class_member(cd);
         }
         consume(token_type::cbrace, "Expected '}' after memstr body");
-        return md;
+        match(token_type::sm);
+        return cd;
     }
 
     // -------------------------------------------------------- extern "C" block
@@ -684,6 +771,27 @@ private:
             return fd;
         }
         return parse_var_body(ret, name_tok);
+    }
+
+    // -------------------------------------------------------- namespace
+    namespace_decl* parse_namespace_decl() {
+        uint64_t ln = peek().line;
+        advance(); // consume 'namespace'
+        auto* nd = alloc<namespace_decl>();
+        nd->line = ln;
+        nd->name = consume(token_type::id, "Expected namespace name").value;
+        consume(token_type::obrace, "Expected '{' after namespace name");
+        while (!check(token_type::cbrace) && !is_at_end()) {
+            try {
+                nd->decls.push_back(parse_top_level());
+            } catch (const std::runtime_error& e) {
+                std::cerr << e.what() << '\n';
+                had_parse_error = true;
+                synchronize();
+            }
+        }
+        consume(token_type::cbrace, "Expected '}' after namespace body");
+        return nd;
     }
 
     // -------------------------------------------------------- class (istruc)
@@ -1568,6 +1676,19 @@ private:
                 base = n;
                 continue;
             }
+            // ADT istruc-variant init: expr .{ .field = val, ... }
+            // (used for terminal_error .{ .msg = "bad" } after EnumName::VariantName)
+            if (check(token_type::dot) && peek_at(1).type == token_type::obrace) {
+                advance(); // consume '.'
+                auto* ci      = alloc<expr_node>();
+                ci->kind      = expr_kind::class_init;
+                ci->line      = previous().line;
+                ci->init_type = nullptr;
+                ci->object    = base; // retain base as context for type inference
+                parse_class_init_fields(ci);
+                base = ci;
+                continue;
+            }
             if (match(token_type::dot)) {
                 auto* n       = alloc<expr_node>();
                 n->kind       = expr_kind::member;
@@ -1606,29 +1727,28 @@ private:
                 n->line = advance().line; n->uop = unary_op::post_dec; n->operand = base;
                 base = n; continue;
             }
-            // ClassName::method(args) — static method call, deprecated; use ClassName.method() instead
+            // Name::member — scope resolution, deprecated in favour of '.'; produces a member expr
+            // that the analyzer resolves as a class static method or namespace function.
             if (match(token_type::scope_res)) {
                 uint64_t res_line = previous().line;
-                std::cerr << "Warning at line " << res_line
-                          << ": '::' is deprecated for static method calls; use ClassName.method() instead\n";
-                std::string class_name = (base->kind == expr_kind::identifier) ? base->str_val : "";
-                auto meth_tok = consume(token_type::id, "Expected method name after '::'");
-                // Build an identifier node for the mangled static method name.
-                auto* callee_n    = alloc<expr_node>();
-                callee_n->kind    = expr_kind::identifier;
-                callee_n->line    = meth_tok.line;
-                callee_n->str_val = class_name + "__MT_" + meth_tok.value;
-                // Build the call expression.
-                auto* call_n    = alloc<expr_node>();
-                call_n->kind    = expr_kind::call;
-                call_n->line    = meth_tok.line;
-                call_n->callee  = callee_n;
-                consume(token_type::oparen, "Expected '(' after static method name");
-                if (!check(token_type::cparen)) {
-                    do { call_n->args.push_back(parse_expr()); } while (match(token_type::comma));
+                auto* n        = alloc<expr_node>();
+                n->kind        = expr_kind::member;
+                n->line        = res_line;
+                n->object      = base;
+                n->member_name = consume(token_type::id, "Expected name after '::'").value;
+                base = n;
+                // After EnumName::VariantName, check for { .field = val } (named-struct variant init)
+                if (check(token_type::obrace) && peek_at(1).type == token_type::dot) {
+                    auto* ci = alloc<expr_node>();
+                    ci->kind = expr_kind::class_init;
+                    ci->line = res_line;
+                    ci->init_type = nullptr; // type inferred from context (ADT enum variant)
+                    // Store the member expr (EnumName::VariantName) as the callee
+                    // so visit_class_init can detect this is an ADT enum variant init.
+                    ci->object = base; // base is the member expr we just built
+                    parse_class_init_fields(ci);
+                    base = ci;
                 }
-                consume(token_type::cparen, "Expected ')' after arguments");
-                base = call_n;
                 continue;
             }
             break;
@@ -1676,7 +1796,7 @@ private:
             auto* n  = alloc<expr_node>();
             n->kind  = expr_kind::int_lit;
             n->line  = tok.line;
-            n->int_val = std::stoll(tok.value, nullptr, 0);
+            n->int_val = (int64_t)std::strtoull(tok.value.c_str(), nullptr, 0);
             return n;
         }
         if (check(token_type::float_lit)) {

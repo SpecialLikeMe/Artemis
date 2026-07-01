@@ -1,5 +1,7 @@
 // Arena (bump) allocator: carves out slices from a single malloc'd block
-extern "C" { void* malloc(u64 size); void free(void* ptr); void* memset(void* ptr, i32 val, u64 n); }
+extern void* malloc(u64 size);
+extern void free(void* ptr);
+extern void* memset(void* ptr, i32 val, u64 n);
 
 istruc Arena {
     void* base;

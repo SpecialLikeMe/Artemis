@@ -277,10 +277,62 @@ inline LLVMValueRef visit_lvalue(expr_node* e, ir_context* ctx) {
             } else if (e->object->kind == expr_kind::unary &&
                        e->object->uop == unary_op::deref &&
                        e->object->operand->kind == expr_kind::identifier) {
+                const std::string& opname = e->object->operand->str_val;
                 // (*ptr).field — look up through the pointer's deref type
-                LLVMTypeRef deref_t = ctx->lookup_deref_type(e->object->operand->str_val);
+                LLVMTypeRef deref_t = ctx->lookup_deref_type(opname);
                 if (deref_t && LLVMGetTypeKind(deref_t) == LLVMStructTypeKind)
                     tname = LLVMGetStructName(deref_t) ? LLVMGetStructName(deref_t) : "";
+
+                // ADT enum payload access: (*x).field where x is an ADT enum (not a pointer).
+                // We handle this here: GEP to payload, bitcast, return typed pointer.
+                if (tname.empty()) {
+                    LLVMTypeRef local_t = ctx->lookup_local_type(opname);
+                    if (local_t && LLVMGetTypeKind(local_t) == LLVMStructTypeKind) {
+                        const char* sn = LLVMGetStructName(local_t);
+                        if (sn && ctx->adt_enums.count(sn)) {
+                            enum_decl* ed = ctx->adt_enums[sn];
+                            LLVMTypeRef i8t  = LLVMInt8TypeInContext(ctx->llvm_ctx);
+                            LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
+                            // Find the named-struct or istruc_body variant that has this field
+                            for (auto* ev : ed->variants) {
+                                if (ev->kind != enum_variant_kind::named_struct &&
+                                    ev->kind != enum_variant_kind::istruc_body) continue;
+
+                                // Helper lambda to emit GEP for a field at byte_off
+                                auto try_field_gep = [&](const std::string& fname, type_node* ftype, unsigned byte_off) -> LLVMValueRef {
+                                    if (fname != e->member_name) return nullptr;
+                                    LLVMTypeRef field_t = llvm_type_of(ftype, ctx);
+                                    LLVMValueRef alloca_ = ctx->lookup_local(opname);
+                                    LLVMValueRef payload_ptr = LLVMBuildStructGEP2(
+                                        ctx->llvm_builder, local_t, alloca_, 1, "pay");
+                                    LLVMValueRef zero  = LLVMConstInt(i32t, 0, 0);
+                                    LLVMValueRef off_v = LLVMConstInt(i32t, byte_off, 0);
+                                    LLVMValueRef bidx[2] = {zero, off_v};
+                                    LLVMValueRef bp = LLVMBuildGEP2(ctx->llvm_builder,
+                                        LLVMArrayType(i8t, 1), payload_ptr, bidx, 2, "byteptr");
+                                    return LLVMBuildBitCast(ctx->llvm_builder, bp,
+                                        LLVMPointerType(field_t, 0), "fieldptr");
+                                };
+
+                                unsigned byte_off = 0;
+                                // named_struct fields
+                                for (auto* f : ev->struct_fields) {
+                                    LLVMValueRef r = try_field_gep(f->name, f->type, byte_off);
+                                    if (r) return r;
+                                    byte_off += adt_type_byte_size(llvm_type_of(f->type, ctx), ctx);
+                                }
+                                // istruc_body fields
+                                if (ev->istruc_body) {
+                                    for (auto* cf : ev->istruc_body->fields) {
+                                        LLVMValueRef r = try_field_gep(cf->name, cf->type, byte_off);
+                                        if (r) return r;
+                                        byte_off += adt_type_byte_size(llvm_type_of(cf->type, ctx), ctx);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             // Fallback: recursively infer struct name for nested member/subscript expressions.
             if (tname.empty())
@@ -290,6 +342,39 @@ inline LLVMValueRef visit_lvalue(expr_node* e, ir_context* ctx) {
             if (ptr_needs_load) {
                 LLVMTypeRef ptr_t = ctx->lookup_local_type(e->object->str_val);
                 struct_ptr = LLVMBuildLoad2(ctx->llvm_builder, ptr_t, struct_ptr, "selfload");
+            }
+            // ADT istruc variant field access: self.field inside an istruc method body.
+            // tname = enum name (e.g. "io_error"), field is in variant payload.
+            if (!tname.empty() && ctx->adt_enums.count(tname)) {
+                enum_decl* ed = ctx->adt_enums.at(tname);
+                LLVMTypeRef adt_t = ctx->struct_types[tname];
+                LLVMTypeRef i8t   = LLVMInt8TypeInContext(ctx->llvm_ctx);
+                const std::string& vname = ctx->current_class_name;
+                for (auto* ev : ed->variants) {
+                    if (ev->name != vname) continue;
+                    unsigned byte_off = 0;
+                    auto try_payload_gep = [&](const std::string& fname, type_node* ftype) -> LLVMValueRef {
+                        if (fname != e->member_name) return nullptr;
+                        LLVMTypeRef field_t = llvm_type_of(ftype, ctx);
+                        LLVMValueRef pay = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, struct_ptr, 1, "spay");
+                        LLVMValueRef off_v = LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), byte_off, 0);
+                        LLVMValueRef bp = LLVMBuildGEP2(ctx->llvm_builder, i8t, pay, &off_v, 1, "sbp");
+                        return LLVMBuildBitCast(ctx->llvm_builder, bp,
+                            LLVMPointerType(field_t, 0), "sfp");
+                    };
+                    for (auto* sf : ev->struct_fields) {
+                        LLVMValueRef r = try_payload_gep(sf->name, sf->type);
+                        if (r) return r;
+                        byte_off += adt_type_byte_size(llvm_type_of(sf->type, ctx), ctx);
+                    }
+                    if (ev->istruc_body) {
+                        for (auto* cf : ev->istruc_body->fields) {
+                            LLVMValueRef r = try_payload_gep(cf->name, cf->type);
+                            if (r) return r;
+                            byte_off += adt_type_byte_size(llvm_type_of(cf->type, ctx), ctx);
+                        }
+                    }
+                }
             }
             auto fit = ctx->struct_field_names.find(tname);
             if (fit == ctx->struct_field_names.end())
@@ -400,6 +485,12 @@ inline LLVMValueRef visit_unary_expr(expr_node* e, ir_context* ctx) {
             if (e->operand->kind == expr_kind::identifier) {
                 LLVMTypeRef dt = ctx->lookup_deref_type(e->operand->str_val);
                 if (dt) elem_t = dt;
+            } else if (e->operand->kind == expr_kind::cast && e->operand->cast_type
+                       && e->operand->cast_type->pointer_depth > 0) {
+                type_node tmp = *e->operand->cast_type;
+                tmp.pointer_depth -= 1;
+                tmp.array_size.reset();
+                elem_t = llvm_type_of(&tmp, ctx);
             }
             return LLVMBuildLoad2(ctx->llvm_builder, elem_t, ptr, "dereftmp");
         }
@@ -748,6 +839,27 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
         }
 
         if (!class_name.empty()) {
+            // Determine if obj_expr is a pointer-typed identifier (e.g. `self: &Foo`).
+            // visit_lvalue returns the alloca, which for pointer params holds a ptr-to-struct —
+            // one extra indirection. Load it so the callee receives the actual struct pointer.
+            bool self_needs_load = false;
+            if (obj_expr->kind == expr_kind::identifier) {
+                LLVMTypeRef elem = ctx->lookup_local_type(obj_expr->str_val);
+                if (!elem || LLVMGetTypeKind(elem) != LLVMStructTypeKind) {
+                    LLVMTypeRef dt = ctx->lookup_deref_type(obj_expr->str_val);
+                    if (dt && LLVMGetTypeKind(dt) == LLVMStructTypeKind)
+                        self_needs_load = true;
+                }
+            }
+            auto resolve_self_ptr = [&]() -> LLVMValueRef {
+                LLVMValueRef p = visit_lvalue(obj_expr, ctx);
+                if (self_needs_load) {
+                    LLVMTypeRef ptr_t = ctx->lookup_local_type(obj_expr->str_val);
+                    p = LLVMBuildLoad2(ctx->llvm_builder, ptr_t, p, "selfload");
+                }
+                return p;
+            };
+
             // Walk inheritance chain: look for ClassName__MT_method, then BaseClass__MT_method, etc.
             std::string search = class_name;
             while (!search.empty()) {
@@ -756,7 +868,7 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
                 if (mfit != ctx->global_funcs.end()) {
                     // Prepend &obj as self. The self pointer is always cast to the declaring
                     // class pointer by the IR (both have compatible layout due to inheritance).
-                    LLVMValueRef self_ptr = visit_lvalue(obj_expr, ctx);
+                    LLVMValueRef self_ptr = resolve_self_ptr();
                     std::vector<LLVMValueRef> mt_args = { self_ptr };
                     mt_args.insert(mt_args.end(), args.begin(), args.end());
                     LLVMTypeRef mt_fn_t = ctx->global_func_types[mt_name];
@@ -768,6 +880,46 @@ inline LLVMValueRef visit_call_expr(expr_node* e, ir_context* ctx) {
                 // Try base class
                 auto ci = ctx->class_infos.find(search);
                 search = (ci != ctx->class_infos.end()) ? ci->second.base_name : "";
+            }
+            // ADT enum istruc variant method: e.method() where e is an ADT enum.
+            // Search each istruc_body variant for VariantName__MT_method.
+            if (ctx->adt_enums.count(class_name)) {
+                enum_decl* ed = ctx->adt_enums.at(class_name);
+                for (auto* ev : ed->variants) {
+                    if (ev->kind != enum_variant_kind::istruc_body || !ev->istruc_body) continue;
+                    std::string mt_name = ev->name + "__MT_" + mname;
+                    auto mfit = ctx->global_funcs.find(mt_name);
+                    if (mfit != ctx->global_funcs.end()) {
+                        LLVMValueRef self_ptr = resolve_self_ptr();
+                        std::vector<LLVMValueRef> mt_args = { self_ptr };
+                        mt_args.insert(mt_args.end(), args.begin(), args.end());
+                        LLVMTypeRef mt_fn_t = ctx->global_func_types[mt_name];
+                        bool mt_void = LLVMGetTypeKind(LLVMGetReturnType(mt_fn_t)) == LLVMVoidTypeKind;
+                        return LLVMBuildCall2(ctx->llvm_builder, mt_fn_t, mfit->second,
+                                             mt_args.data(), static_cast<unsigned>(mt_args.size()),
+                                             mt_void ? "" : "admtcall");
+                    }
+                }
+            }
+        }
+    }
+
+    // Case 1b: ADT enum variant constructor call — EnumName::VariantName(args...)
+    // Detected when callee is a member expr whose object is a known ADT enum type name
+    // and the variant has a registered constructor function.
+    if (e->callee->kind == expr_kind::member) {
+        expr_node* obj_expr = e->callee->object;
+        if (obj_expr->kind == expr_kind::identifier) {
+            auto adt_it = ctx->adt_enums.find(obj_expr->str_val);
+            if (adt_it != ctx->adt_enums.end() && !ctx->lookup_local(obj_expr->str_val)) {
+                std::string ctor = obj_expr->str_val + "__" + e->callee->member_name + "__ctor";
+                auto cit = ctx->global_funcs.find(ctor);
+                if (cit != ctx->global_funcs.end()) {
+                    LLVMTypeRef ctn_t = ctx->global_func_types[ctor];
+                    bool cv = LLVMGetTypeKind(LLVMGetReturnType(ctn_t)) == LLVMVoidTypeKind;
+                    return LLVMBuildCall2(ctx->llvm_builder, ctn_t, cit->second,
+                        args.data(), (unsigned)args.size(), cv ? "" : "adtctor");
+                }
             }
         }
     }
@@ -898,16 +1050,64 @@ inline LLVMValueRef subscript_elem_ptr(expr_node* e, ir_context* ctx, LLVMTypeRe
     const std::string oname =
         e->object->kind == expr_kind::identifier ? e->object->str_val : "";
 
-    // Pointer base: the variable holds a pointer; load it, then index with deref type.
-    LLVMTypeRef dt = oname.empty() ? nullptr : ctx->lookup_deref_type(oname);
-    if (dt) {
-        LLVMValueRef base = visit_expr(e->object, ctx); // loads the pointer value
-        elem_t_out = dt;
-        return LLVMBuildGEP2(ctx->llvm_builder, dt, base, &idx, 1, "elemptr");
+    // ADT enum payload access: (*x)[N] where x is an ADT enum local (not a pointer).
+    // Resolves to: bitcast(&x.__payload[byte_offset]) → field_type*
+    if (e->object->kind == expr_kind::unary && e->object->uop == unary_op::deref &&
+        e->object->operand->kind == expr_kind::identifier) {
+        const std::string& xname = e->object->operand->str_val;
+        LLVMTypeRef local_t = ctx->lookup_local_type(xname);
+        if (local_t && LLVMGetTypeKind(local_t) == LLVMStructTypeKind) {
+            const char* sn = LLVMGetStructName(local_t);
+            if (sn && ctx->adt_enums.count(sn)) {
+                enum_decl* ed = ctx->adt_enums[sn];
+                // Find the first tuple variant and use its field types for the index
+                int field_idx = (int)LLVMConstIntGetSExtValue(idx);
+                LLVMTypeRef field_type = LLVMInt8TypeInContext(ctx->llvm_ctx);
+                unsigned byte_off = 0;
+                for (auto* ev : ed->variants) {
+                    if (ev->kind == enum_variant_kind::tuple && field_idx < (int)ev->tuple_types.size()) {
+                        for (int fi = 0; fi < field_idx; fi++)
+                            byte_off += adt_type_byte_size(llvm_type_of(ev->tuple_types[fi], ctx), ctx);
+                        field_type = llvm_type_of(ev->tuple_types[field_idx], ctx);
+                        break;
+                    }
+                }
+                LLVMValueRef alloca = ctx->lookup_local(xname);
+                LLVMTypeRef adt_t   = local_t;
+                // GEP to payload field (index 1 of the outer struct)
+                LLVMValueRef payload_ptr = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, alloca, 1, "pay");
+                // GEP into the byte array
+                LLVMTypeRef i8t = LLVMInt8TypeInContext(ctx->llvm_ctx);
+                LLVMValueRef off_v = LLVMConstInt(LLVMInt32TypeInContext(ctx->llvm_ctx), byte_off, 0);
+                LLVMValueRef zero  = LLVMConstInt(LLVMInt32TypeInContext(ctx->llvm_ctx), 0, 0);
+                LLVMValueRef bidx[2] = {zero, off_v};
+                LLVMValueRef byte_ptr = LLVMBuildGEP2(ctx->llvm_builder,
+                    LLVMArrayType(i8t, 1), payload_ptr, bidx, 2, "byteptr");
+                LLVMValueRef typed_ptr = LLVMBuildBitCast(ctx->llvm_builder, byte_ptr,
+                    LLVMPointerType(field_type, 0), "fieldptr");
+                elem_t_out = field_type;
+                return typed_ptr;
+            }
+        }
     }
 
-    // Member-field array base (e.g. self.arr_field[i]): look up the field's LLVM type
-    // so we can emit a correct 2-index GEP into the [N x T] array.
+    // Pointer base: the variable holds a pointer (not an array); load it, then index with deref type.
+    // Local arrays (e.g. void* slots[8]) must use the fallback — their deref_type is wrong
+    // (it includes the array dimension) and they don't need a load since the alloca IS the base.
+    {
+        LLVMValueRef local_alloca = oname.empty() ? nullptr : ctx->lookup_local(oname);
+        bool is_local_array = local_alloca && LLVMIsAAllocaInst(local_alloca)
+            && LLVMGetTypeKind(LLVMGetAllocatedType(local_alloca)) == LLVMArrayTypeKind;
+        LLVMTypeRef dt = (!oname.empty() && !is_local_array) ? ctx->lookup_deref_type(oname) : nullptr;
+        if (dt) {
+            LLVMValueRef base = visit_expr(e->object, ctx); // loads the pointer value
+            elem_t_out = dt;
+            return LLVMBuildGEP2(ctx->llvm_builder, dt, base, &idx, 1, "elemptr");
+        }
+    }
+
+    // Member-field array/pointer base (e.g. self.arr_field[i] or self.ptr_field[i]):
+    // look up the field's LLVM type so we can emit correct subscript IR.
     if (e->object->kind == expr_kind::member && !e->object->member_name.empty()) {
         std::string pname = infer_struct_tname(e->object->object, ctx);
         auto nfit = ctx->struct_field_names.find(pname);
@@ -926,6 +1126,13 @@ inline LLVMValueRef subscript_elem_ptr(expr_node* e, ir_context* ctx, LLVMTypeRe
                         };
                         elem_t_out = elem_t;
                         return LLVMBuildGEP2(ctx->llvm_builder, field_t, base_ptr, indices, 2, "elemptr");
+                    } else if (field_t && LLVMGetTypeKind(field_t) == LLVMPointerTypeKind) {
+                        // Pointer field (e.g. void** free_list): load the pointer value then index.
+                        LLVMValueRef field_addr = visit_lvalue(e->object, ctx);
+                        LLVMValueRef base = LLVMBuildLoad2(ctx->llvm_builder, field_t, field_addr, "ptrload");
+                        LLVMTypeRef ptr_t = LLVMPointerTypeInContext(ctx->llvm_ctx, 0);
+                        elem_t_out = ptr_t;
+                        return LLVMBuildGEP2(ctx->llvm_builder, ptr_t, base, &idx, 1, "elemptr");
                     }
                     break;
                 }
@@ -934,8 +1141,22 @@ inline LLVMValueRef subscript_elem_ptr(expr_node* e, ir_context* ctx, LLVMTypeRe
     }
 
     // Array (or fallback) base: index from the aggregate's address.
+    // Non-identifier object (e.g. cast or call expression): evaluate as rvalue pointer.
+    if (oname.empty()) {
+        LLVMValueRef base = visit_expr(e->object, ctx);
+        LLVMTypeRef elem_t = LLVMInt8TypeInContext(ctx->llvm_ctx);
+        if (e->object->kind == expr_kind::cast && e->object->cast_type
+            && e->object->cast_type->pointer_depth > 0) {
+            type_node tmp = *e->object->cast_type;
+            tmp.pointer_depth -= 1;
+            tmp.array_size.reset();
+            elem_t = llvm_type_of(&tmp, ctx);
+        }
+        elem_t_out = elem_t;
+        return LLVMBuildGEP2(ctx->llvm_builder, elem_t, base, &idx, 1, "elemptr");
+    }
     LLVMValueRef base_ptr = visit_lvalue(e->object, ctx);
-    LLVMTypeRef  elem_t   = oname.empty() ? nullptr : ctx->lookup_local_type(oname);
+    LLVMTypeRef  elem_t   = ctx->lookup_local_type(oname);
     if (!elem_t) elem_t = LLVMInt8TypeInContext(ctx->llvm_ctx);
     elem_t_out = elem_t;
     return LLVMBuildGEP2(ctx->llvm_builder, elem_t, base_ptr, &idx, 1, "elemptr");
@@ -950,6 +1171,78 @@ inline LLVMValueRef visit_subscript_expr(expr_node* e, ir_context* ctx) {
 // ------------------------------------------------------------------ member
 
 inline LLVMValueRef visit_member_expr(expr_node* e, ir_context* ctx) {
+    // EnumName::VariantName — works for both plain enums and ADT enums.
+    // Must be an unqualified identifier not shadowed by a local variable.
+    if (e->object->kind == expr_kind::identifier && !ctx->lookup_local(e->object->str_val)) {
+        const std::string& obj = e->object->str_val;
+        // Plain C-style enum: global stored under "EnumName::VariantName"
+        std::string plain_key = obj + "::" + e->member_name;
+        auto pit = ctx->global_vars.find(plain_key);
+        if (pit != ctx->global_vars.end()) {
+            LLVMValueRef init = LLVMGetInitializer(pit->second);
+            if (init) return init;
+            return LLVMBuildLoad2(ctx->llvm_builder,
+                LLVMInt32TypeInContext(ctx->llvm_ctx), pit->second, "enumval");
+        }
+        // ADT enum plain variant: build a full ADT struct value {tag, zeroed payload}
+        auto adt_it = ctx->adt_enums.find(obj);
+        if (adt_it != ctx->adt_enums.end()) {
+            std::string tag_key = plain_key + "__tag";
+            auto tit = ctx->global_vars.find(tag_key);
+            if (tit != ctx->global_vars.end()) {
+                LLVMValueRef tag_i32 = LLVMGetInitializer(tit->second);
+                if (!tag_i32) tag_i32 = LLVMBuildLoad2(ctx->llvm_builder,
+                    LLVMInt32TypeInContext(ctx->llvm_ctx), tit->second, "adttag");
+                // Build full struct value: {tag, zero_payload}
+                auto stype_it = ctx->struct_types.find(obj);
+                if (stype_it != ctx->struct_types.end()) {
+                    LLVMTypeRef adt_t = stype_it->second;
+                    LLVMValueRef tmp = LLVMBuildAlloca(ctx->llvm_builder, adt_t, "adttmp");
+                    LLVMValueRef tp  = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, tmp, 0, "tp");
+                    LLVMBuildStore(ctx->llvm_builder, tag_i32, tp);
+                    if (LLVMCountStructElementTypes(adt_t) > 1) {
+                        LLVMValueRef pp = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, tmp, 1, "pp");
+                        LLVMBuildStore(ctx->llvm_builder, LLVMConstNull(LLVMStructGetTypeAtIndex(adt_t, 1)), pp);
+                    }
+                    return LLVMBuildLoad2(ctx->llvm_builder, adt_t, tmp, "adtval");
+                }
+                return tag_i32; // fallback: plain enum without struct type
+            }
+        }
+    }
+
+    // ADT enum payload field load: (*x).field — determine correct field type from enum def.
+    if (e->object->kind == expr_kind::unary && e->object->uop == unary_op::deref &&
+        e->object->operand->kind == expr_kind::identifier) {
+        const std::string& xname = e->object->operand->str_val;
+        LLVMTypeRef local_t = ctx->lookup_local_type(xname);
+        if (local_t && LLVMGetTypeKind(local_t) == LLVMStructTypeKind) {
+            const char* sn = LLVMGetStructName(local_t);
+            if (sn && ctx->adt_enums.count(sn)) {
+                enum_decl* ed = ctx->adt_enums.at(sn);
+                // Search all variant fields for the member name
+                for (auto* ev : ed->variants) {
+                    for (auto* sf : ev->struct_fields) {
+                        if (sf->name == e->member_name) {
+                            LLVMTypeRef field_t = llvm_type_of(sf->type, ctx);
+                            LLVMValueRef fp = visit_lvalue(e, ctx);
+                            return LLVMBuildLoad2(ctx->llvm_builder, field_t, fp, e->member_name.c_str());
+                        }
+                    }
+                    if (ev->istruc_body) {
+                        for (auto* cf : ev->istruc_body->fields) {
+                            if (cf->name == e->member_name) {
+                                LLVMTypeRef field_t = llvm_type_of(cf->type, ctx);
+                                LLVMValueRef fp = visit_lvalue(e, ctx);
+                                return LLVMBuildLoad2(ctx->llvm_builder, field_t, fp, e->member_name.c_str());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // visit_lvalue handles the GEP; we load the correct field type via struct_field_types.
     LLVMValueRef field_ptr = visit_lvalue(e, ctx);
 
@@ -1125,8 +1418,77 @@ inline void emit_class_init_into(expr_node* e, LLVMValueRef dest_ptr,
 }
 
 inline LLVMValueRef visit_class_init(expr_node* e, ir_context* ctx) {
-    // Determine the target struct type name (init_type may be null for inferred .{...},
-    // in which case visit_local_var_decl handles it directly; as a bare rvalue we require a type).
+    // ADT enum variant init: EnumName::VariantName { .field = val } (named-struct or istruc)
+    // or: EnumName::VariantName .{ .field = val } (istruc via context-inferred .{...})
+    // Detected when e->object is a member expr whose object is a known ADT enum type.
+    if (e->object && e->object->kind == expr_kind::member &&
+        e->object->object && e->object->object->kind == expr_kind::identifier) {
+        const std::string& enum_name    = e->object->object->str_val;
+        const std::string& variant_name = e->object->member_name;
+        auto adt_it = ctx->adt_enums.find(enum_name);
+        if (adt_it != ctx->adt_enums.end()) {
+            enum_decl* ed = adt_it->second;
+            LLVMTypeRef adt_t = ctx->struct_types[enum_name];
+            LLVMTypeRef i32t  = LLVMInt32TypeInContext(ctx->llvm_ctx);
+            LLVMTypeRef i8t   = LLVMInt8TypeInContext(ctx->llvm_ctx);
+
+            // Find the variant and its tag
+            int tag_val = 0;
+            enum_variant* found_ev = nullptr;
+            for (auto* ev : ed->variants) {
+                if (ev->name == variant_name) { found_ev = ev; break; }
+                tag_val++;
+            }
+
+            LLVMValueRef alloca = LLVMBuildAlloca(ctx->llvm_builder, adt_t, "adt.tmp");
+            LLVMBuildStore(ctx->llvm_builder, LLVMConstNull(adt_t), alloca);
+            // Store tag
+            LLVMValueRef tag_ptr = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, alloca, 0, "tagp");
+            LLVMBuildStore(ctx->llvm_builder, LLVMConstInt(i32t, tag_val, 0), tag_ptr);
+
+            // Store named fields into payload (named_struct or istruc_body variants)
+            bool has_payload_fields = found_ev &&
+                ((!found_ev->struct_fields.empty()) ||
+                 (found_ev->istruc_body && !found_ev->istruc_body->fields.empty()));
+            if (has_payload_fields) {
+                LLVMValueRef payload_ptr = LLVMBuildStructGEP2(ctx->llvm_builder, adt_t, alloca, 1, "payp");
+                // Build byte-offset map for fields
+                std::unordered_map<std::string, std::pair<unsigned, LLVMTypeRef>> field_map;
+                unsigned byte_off = 0;
+                // named_struct fields
+                for (auto* sf : found_ev->struct_fields) {
+                    LLVMTypeRef ft = llvm_type_of(sf->type, ctx);
+                    field_map[sf->name] = {byte_off, ft};
+                    byte_off += adt_type_byte_size(ft, ctx);
+                }
+                // istruc_body fields
+                if (found_ev->istruc_body) {
+                    for (auto* cf : found_ev->istruc_body->fields) {
+                        LLVMTypeRef ft = llvm_type_of(cf->type, ctx);
+                        field_map[cf->name] = {byte_off, ft};
+                        byte_off += adt_type_byte_size(ft, ctx);
+                    }
+                }
+                for (auto& [fname, val_expr] : e->field_inits) {
+                    auto ffit = field_map.find(fname);
+                    if (ffit == field_map.end()) continue;
+                    LLVMValueRef v = visit_expr(val_expr, ctx);
+                    v = coerce_int_val(v, ffit->second.second, ctx->llvm_builder);
+                    LLVMValueRef zero  = LLVMConstInt(i32t, 0, 0);
+                    LLVMValueRef off_v = LLVMConstInt(i32t, ffit->second.first, 0);
+                    LLVMValueRef bidx[2] = {zero, off_v};
+                    LLVMValueRef bp = LLVMBuildGEP2(ctx->llvm_builder,
+                        LLVMArrayType(i8t, 1), payload_ptr, bidx, 2, "byteptr");
+                    LLVMValueRef fp = LLVMBuildBitCast(ctx->llvm_builder, bp,
+                        LLVMPointerType(ffit->second.second, 0), "fptr");
+                    LLVMBuildStore(ctx->llvm_builder, v, fp);
+                }
+            }
+            return LLVMBuildLoad2(ctx->llvm_builder, adt_t, alloca, "adtval");
+        }
+    }
+
+    // Standard class initializer
     std::string tname;
     if (e->init_type && e->init_type->name) tname = *e->init_type->name;
     auto it = ctx->struct_types.find(tname);

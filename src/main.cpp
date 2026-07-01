@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_set>
 #include <stdexcept>
+#include <filesystem>
 
 // Compiler pipeline
 #include "../compiler/preproc/main.hxx"
@@ -27,6 +28,7 @@
 
 #ifdef _WIN32
 #  include <io.h>
+#  include <windows.h>
 #else
 #  include <unistd.h>
 #endif
@@ -164,6 +166,143 @@ static std::string read_file(const std::string& path) {
     std::string src(sz, '\0');
     f.read(src.data(), static_cast<std::streamsize>(sz));
     return src;
+}
+
+// ------------------------------------------------------------------ aciso package import expansion
+
+namespace fs = std::filesystem;
+
+// Scan source for `extern aciso.NAME;` lines; prepend package source files.
+static std::string resolve_aciso_imports(const std::string& src) {
+    std::string pkg_src;   // package sources to prepend
+    std::string main_src;  // original source with imports replaced by comments
+
+    std::istringstream ss(src);
+    std::string line;
+    while (std::getline(ss, line)) {
+        // Trim leading whitespace for matching
+        size_t first = line.find_first_not_of(" \t");
+        std::string trimmed = (first == std::string::npos) ? "" : line.substr(first);
+
+        // Match: extern aciso.NAME;
+        const std::string prefix = "extern aciso.";
+        if (trimmed.size() > prefix.size() + 1 &&
+            trimmed.substr(0, prefix.size()) == prefix &&
+            trimmed.back() == ';') {
+            std::string pkg_name = trimmed.substr(prefix.size(),
+                                                  trimmed.size() - prefix.size() - 1);
+            // Strip any trailing whitespace in pkg_name
+            pkg_name.erase(pkg_name.find_last_not_of(" \t") + 1);
+
+            fs::path pkg_dir = fs::path("modules") / pkg_name;
+            if (!fs::exists(pkg_dir)) {
+                fprintf(stderr, "error: Package '%s' not installed. "
+                        "Run: aciso install %s <url>\n",
+                        pkg_name.c_str(), pkg_name.c_str());
+                std::exit(1);
+            }
+            // Read all .arc files in the package directory (sorted for determinism)
+            std::vector<fs::path> arc_files;
+            for (auto& entry : fs::directory_iterator(pkg_dir))
+                if (entry.path().extension() == ".arc")
+                    arc_files.push_back(entry.path());
+            std::sort(arc_files.begin(), arc_files.end());
+            for (auto& p : arc_files)
+                pkg_src += read_file(p.string()) + "\n";
+
+            main_src += "// aciso: imported " + pkg_name + "\n";
+        } else {
+            main_src += line + "\n";
+        }
+    }
+    return pkg_src + main_src;
+}
+
+// ------------------------------------------------------------------ stdlib import expansion
+
+// Resolve `extern std.NAME;` or `extern std.NAME.SUB;` lines.
+// Maps to compiler/std/<NAME>.arc or compiler/std/<NAME>/<SUB>.arc.
+// The stdlib directory is located relative to the compiler executable.
+static std::string resolve_std_imports(const std::string& src) {
+    std::string pkg_src;
+    std::string main_src;
+
+    // Locate the compiler executable path (used to find stdlib alongside it)
+    fs::path std_root;
+    // Try executable-relative first, then CWD-relative
+    fs::path exe_dir;
+#ifdef _WIN32
+    char exe_path[4096] = {};
+    GetModuleFileNameA(nullptr, exe_path, sizeof(exe_path));
+    exe_dir = fs::path(exe_path).parent_path();
+#else
+    char exe_path[4096] = {};
+    ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (n > 0) { exe_path[n] = '\0'; exe_dir = fs::path(exe_path).parent_path(); }
+#endif
+    // Walk up from exe_dir to find compiler/std/include/
+    for (fs::path p = exe_dir; p.has_parent_path() && p != p.parent_path(); p = p.parent_path()) {
+        if (fs::exists(p / "compiler" / "std" / "include")) {
+            std_root = p / "compiler" / "std" / "include"; break;
+        }
+    }
+    if (std_root.empty()) std_root = fs::path("compiler") / "std" / "include"; // CWD fallback
+
+    std::unordered_set<std::string> already_included;
+    std::istringstream ss(src);
+    std::string line;
+    while (std::getline(ss, line)) {
+        size_t first = line.find_first_not_of(" \t");
+        std::string trimmed = (first == std::string::npos) ? "" : line.substr(first);
+
+        const std::string prefix = "extern std.";
+        if (trimmed.size() > prefix.size() + 1 &&
+            trimmed.substr(0, prefix.size()) == prefix &&
+            trimmed.back() == ';') {
+            // e.g. "extern std.math;" or "extern std.fmt.out.printf;"
+            std::string spec = trimmed.substr(prefix.size(),
+                                              trimmed.size() - prefix.size() - 1);
+            spec.erase(spec.find_last_not_of(" \t") + 1);
+
+            // The first component always maps to a file: std/NAME.arc or std/NAME/NAME.arc
+            // We include at the package granularity (top-level name).
+            std::string top = spec.substr(0, spec.find('.'));
+
+            // Check for alloc sub-packages: std.alloc.bump → std/alloc/bump.arc
+            fs::path arc_path;
+            if (spec.find('.') != std::string::npos) {
+                std::string sub = spec.substr(spec.find('.') + 1);
+                // Replace remaining dots with path separators for deeper nesting
+                std::string sub_path_str = sub;
+                for (char& c : sub_path_str) if (c == '.') c = '/';
+                // Try exact sub-path first
+                fs::path candidate = std_root / top / (sub_path_str + ".arc");
+                if (fs::exists(candidate)) arc_path = candidate;
+            }
+            if (arc_path.empty()) {
+                // Top-level file: std/math.arc
+                fs::path candidate = std_root / (top + ".arc");
+                if (fs::exists(candidate)) arc_path = candidate;
+            }
+
+            if (arc_path.empty()) {
+                fprintf(stderr, "error: Standard library package 'std.%s' not found.\n"
+                                "       Expected: %s\n", spec.c_str(),
+                        (std_root / (top + ".arc")).string().c_str());
+                std::exit(1);
+            }
+
+            std::string key = arc_path.string();
+            if (!already_included.count(key)) {
+                already_included.insert(key);
+                pkg_src += read_file(key) + "\n";
+            }
+            main_src += "// std: imported " + spec + "\n";
+        } else {
+            main_src += line + "\n";
+        }
+    }
+    return pkg_src + main_src;
 }
 
 // ------------------------------------------------------------------ AST printer (--emit-ast)
@@ -432,6 +571,8 @@ int main(int argc, char** argv) {
     std::string src;
     try {
         src = read_file(opts.input);
+        src = resolve_aciso_imports(src);
+        src = resolve_std_imports(src);
     } catch (const std::exception& e) {
         fprintf(stderr, "%s\n", e.what());
         return 1;
@@ -440,7 +581,7 @@ int main(int argc, char** argv) {
     diag_engine diag(opts.input);
 
     // ---- preprocess ----
-    src = preproc::pr_main(src, opts.input, diag, opts.defines);
+    src = preproc::pr_main(src, opts.input, diag, opts.defines, opts.include_paths);
     if (diag.has_errors()) { diag.finish(); return 1; }
 
     // ---- lex ----

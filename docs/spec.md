@@ -353,11 +353,24 @@ Emits a compile-time error if the directive is in an active branch.
 ### 6.5 `@include`
 
 ```
-@include <filename>
-@include "filename"
+@include "relative/path/to/file.arc"
 ```
 
-Textually inserts the contents of the named file at the include site. `<>` form searches the standard include path; `""` form searches relative to the current file.
+Textually inserts the contents of the named file at the include site. Only the `""` (relative path) form is supported; paths are resolved relative to the current source file. The `<>` angle-bracket form is **not** valid syntax.
+
+To import standard library packages use `extern std.<pkg>;` instead (see §16).
+
+### 6.5.1 `extern std.*` — Standard Library Imports
+
+```
+extern std.math;
+extern std.alloc.bump;
+extern std.rand;
+```
+
+Imports a standard library package into the current compilation unit. The compiler locates the corresponding file under `compiler/std/include/` and textually includes it. Dot-separated paths map to directory separators (`std.alloc.bump` → `alloc/bump.arc`).
+
+All types and functions from the package become available by their bare names (e.g., `bump`, `abs_i32`, `xoshiro_state`).
 
 ### 6.6 `@embed`
 
@@ -701,7 +714,23 @@ Call `.uinit()` to run the allocator's `deinit` function and release all tracked
 alloc.uinit();
 ```
 
-### 13.5 `defer` — Scope-Exit Execution
+### 13.5 `memstr` vs `&memstr` — Declaration vs Reference
+
+**`memstr TypeName { }`** declares a type that manages its own heap memory. Types from `std.alloc` (bump, arena, pool, etc.) are all `memstr` types. They can be created as ordinary stack variables:
+
+```arc
+bump a(4096);   // stack variable — fine, bump is a memstr type
+a.alloc_bytes(64);
+a.deinit();
+```
+
+The compiler does NOT require a `&memstr` context just to create or use a `memstr` value. The constraint is only in the other direction: a function that accepts `&memstr alloc` can receive any `memstr` instance.
+
+**`&memstr name`** in a function parameter means "accept any memstr-compatible allocator by reference". The allocator's concrete type is erased; only its `alloc_raw`, `realloc`, and `free` interface is used. This is how generic allocating functions are written.
+
+A plain `istruc` that contains `malloc`/`free` calls directly is rejected by the compiler — only types declared with `memstr` may manage heap memory internally.
+
+### 13.6 `defer` — Scope-Exit Execution
 
 The `defer` keyword schedules an expression or block to run at the end of the current scope (LIFO order if multiple). Deferred items also run before any `return` in the scope.
 
@@ -943,3 +972,109 @@ stmt        ::= ... | 'constexpr'? 'if' '(' expr ')' stmt ('else' stmt)?
 asm_body    ::= '{' asm_instructions (':' asm_constraints)* '}'
 asm_constraints ::= ('"' modifier '"' '(' varname ')' (',' ...)*)?
 ```
+
+---
+
+## 16. Standard Library (`extern std.*`)
+
+The standard library lives under `compiler/std/include/`. Each package is a single `.arc` file (or `pkg/module.arc` for sub-packages). Import with:
+
+```arc
+extern std.<pkg>;          // e.g. extern std.math;
+extern std.<pkg>.<mod>;   // e.g. extern std.alloc.bump;
+```
+
+All exported types and functions are accessible by their bare (unqualified) names after import.
+
+### 16.1 `std.alloc` — Allocators
+
+Sub-packages: `std.alloc.bump`, `std.alloc.arena`, `std.alloc.pool`, `std.alloc.ring`, `std.alloc.free_list`, `std.alloc.slab`.
+
+Each allocator is an `istruc` (same name as the sub-package, e.g. `bump`) that implements a `memstr`-compatible interface: `alloc`, `realloc`, `free`, and `reset` / `destroy` where applicable. Constructor takes allocator-specific parameters (capacity in bytes, object size, etc.).
+
+| Type | Strategy |
+|------|----------|
+| `bump` | Linear bump pointer; O(1) alloc, O(1) reset |
+| `arena` | Multi-block bump with automatic growth |
+| `pool` | Fixed-size object pool; O(1) alloc and free |
+| `ring` | Circular ring buffer allocator |
+| `free_list` | Intrusive free-list; arbitrary-size coalescing |
+| `slab` | Page-based slab for small fixed-size objects |
+
+### 16.2 `std.math` — Mathematics
+
+Import: `extern std.math;`
+
+**Constants:** `PI`, `TAU`, `E`, `PHI`, `SQRT2`, `LN2`, `LN10`, `INF`, `NAN_V`
+
+**Integer utilities:** `abs_i32`, `abs_i64`, `min_i32`, `max_i32`, `min_i64`, `max_i64`, `min_f32`, `max_f32`, `min_f64`, `max_f64`, `clamp_i32`, `clamp_f32`, `clamp_f64`, `sign_i32`, `sign_f64`, `gcd`, `lcm`, `div_ceil`, `div_floor`, `is_even`, `is_odd`, `is_power_of_two`, `next_power_of_two`, `popcount_u32`, `clz_u32`, `ctz_u32`, `bit_reverse_u32`
+
+**Floating-point:** `lerp`, `lerp_f32`, `deg_to_rad`, `rad_to_deg`, `snap`, `log_base`
+
+**Geometry:** `istruc vec2`, `istruc vec3`, `istruc mat4`, `istruc quat` — all with standard arithmetic operators and methods (add, sub, dot, cross, normalize, len, rotate, etc.)
+
+**Statistics** (behind `extern std.math;`): `mean`, `variance`, `std_dev` — operate on `f64*` arrays.
+
+C libm externs (`sin`, `cos`, `sqrt`, `fabs`, `floor`, `ceil`, `pow`, etc.) are re-exported by this module.
+
+### 16.3 `std.rand` — Random Number Generation
+
+Import: `extern std.rand;`
+
+| Type | Algorithm |
+|------|-----------|
+| `xoshiro_state` | Xoshiro256** — high-quality 64-bit generator |
+| `pcg_state` | PCG32 — 32-bit generator with stream control |
+
+**`xoshiro_state` constructor:** `xoshiro_state rng(seed_u64)`
+
+**`xoshiro_state` methods:** `next_u64`, `next_u32`, `next_f64`, `next_f32`, `next_bool`, `range_i32(lo, hi)`, `range_f64(lo, hi)`, `fill_bytes(buf, n)`
+
+**`pcg_state` constructor:** `pcg_state rng(seed_u64, seq_u64)`
+
+**`pcg_state` methods:** `next_u32`, `next_f64`, `next_bool`, `range_i32(lo, hi)`
+
+**Free function:** `gaussian(xoshiro_state* rng, f64 mean, f64 std_dev)` — Box-Muller normal distribution.
+
+### 16.4 `std.hash` — Hashing
+
+Import: `extern std.hash;`
+
+**FNV-1a:** `fnv1a_32(u8* data, u64 len)` → `u32`, `fnv1a_64(u8* data, u64 len)` → `u64`
+
+**WyHash:** `wyhash(u8* data, u64 len, u64 seed)` → `u64` — fast non-cryptographic hash.
+
+**DJB2:** `djb2(u8* data, u64 len)` → `u64`
+
+### 16.5 `std.atomic` — Atomic Operations
+
+Import: `extern std.atomic;`
+
+Thin wrappers over GCC/Clang built-in atomics (`__atomic_*`). Provides `istruc atomic_i32`, `istruc atomic_i64`, `istruc atomic_u32`, `istruc atomic_u64`, `istruc atomic_bool` — each with `load`, `store`, `add`, `sub`, `cas` (compare-and-swap), and `exchange` methods.
+
+### 16.6 Future Packages
+
+The following packages are specified and will be implemented:
+
+| Package | Description |
+|---------|-------------|
+| `std.vector` | Growable array |
+| `std.map` | Sorted key-value map (red-black tree) |
+| `std.unordered_map` | Hash map |
+| `std.set` | Sorted set |
+| `std.unordered_set` | Hash set |
+| `std.sll` | Singly-linked list |
+| `std.dll` | Doubly-linked list |
+| `std.soa` | Struct-of-arrays container |
+| `std.system` | OS detection, env vars, exit |
+| `std.fs` | File I/O, directory listing |
+| `std.net` | TCP/UDP sockets |
+| `std.process` | Process spawn and pipes |
+| `std.thread` | POSIX / Win32 thread abstraction |
+| `std.fmt` | String formatting and printing |
+| `std.encode` | UTF-8, base64, hex codecs |
+| `std.json` | JSON parse and serialize |
+| `std.toml` | TOML parse |
+| `std.test` | Unit test framework |
+| `std.debug` | Stack traces, assertions, memory checking |
+| `std.simd` | SIMD intrinsic wrappers |

@@ -1,6 +1,7 @@
 // &memstr as a parameter type: the compiler accepts memstr-typed parameters.
 // The allocator is backed by an istruc passed by pointer.
-extern "C" { void* malloc(u64 n); void free(void* p); }
+extern void* malloc(u64 n);
+extern void free(void* p);
 
 istruc SimpleAlloc {
     i32 count;

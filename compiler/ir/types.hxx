@@ -210,3 +210,23 @@ inline bool prim_is_unsigned(prim_type_t p) {
         default: return false;
     }
 }
+
+// Compute ABI byte size of an LLVM type (used for ADT enum payload layout).
+inline unsigned adt_type_byte_size(LLVMTypeRef t, ir_context* ctx) {
+    if (!t) return 0;
+    LLVMTargetDataRef td = LLVMGetModuleDataLayout(ctx->llvm_mod);
+    if (td) return (unsigned)LLVMABISizeOfType(td, t);
+    LLVMTypeKind k = LLVMGetTypeKind(t);
+    if (k == LLVMIntegerTypeKind)  return (LLVMGetIntTypeWidth(t) + 7) / 8;
+    if (k == LLVMFloatTypeKind)    return 4;
+    if (k == LLVMDoubleTypeKind)   return 8;
+    if (k == LLVMPointerTypeKind)  return 8;
+    if (k == LLVMStructTypeKind) {
+        unsigned n = LLVMCountStructElementTypes(t);
+        unsigned total = 0;
+        for (unsigned i = 0; i < n; i++)
+            total += adt_type_byte_size(LLVMStructGetTypeAtIndex(t, i), ctx);
+        return total;
+    }
+    return 8;
+}

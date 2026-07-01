@@ -1,5 +1,6 @@
 // Allocator cleanup with defer — allocation released automatically on scope exit
-extern "C" { void* malloc(u64 size); void free(void* ptr); }
+extern void* malloc(u64 size);
+extern void free(void* ptr);
 
 istruc TrackedAlloc {
     i32 live;

@@ -140,6 +140,7 @@ enum class token_type {
     // Misc
     kw_defer,       // defer
     kw_extern_c,    // extern "C"
+    kw_namespace,   // namespace
     arrow,          // ->
 };
 
@@ -309,6 +310,7 @@ private:
             {"operator",   token_type::kw_operator},
             {"self",       token_type::kw_self},
             {"defer",      token_type::kw_defer},
+            {"namespace",  token_type::kw_namespace},
         };
         return m;
     }
@@ -362,12 +364,17 @@ private:
         if (peek() == '0' && (peek_next() == 'x' || peek_next() == 'X')) {
             advance(); advance();
             while (!is_at_end() && std::isxdigit(peek())) advance();
+            // consume optional u/U/l/L/ull/etc. suffix (strip, same as decimal)
+            while (!is_at_end() && (peek() == 'u' || peek() == 'U' ||
+                                    peek() == 'l' || peek() == 'L')) advance();
             return {token_type::int_lit, src.substr(start, cursor - start), tok_line};
         }
-        // octal / binary prefix
+        // binary prefix
         if (peek() == '0' && (peek_next() == 'b' || peek_next() == 'B')) {
             advance(); advance();
             while (!is_at_end() && (peek() == '0' || peek() == '1')) advance();
+            while (!is_at_end() && (peek() == 'u' || peek() == 'U' ||
+                                    peek() == 'l' || peek() == 'L')) advance();
             return {token_type::int_lit, src.substr(start, cursor - start), tok_line};
         }
 
