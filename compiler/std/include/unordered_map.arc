@@ -17,7 +17,7 @@ istruc unordered_map<K, V> {
     i32             count;
     i32             cap;
 
-    private static u64 hash_key(i64 k) {
+    static u64 hash_key(i64 k) {
         u64 h = (u64)k;
         h = h ^ (h >> 30);
         h = h * 0xbf58476d1ce4e5b9u;
@@ -41,7 +41,7 @@ istruc unordered_map<K, V> {
         self.slots = (umap_slot<K,V>*)0;
     }
 
-    private void rehash(unordered_map* self, &memstr a) {
+    void rehash(unordered_map* self, &memstr a) {
         i32 old_cap = self.cap;
         umap_slot<K,V>* old_slots = self.slots;
         i32 new_cap = old_cap == 0 ? 16 : old_cap * 2;

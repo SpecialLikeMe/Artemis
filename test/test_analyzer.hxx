@@ -137,26 +137,30 @@ TEST(Analyzer, MainI32OK) {
     compile_ok("i32 main() { return 0; }");
 }
 
-// ------------------------------------------------------------------ Method Overloading
+// ------------------------------------------------------------------ Function Overloading (removed)
+// Artemis does not support free-function overloading; two functions with the
+// same name are a compile error.  Operator overloads inside istruc are still allowed.
 
 TEST(Analyzer, OverloadTwoFunctions) {
-    compile_ok(
+    // Two functions with the same name must be rejected.
+    ASSERT_THROWS(compile_fail(
         "i32 add(i32 a) { return a; }"
         "i32 add(i32 a, i32 b) { return a + b; }"
-        "void run() { add(1); add(1, 2); }"
-    );
+        "void run() { add(1); }"
+    ), std::runtime_error);
 }
 
 TEST(Analyzer, OverloadDifferentParamTypes) {
-    compile_ok(
+    // Same-name functions with different param types are still a duplicate.
+    ASSERT_THROWS(compile_fail(
         "void print(i32 x) {}"
         "void print(f64 x) {}"
         "void run() { print(1); }"
-    );
+    ), std::runtime_error);
 }
 
 TEST(Analyzer, OverloadNoMangleWhenUnique) {
-    // A function that is NOT overloaded should not have a mangled name applied.
+    // A uniquely-named function compiles without error.
     compile_ok(
         "void unique_func(i32 x) {}"
         "void run() { unique_func(1); }"
@@ -164,11 +168,11 @@ TEST(Analyzer, OverloadNoMangleWhenUnique) {
 }
 
 TEST(Analyzer, OverloadAmbiguousCallFails) {
-    // Calling an overloaded function with args that match no overload must fail.
+    // Two same-name functions are rejected at definition time.
     ASSERT_THROWS(compile_fail(
         "void f(i32 x) {}"
         "void f(i32 a, i32 b) {}"
-        "void run() { f(); }"  // zero args — no overload matches
+        "void run() { f(); }"
     ), std::runtime_error);
 }
 
@@ -207,7 +211,7 @@ TEST(Analyzer, IstrucMethodEmptyBody) {
     compile_ok(
         "istruc Counter {"
         "  i32 value;"
-        "  void reset(&self) {}"
+        "  void reset(Counter* self) {}"
         "}"
     );
 }

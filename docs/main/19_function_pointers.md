@@ -33,8 +33,8 @@ i32 main() {
 istruc Dispatcher {
     i32(i32)* handler;
 
-    void set(&self, i32(i32)* fn) { self.handler = fn; }
-    i32 run(&self, i32 x)         { return self.handler(x); }
+    void set(Dispatcher* self, i32(i32)* fn) { self.handler = fn; }
+    i32 run(Dispatcher* self, i32 x)         { return self.handler(x); }
 }
 ```
 

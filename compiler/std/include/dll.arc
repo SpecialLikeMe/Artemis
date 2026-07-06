@@ -19,7 +19,7 @@ istruc dll<T> {
         self.length = 0;
     }
 
-    private dll_node<T>* make_node(dll* self, T val, &memstr a) {
+    dll_node<T>* make_node(dll* self, T val, &memstr a) {
         dll_node<T>* n = (dll_node<T>*)a.mmap(sizeof(dll_node<T>));
         (*n).val  = val;
         (*n).prev = (dll_node<T>*)0;

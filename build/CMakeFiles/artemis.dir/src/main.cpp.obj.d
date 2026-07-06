@@ -252,15 +252,24 @@ CMakeFiles/artemis.dir/src/main.cpp.obj: \
  C:/msys64/mingw64/include/c++/15.2.0/pstl/glue_memory_defs.h \
  C:/msys64/mingw64/include/c++/15.2.0/pstl/execution_defs.h \
  C:/Users/devon/Artemis/compiler/parser/expr.hxx \
+ C:/Users/devon/Artemis/compiler/parser/macros.hxx \
+ C:/msys64/mingw64/include/c++/15.2.0/functional \
+ C:/msys64/mingw64/include/c++/15.2.0/array \
+ C:/msys64/mingw64/include/c++/15.2.0/algorithm \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/ranges_algo.h \
+ C:/msys64/mingw64/include/c++/15.2.0/pstl/glue_algorithm_defs.h \
  C:/Users/devon/Artemis/compiler/analysis/main.hxx \
  C:/Users/devon/Artemis/compiler/analysis/scope.hxx \
  C:/Users/devon/Artemis/compiler/analysis/types.hxx \
+ C:/msys64/mingw64/include/c++/15.2.0/utility \
+ C:/msys64/mingw64/include/c++/15.2.0/bits/stl_relops.h \
  C:/Users/devon/Artemis/compiler/analysis/analyzer.hxx \
- C:/Users/devon/Artemis/compiler/ir/main.hxx \
- C:/Users/devon/Artemis/compiler/ir/decls.hxx \
- C:/Users/devon/Artemis/compiler/ir/stmts.hxx \
- C:/Users/devon/Artemis/compiler/ir/exprs.hxx \
- C:/Users/devon/Artemis/compiler/ir/types.hxx \
+ C:/Users/devon/Artemis/compiler/mir/mir.hxx \
+ C:/Users/devon/Artemis/compiler/lir/lir.hxx \
+ C:/msys64/mingw64/include/c++/15.2.0/cassert \
+ C:/msys64/mingw64/include/assert.h \
+ C:/Users/devon/Artemis/compiler/smt/smt.hxx \
+ C:/Users/devon/Artemis/compiler/smt/inject.hxx \
  C:/Users/devon/Artemis/compiler/ir/context.hxx \
  C:/Users/devon/Artemis/compiler/ir/include.h \
  C:/msys64/mingw64/include/llvm-c/Core.h \
@@ -278,6 +287,11 @@ CMakeFiles/artemis.dir/src/main.cpp.obj: \
  C:/msys64/mingw64/include/llvm/Config/AsmPrinters.def \
  C:/msys64/mingw64/include/llvm/Config/AsmParsers.def \
  C:/msys64/mingw64/include/llvm/Config/Disassemblers.def \
+ C:/Users/devon/Artemis/compiler/ir/main.hxx \
+ C:/Users/devon/Artemis/compiler/ir/decls.hxx \
+ C:/Users/devon/Artemis/compiler/ir/stmts.hxx \
+ C:/Users/devon/Artemis/compiler/ir/exprs.hxx \
+ C:/Users/devon/Artemis/compiler/ir/types.hxx \
  C:/Users/devon/Artemis/compiler/ir/names.hxx \
  C:/Users/devon/Artemis/compiler/ir/asm.hxx \
  C:/msys64/mingw64/include/llvm-c/TargetMachine.h \

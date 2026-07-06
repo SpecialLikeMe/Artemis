@@ -30,12 +30,15 @@ inline void emit_deferred(const std::vector<std::pair<void*, bool>>& items, ir_c
 inline void visit_block_stmt(block_stmt* blk, ir_context* ctx) {
     ctx->push_scope();
     ctx->push_defer_scope();
+    ctx->push_errdefer_scope();
     for (auto* s : blk->stmts) {
         if (ctx->is_terminated()) break; // dead code after a terminator
         visit_stmt(s, ctx);
     }
-    // Emit deferred items at end of block (fall-through path)
+    // Emit deferred items at end of block (fall-through path only).
+    // errdeferred items are discarded here — they are emitted only on error exit paths.
     auto deferred = ctx->pop_defer_scope();
+    ctx->pop_errdefer_scope();
     if (!ctx->is_terminated()) emit_deferred(deferred, ctx);
     ctx->pop_scope();
 }
@@ -43,6 +46,9 @@ inline void visit_block_stmt(block_stmt* blk, ir_context* ctx) {
 // ------------------------------------------------------------------ local variable declaration
 
 inline void visit_local_var_decl(var_decl* d, ir_context* ctx) {
+    // sta-typed variables are comptime-only (namespaces / types); no runtime representation.
+    if (d->is_sta || (d->type && d->type->is_sta)) return;
+
     maybe_instantiate_generic_type(d->type, ctx); // monomorphize generic class on first use
     LLVMTypeRef alloca_t = llvm_type_of(d->type, ctx);
 
@@ -85,9 +91,26 @@ inline void visit_local_var_decl(var_decl* d, ir_context* ctx) {
     if (d->init.has_value()) {
         LLVMValueRef init_val = visit_expr(d->init.value(), ctx);
         init_val = coerce_int_val(init_val, alloca_t, ctx->llvm_builder);
+        // For istruc class types with = expr (not () or {}): store raw; operator= is called
+        // after the zero-arg ctor below. Raw store here initialises memory so the ctor
+        // (if any) has a valid object to work on, and operator= runs last.
         LLVMBuildStore(ctx->llvm_builder, init_val, alloca);
     } else {
-        LLVMBuildStore(ctx->llvm_builder, LLVMConstNull(alloca_t), alloca);
+        // char* (i8*, u8*, char*) without a nullable flag defaults to a writable empty string
+        // rather than null — the user must use ?char* to get a nullable pointer.
+        bool is_char_star = d->type && d->type->is_primitive && d->type->pointer_depth == 1
+            && !d->type->is_nullable
+            && (d->type->prim == prim_type_t::char_t
+                || (d->type->prim == prim_type_t::arb_int  && d->type->bit_width == 8)
+                || (d->type->prim == prim_type_t::arb_uint && d->type->bit_width == 8));
+        if (is_char_star) {
+            LLVMTypeRef i8t = LLVMInt8TypeInContext(ctx->llvm_ctx);
+            LLVMValueRef buf = LLVMBuildAlloca(ctx->llvm_builder, i8t, "empty_str");
+            LLVMBuildStore(ctx->llvm_builder, LLVMConstInt(i8t, 0, 0), buf);
+            LLVMBuildStore(ctx->llvm_builder, buf, alloca);
+        } else {
+            LLVMBuildStore(ctx->llvm_builder, LLVMConstNull(alloca_t), alloca);
+        }
     }
 
     // Implicit constructor invocation for class types.
@@ -115,18 +138,76 @@ inline void visit_local_var_decl(var_decl* d, ir_context* ctx) {
         if (ctor_fn) {
             unsigned nparams = LLVMCountParamTypes(ctor_ft);
             bool explicit_call = d->has_ctor_parens || !d->ctor_args.empty();
+            // If param count doesn't match, try overloaded versions (__OL1, __OL2, ...)
+            if (explicit_call) {
+                unsigned needed = 1 + (unsigned)d->ctor_args.size();
+                if (nparams != needed) {
+                    std::string base_cn = LLVMGetStructName(alloca_t)
+                                         ? LLVMGetStructName(alloca_t) : *d->type->name;
+                    std::string base_ctor = base_cn + "__MT___construct__";
+                    for (int oi = 1; oi <= 16; oi++) {
+                        std::string oln = base_ctor + "__OL" + std::to_string(oi);
+                        auto cit2 = ctx->global_funcs.find(oln);
+                        if (cit2 == ctx->global_funcs.end()) break;
+                        LLVMTypeRef oft = ctx->global_func_types[oln];
+                        if (LLVMCountParamTypes(oft) == needed) {
+                            ctor_fn = cit2->second;
+                            ctor_ft = oft;
+                            nparams = needed;
+                            break;
+                        }
+                    }
+                }
+            }
             // Auto-call only a no-arg (self-only) constructor when no explicit (...) given.
             if (explicit_call || nparams == 1) {
                 std::vector<LLVMValueRef> cargs = { alloca };
                 std::vector<LLVMTypeRef> pts(nparams);
-                LLVMGetParamTypes(ctor_ft, pts.data());
+                if (nparams) LLVMGetParamTypes(ctor_ft, pts.data());
                 for (size_t i = 0; i < d->ctor_args.size(); ++i) {
+                    size_t pi = i + 1;
+                    // Coerce concrete struct to &memstr fat pointer if needed
+                    if (ctx->memstr_fat_type && pi < nparams && pts[pi] == ctx->memstr_fat_type) {
+                        LLVMTypeRef arg_elem = (d->ctor_args[i]->kind == expr_kind::identifier)
+                            ? ctx->lookup_local_type(d->ctor_args[i]->str_val) : nullptr;
+                        const char* sn = (arg_elem && LLVMGetTypeKind(arg_elem) == LLVMStructTypeKind)
+                            ? LLVMGetStructName(arg_elem) : nullptr;
+                        auto vit = sn ? ctx->memstr_vtables.find(sn) : ctx->memstr_vtables.end();
+                        if (vit != ctx->memstr_vtables.end()) {
+                            LLVMValueRef struct_addr = visit_lvalue(d->ctor_args[i], ctx);
+                            LLVMValueRef fat = LLVMGetUndef(ctx->memstr_fat_type);
+                            fat = LLVMBuildInsertValue(ctx->llvm_builder, fat, struct_addr,  0, "fd");
+                            fat = LLVMBuildInsertValue(ctx->llvm_builder, fat, vit->second,  1, "fv");
+                            cargs.push_back(fat);
+                            continue;
+                        }
+                    }
                     LLVMValueRef av = visit_expr(d->ctor_args[i], ctx);
-                    if (i + 1 < nparams) av = coerce_int_val(av, pts[i + 1], ctx->llvm_builder);
+                    if (pi < nparams) av = coerce_int_val(av, pts[pi], ctx->llvm_builder);
                     cargs.push_back(av);
                 }
                 LLVMBuildCall2(ctx->llvm_builder, ctor_ft, ctor_fn,
                                cargs.data(), static_cast<unsigned>(cargs.size()), "");
+            }
+        }
+    }
+
+    // For class types initialised with `= expr` (not a ctor call, not a class_init):
+    // call operator= if one exists. This runs after the zero-arg ctor so the object
+    // is fully initialised before assignment.
+    if (d->init.has_value() && !d->has_ctor_parens && d->ctor_args.empty()
+        && d->init.value()->kind != expr_kind::class_init
+        && d->type && !d->type->is_primitive && d->type->name && d->type->pointer_depth == 0
+        && LLVMGetTypeKind(alloca_t) == LLVMStructTypeKind) {
+        const char* sn = LLVMGetStructName(alloca_t);
+        if (sn && ctx->class_infos.count(sn)) {
+            std::string op_name = std::string(sn) + "__MT_operator=";
+            auto fit = ctx->global_funcs.find(op_name);
+            if (fit != ctx->global_funcs.end()) {
+                LLVMTypeRef op_ft = ctx->global_func_types[op_name];
+                LLVMValueRef init_val = visit_expr(d->init.value(), ctx);
+                LLVMValueRef mt_args[2] = { alloca, init_val };
+                LLVMBuildCall2(ctx->llvm_builder, op_ft, fit->second, mt_args, 2, "");
             }
         }
     }
@@ -142,6 +223,7 @@ inline void visit_expr_stmt(expr_stmt* s, ir_context* ctx) {
 
 inline void visit_if_stmt(if_stmt* s, ir_context* ctx) {
     LLVMValueRef cond_val = visit_expr(s->cond, ctx);
+    LLVMValueRef raw_cond_val = cond_val; // preserve for capture binding (pre-normalization)
 
     // constexpr if: if the condition folds to a compile-time constant, emit only the
     // taken branch and discard the other entirely (compile-time branch elimination).
@@ -153,7 +235,7 @@ inline void visit_if_stmt(if_stmt* s, ir_context* ctx) {
         return;
     }
 
-    // Normalise any non-i1 condition to i1.
+    // Normalise any non-i1 condition to i1 (only the branch condition, not the capture).
     if (LLVMGetTypeKind(LLVMTypeOf(cond_val)) != LLVMIntegerTypeKind ||
         LLVMGetIntTypeWidth(LLVMTypeOf(cond_val)) != 1) {
         cond_val = LLVMBuildICmp(ctx->llvm_builder, LLVMIntNE,
@@ -169,15 +251,31 @@ inline void visit_if_stmt(if_stmt* s, ir_context* ctx) {
 
     LLVMBuildCondBr(ctx->llvm_builder, cond_val, then_bb, else_bb ? else_bb : merge_bb);
 
-    // Emit then branch.
+    // Emit then branch (with optional capture variable).
     LLVMPositionBuilderAtEnd(ctx->llvm_builder, then_bb);
+    ctx->push_scope();
+    if (s->then_capture.has_value()) {
+        LLVMTypeRef  raw_t = LLVMTypeOf(raw_cond_val);
+        LLVMValueRef cap   = LLVMBuildAlloca(ctx->llvm_builder, raw_t, s->then_capture->c_str());
+        LLVMBuildStore(ctx->llvm_builder, raw_cond_val, cap);
+        ctx->declare_local(*s->then_capture, cap, raw_t);
+    }
     visit_stmt(s->then_body, ctx);
+    ctx->pop_scope();
     if (!ctx->is_terminated()) LLVMBuildBr(ctx->llvm_builder, merge_bb);
 
-    // Emit else branch (optional).
+    // Emit else branch (optional, with optional capture variable).
     if (else_bb) {
         LLVMPositionBuilderAtEnd(ctx->llvm_builder, else_bb);
+        ctx->push_scope();
+        if (s->else_capture.has_value()) {
+            LLVMTypeRef  raw_t = LLVMTypeOf(raw_cond_val);
+            LLVMValueRef cap   = LLVMBuildAlloca(ctx->llvm_builder, raw_t, s->else_capture->c_str());
+            LLVMBuildStore(ctx->llvm_builder, raw_cond_val, cap);
+            ctx->declare_local(*s->else_capture, cap, raw_t);
+        }
         visit_stmt(s->else_body, ctx);
+        ctx->pop_scope();
         if (!ctx->is_terminated()) LLVMBuildBr(ctx->llvm_builder, merge_bb);
     }
 
@@ -228,21 +326,109 @@ inline void visit_for_range_stmt(for_range_stmt* s, ir_context* ctx) {
 
     // Determine element type and count.
     LLVMTypeRef elem_llvm_t = s->var_type ? llvm_type_of(s->var_type, ctx) : LLVMInt8TypeInContext(ctx->llvm_ctx);
+    LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->llvm_ctx);
 
-    // Try to get count from the array type's size expression.
     LLVMValueRef count_val = nullptr;
+
+    // Case 1: static array with known compile-time size
     if (s->range && s->range->cast_type && s->range->cast_type->array_size.has_value()) {
         count_val = visit_expr(s->range->cast_type->array_size.value(), ctx);
     }
-    if (!count_val) {
-        // No count available — zero-iteration loop (safe fallback).
-        count_val = LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 0, 0);
+
+    // Case 2: struct value with a "length" field (e.g. std::vector<T>)
+    if (!count_val && s->range && s->range->cast_type && !s->range->cast_type->is_primitive
+        && s->range->cast_type->name.has_value() && s->range->cast_type->pointer_depth == 0) {
+        const std::string& sname = *s->range->cast_type->name;
+        auto nit = ctx->struct_field_names.find(sname);
+        auto tit = ctx->struct_field_types.find(sname);
+        if (nit != ctx->struct_field_names.end() && tit != ctx->struct_field_types.end()) {
+            const auto& fnames = nit->second;
+            const auto& ftypes = tit->second;
+            // Find "length" field for the count
+            for (unsigned fi = 0; fi < fnames.size(); fi++) {
+                if (fnames[fi] == "length" || fnames[fi] == "size") {
+                    count_val = LLVMBuildExtractValue(ctx->llvm_builder, range_val, fi, "range_len");
+                    break;
+                }
+            }
+            // Find first pointer field for the data pointer
+            for (unsigned fi = 0; fi < ftypes.size(); fi++) {
+                if (LLVMGetTypeKind(ftypes[fi]) == LLVMPointerTypeKind) {
+                    range_val = LLVMBuildExtractValue(ctx->llvm_builder, range_val, fi, "range_data");
+                    break;
+                }
+            }
+        }
     }
-    count_val = LLVMBuildIntCast2(ctx->llvm_builder, count_val, LLVMInt64TypeInContext(ctx->llvm_ctx), 0, "range_count");
+
+    // Case 3: pointer to struct — dereference then look for "length" field
+    if (!count_val && s->range && s->range->cast_type && !s->range->cast_type->is_primitive
+        && s->range->cast_type->name.has_value() && s->range->cast_type->pointer_depth == 1) {
+        const std::string& sname = *s->range->cast_type->name;
+        auto nit = ctx->struct_field_names.find(sname);
+        auto tit = ctx->struct_field_types.find(sname);
+        if (nit != ctx->struct_field_names.end() && tit != ctx->struct_field_types.end()) {
+            const auto& fnames = nit->second;
+            const auto& ftypes = tit->second;
+            // Build the struct LLVM type to GEP into the pointer
+            LLVMTypeRef struct_t = nullptr;
+            auto sit = ctx->struct_types.find(sname);
+            if (sit != ctx->struct_types.end()) struct_t = sit->second;
+            if (struct_t) {
+                for (unsigned fi = 0; fi < fnames.size(); fi++) {
+                    if (fnames[fi] == "length" || fnames[fi] == "size") {
+                        LLVMValueRef gep = LLVMBuildStructGEP2(ctx->llvm_builder, struct_t, range_val, fi, "len_ptr");
+                        count_val = LLVMBuildLoad2(ctx->llvm_builder, ftypes[fi], gep, "range_len");
+                        break;
+                    }
+                }
+                for (unsigned fi = 0; fi < ftypes.size(); fi++) {
+                    if (LLVMGetTypeKind(ftypes[fi]) == LLVMPointerTypeKind) {
+                        LLVMValueRef gep = LLVMBuildStructGEP2(ctx->llvm_builder, struct_t, range_val, fi, "data_ptr");
+                        range_val = LLVMBuildLoad2(ctx->llvm_builder, ftypes[fi], gep, "range_data");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Case 4: plain identifier range with no cast_type — infer struct from local variable type
+    if (!count_val && s->range && s->range->kind == expr_kind::identifier) {
+        LLVMTypeRef lt = ctx->lookup_local_type(s->range->str_val);
+        if (lt && LLVMGetTypeKind(lt) == LLVMStructTypeKind) {
+            const char* sn = LLVMGetStructName(lt);
+            std::string sname = sn ? sn : "";
+            auto nit = ctx->struct_field_names.find(sname);
+            auto tit = ctx->struct_field_types.find(sname);
+            if (nit != ctx->struct_field_names.end() && tit != ctx->struct_field_types.end()) {
+                const auto& fnames = nit->second;
+                const auto& ftypes = tit->second;
+                for (unsigned fi = 0; fi < fnames.size(); fi++) {
+                    if (fnames[fi] == "length" || fnames[fi] == "size") {
+                        count_val = LLVMBuildExtractValue(ctx->llvm_builder, range_val, fi, "range_len");
+                        break;
+                    }
+                }
+                for (unsigned fi = 0; fi < ftypes.size(); fi++) {
+                    if (LLVMGetTypeKind(ftypes[fi]) == LLVMPointerTypeKind) {
+                        range_val = LLVMBuildExtractValue(ctx->llvm_builder, range_val, fi, "range_data");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!count_val) {
+        // No count derivable — zero-iteration safe fallback
+        count_val = LLVMConstInt(i64t, 0, 0);
+    }
+    count_val = LLVMBuildIntCast2(ctx->llvm_builder, count_val, i64t, 0, "range_count");
 
     // Allocate the index variable.
-    LLVMValueRef idx_alloca = LLVMBuildAlloca(ctx->llvm_builder, LLVMInt64TypeInContext(ctx->llvm_ctx), "range_idx");
-    LLVMBuildStore(ctx->llvm_builder, LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 0, 0), idx_alloca);
+    LLVMValueRef idx_alloca = LLVMBuildAlloca(ctx->llvm_builder, i64t, "range_idx");
+    LLVMBuildStore(ctx->llvm_builder, LLVMConstInt(i64t, 0, 0), idx_alloca);
 
     // Allocate the element variable that the body uses.
     LLVMValueRef elem_alloca = LLVMBuildAlloca(ctx->llvm_builder, elem_llvm_t, s->var_name.c_str());
@@ -251,25 +437,17 @@ inline void visit_for_range_stmt(for_range_stmt* s, ir_context* ctx) {
 
     // Condition: idx < count
     LLVMPositionBuilderAtEnd(ctx->llvm_builder, cond_bb);
-    LLVMValueRef idx_cur = LLVMBuildLoad2(ctx->llvm_builder, LLVMInt64TypeInContext(ctx->llvm_ctx), idx_alloca, "idx");
+    LLVMValueRef idx_cur = LLVMBuildLoad2(ctx->llvm_builder, i64t, idx_alloca, "idx");
     LLVMValueRef cond_v  = LLVMBuildICmp(ctx->llvm_builder, LLVMIntULT, idx_cur, count_val, "range_lt");
     LLVMBuildCondBr(ctx->llvm_builder, cond_v, body_bb, exit_bb);
 
-    // Body: load arr[idx] into elem, then run body.
+    // Body: load base_ptr[idx] into elem, then run body.
     LLVMPositionBuilderAtEnd(ctx->llvm_builder, body_bb);
     ctx->push_scope();
-    // GEP: ptr to arr[idx]
-    LLVMValueRef zero = LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 0, 0);
-    LLVMValueRef indices[2] = { zero, idx_cur };
-    LLVMValueRef elem_ptr;
-    // If range_val is a pointer to array, use 2-index GEP; if pointer to element, use 1-index.
-    LLVMTypeRef rv_type = LLVMTypeOf(range_val);
-    (void)rv_type;
-    elem_ptr = LLVMBuildGEP2(ctx->llvm_builder, elem_llvm_t, range_val, &idx_cur, 1, "elem_ptr");
+    LLVMValueRef elem_ptr = LLVMBuildGEP2(ctx->llvm_builder, elem_llvm_t, range_val, &idx_cur, 1, "elem_ptr");
     LLVMValueRef elem_val = LLVMBuildLoad2(ctx->llvm_builder, elem_llvm_t, elem_ptr, "elem");
     LLVMBuildStore(ctx->llvm_builder, elem_val, elem_alloca);
 
-    // Declare loop variable in scope.
     ctx->declare_local(s->var_name, elem_alloca, elem_llvm_t, nullptr, false);
 
     ctx->push_loop(exit_bb, step_bb);
@@ -280,7 +458,7 @@ inline void visit_for_range_stmt(for_range_stmt* s, ir_context* ctx) {
 
     // Step: idx++
     LLVMPositionBuilderAtEnd(ctx->llvm_builder, step_bb);
-    LLVMValueRef idx_new = LLVMBuildAdd(ctx->llvm_builder, idx_cur, LLVMConstInt(LLVMInt64TypeInContext(ctx->llvm_ctx), 1, 0), "idx_inc");
+    LLVMValueRef idx_new = LLVMBuildAdd(ctx->llvm_builder, idx_cur, LLVMConstInt(i64t, 1, 0), "idx_inc");
     LLVMBuildStore(ctx->llvm_builder, idx_new, idx_alloca);
     LLVMBuildBr(ctx->llvm_builder, cond_bb);
 
@@ -387,26 +565,119 @@ inline void visit_defer_stmt(defer_stmt* s, ir_context* ctx) {
     else if (s->expr) ctx->add_defer(static_cast<void*>(s->expr), false);
 }
 
+inline void visit_errdefer_stmt(errdefer_stmt* s, ir_context* ctx) {
+    // Register in the errdefer scope; emitted only on error-path exits (return error.X or try).
+    if (s->blk)       ctx->add_errdefer(static_cast<void*>(s->blk),  true);
+    else if (s->expr) ctx->add_errdefer(static_cast<void*>(s->expr), false);
+}
+
 // ------------------------------------------------------------------ return
 
 inline void visit_return_stmt(return_stmt* s, ir_context* ctx) {
-    // Emit ALL deferred items (all scopes) before returning
-    // We collect from the top of the defer stack inward
+    // Determine whether this is an error return before emitting anything
+    bool is_error_return = false;
+    if (ctx->current_func_is_error_union && s->value.has_value())
+        is_error_return = (s->value.value()->kind == expr_kind::error_lit);
+
+    // On error exit: fire errdeferred items first (LIFO across all scopes)
+    if (is_error_return) {
+        std::vector<std::vector<std::pair<void*, bool>>> all_errdeferred;
+        for (auto& scope_items : ctx->errdefer_stack)
+            all_errdeferred.push_back(scope_items);
+        for (auto it = all_errdeferred.rbegin(); it != all_errdeferred.rend(); ++it)
+            emit_deferred(*it, ctx);
+    }
+
+    // Emit ALL regular deferred items (all scopes) before returning
     std::vector<std::vector<std::pair<void*, bool>>> all_deferred;
     for (auto& scope_items : ctx->defer_stack)
         all_deferred.push_back(scope_items);
     for (auto it = all_deferred.rbegin(); it != all_deferred.rend(); ++it)
         emit_deferred(*it, ctx);
 
+    LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
+
+    if (ctx->current_func_is_error_union) {
+        LLVMTypeRef eu_t   = ctx->current_error_union_type;
+        LLVMTypeRef i8pt   = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
+        bool is_void_union = eu_t && LLVMGetTypeKind(eu_t) == LLVMStructTypeKind
+                             && LLVMCountStructElementTypes(eu_t) == 2;
+
+        if (!s->value.has_value()) {
+            // Implicit success: {0, null} for !void or {0, null, undef} for !T
+            if (!eu_t) {
+                LLVMBuildRetVoid(ctx->llvm_builder);
+            } else {
+                LLVMValueRef eu = LLVMGetUndef(eu_t);
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, LLVMConstInt(i32t, 0, 0), 0, "eu_ok_tag");
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, LLVMConstNull(i8pt), 1, "eu_ok_payload");
+                LLVMBuildRet(ctx->llvm_builder, eu);
+            }
+            return;
+        }
+
+        expr_node* ret_expr = s->value.value();
+        bool is_error = (ret_expr->kind == expr_kind::error_lit);
+
+        if (is_error) {
+            // error.Name or error.Name(expr) — emit tag and optional payload
+            LLVMValueRef tag_val = visit_expr(ret_expr, ctx);  // i32 hash from visit_error_lit_expr
+            LLVMValueRef payload = LLVMConstNull(i8pt);
+            if (ret_expr->operand) {
+                // error.Name(expr) — cast payload to i8*
+                LLVMValueRef pv = visit_expr(ret_expr->operand, ctx);
+                LLVMTypeRef  pt = LLVMTypeOf(pv);
+                if (LLVMGetTypeKind(pt) == LLVMPointerTypeKind) {
+                    payload = LLVMBuildBitCast(ctx->llvm_builder, pv, i8pt, "eu_payload");
+                } else {
+                    // Store integer payload in a global and take its address
+                    LLVMValueRef pg = LLVMAddGlobal(ctx->llvm_mod, pt, ".err_payload");
+                    LLVMSetInitializer(pg, LLVMConstNull(pt));
+                    LLVMSetLinkage(pg, LLVMPrivateLinkage);
+                    LLVMBuildStore(ctx->llvm_builder, pv, pg);
+                    payload = LLVMBuildBitCast(ctx->llvm_builder, pg, i8pt, "eu_payload");
+                }
+            }
+            if (eu_t) {
+                LLVMValueRef eu = LLVMGetUndef(eu_t);
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, tag_val, 0, "eu_err_tag");
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, payload, 1, "eu_err_payload");
+                LLVMBuildRet(ctx->llvm_builder, eu);
+            } else {
+                LLVMBuildRet(ctx->llvm_builder, tag_val);
+            }
+        } else {
+            // Success value return: {0, null, value}
+            LLVMValueRef val = visit_expr(ret_expr, ctx);
+            if (!eu_t) {
+                LLVMBuildRet(ctx->llvm_builder, val);
+            } else if (is_void_union) {
+                // !void — just return {0, null}
+                LLVMValueRef eu = LLVMGetUndef(eu_t);
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, LLVMConstInt(i32t, 0, 0), 0, "eu_ok_tag");
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, LLVMConstNull(i8pt), 1, "eu_ok_payload");
+                LLVMBuildRet(ctx->llvm_builder, eu);
+            } else {
+                // !T — wrap as {0, null, value}
+                LLVMTypeRef ok_t = LLVMStructGetTypeAtIndex(eu_t, 2);
+                val = coerce_int_val(val, ok_t, ctx->llvm_builder);
+                LLVMValueRef eu = LLVMGetUndef(eu_t);
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, LLVMConstInt(i32t, 0, 0), 0, "eu_ok_tag");
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, LLVMConstNull(i8pt), 1, "eu_ok_payload");
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, val, 2, "eu_ok_val");
+                LLVMBuildRet(ctx->llvm_builder, eu);
+            }
+        }
+        return;
+    }
+
     if (!s->value.has_value()) {
         LLVMBuildRetVoid(ctx->llvm_builder);
         return;
     }
     LLVMValueRef val = visit_expr(s->value.value(), ctx);
-    // Coerce value to the function's declared return type (e.g. i8 -> i32 implicit widening).
     LLVMTypeRef fn_t  = LLVMGlobalGetValueType(ctx->current_func);
     LLVMTypeRef ret_t = LLVMGetReturnType(fn_t);
-    // Integer → pointer: inttoptr (handles "return 0" as null pointer constant).
     if (LLVMGetTypeKind(ret_t) == LLVMPointerTypeKind &&
         LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMIntegerTypeKind)
         val = LLVMBuildIntToPtr(ctx->llvm_builder, val, ret_t, "nullcast");
@@ -415,192 +686,73 @@ inline void visit_return_stmt(return_stmt* s, ir_context* ctx) {
     LLVMBuildRet(ctx->llvm_builder, val);
 }
 
-// ------------------------------------------------------------------ throw / try-except
+// ------------------------------------------------------------------ try expr statement
 
-// Returns (or creates) the module-level exception state globals.
-struct exc_globals {
-    LLVMValueRef val;       // @__arc_exc_val  — i64, stores the thrown value
-    LLVMValueRef jbuf_ptr;  // @__arc_exc_jbuf — i8*, points at current jmp_buf alloca
-};
+inline void visit_try_expr_stmt(try_expr_stmt* s, ir_context* ctx) {
+    if (!s->expr) return;
+    LLVMValueRef result   = visit_expr(s->expr, ctx);
+    LLVMTypeRef  result_t = LLVMTypeOf(result);
+    LLVMTypeRef  i32t     = LLVMInt32TypeInContext(ctx->llvm_ctx);
+    if (LLVMGetTypeKind(result_t) != LLVMStructTypeKind ||
+        LLVMCountStructElementTypes(result_t) < 1)
+        return; // not an error-union; nothing to propagate
 
-inline exc_globals get_exc_globals(ir_context* ctx) {
-    LLVMTypeRef i64t  = LLVMInt64TypeInContext(ctx->llvm_ctx);
-    LLVMTypeRef i8pt  = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
+    LLVMValueRef err_tag = LLVMBuildExtractValue(ctx->llvm_builder, result, 0, "eu_tag");
+    LLVMValueRef is_err  = LLVMBuildICmp(ctx->llvm_builder, LLVMIntNE,
+                                          err_tag, LLVMConstInt(i32t, 0, 0), "is_err");
+    LLVMValueRef fn      = ctx->current_func;
+    LLVMBasicBlockRef err_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "try_err");
+    LLVMBasicBlockRef ok_bb  = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "try_ok");
+    LLVMBuildCondBr(ctx->llvm_builder, is_err, err_bb, ok_bb);
 
-    auto get_or_create = [&](const char* name, LLVMTypeRef ty) -> LLVMValueRef {
-        LLVMValueRef g = LLVMGetNamedGlobal(ctx->llvm_mod, name);
-        if (!g) {
-            g = LLVMAddGlobal(ctx->llvm_mod, ty, name);
-            LLVMSetInitializer(g, LLVMConstNull(ty));
-            LLVMSetLinkage(g, LLVMInternalLinkage);
-        }
-        return g;
-    };
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, err_bb);
+    if (ctx->current_func_is_error_union && ctx->current_error_union_type) {
+        // Error propagation — fire errdeferred items then regular deferred items
+        std::vector<std::vector<std::pair<void*, bool>>> all_errdeferred;
+        for (auto& scope_items : ctx->errdefer_stack)
+            all_errdeferred.push_back(scope_items);
+        for (auto it = all_errdeferred.rbegin(); it != all_errdeferred.rend(); ++it)
+            emit_deferred(*it, ctx);
+        std::vector<std::vector<std::pair<void*, bool>>> all_deferred;
+        for (auto& scope_items : ctx->defer_stack)
+            all_deferred.push_back(scope_items);
+        for (auto it = all_deferred.rbegin(); it != all_deferred.rend(); ++it)
+            emit_deferred(*it, ctx);
 
-    return { get_or_create("__arc_exc_val",  i64t),
-             get_or_create("__arc_exc_jbuf", i8pt) };
-}
-
-// Declare setjmp / longjmp as extern C.
-// On Windows x64 (MinGW), the ABI requires _setjmp(jbuf, frame_ptr) — two args.
-// On POSIX, setjmp(jbuf) takes one arg.
-#ifdef _WIN32
-static constexpr bool ARC_WIN_SETJMP = true;
-#else
-static constexpr bool ARC_WIN_SETJMP = false;
-#endif
-
-inline LLVMValueRef get_setjmp_fn(ir_context* ctx) {
-    const char* fname = ARC_WIN_SETJMP ? "_setjmp" : "setjmp";
-    LLVMValueRef fn = LLVMGetNamedFunction(ctx->llvm_mod, fname);
-    if (!fn) {
-        LLVMTypeRef i8pt = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
-        LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
-        LLVMTypeRef params[2] = { i8pt, i8pt };
-        unsigned nparams = ARC_WIN_SETJMP ? 2u : 1u;
-        LLVMTypeRef fty = LLVMFunctionType(i32t, params, nparams, 0);
-        fn = LLVMAddFunction(ctx->llvm_mod, fname, fty);
-        {
-            unsigned k = LLVMGetEnumAttributeKindForName("returns_twice", 13);
-            if (k) LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex,
-                       LLVMCreateEnumAttribute(ctx->llvm_ctx, k, 0));
-        }
-    }
-    return fn;
-}
-
-inline LLVMValueRef get_longjmp_fn(ir_context* ctx) {
-    LLVMValueRef fn = LLVMGetNamedFunction(ctx->llvm_mod, "longjmp");
-    if (!fn) {
-        LLVMTypeRef i8pt  = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
-        LLVMTypeRef i32t  = LLVMInt32TypeInContext(ctx->llvm_ctx);
-        LLVMTypeRef voidt = LLVMVoidTypeInContext(ctx->llvm_ctx);
-        LLVMTypeRef params[2] = { i8pt, i32t };
-        LLVMTypeRef fty = LLVMFunctionType(voidt, params, 2, 0);
-        fn = LLVMAddFunction(ctx->llvm_mod, "longjmp", fty);
-        {
-            unsigned k = LLVMGetEnumAttributeKindForName("noreturn", 8);
-            if (k) LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex,
-                       LLVMCreateEnumAttribute(ctx->llvm_ctx, k, 0));
-        }
-    }
-    return fn;
-}
-
-inline void visit_throw_stmt(throw_stmt* n, ir_context* ctx) {
-    // Store exception value (cast to i64) in @__arc_exc_val, then longjmp.
-    auto [exc_val_g, exc_jbuf_g] = get_exc_globals(ctx);
-    LLVMTypeRef i8t  = LLVMInt8TypeInContext(ctx->llvm_ctx);
-    LLVMTypeRef i8pt = LLVMPointerType(i8t, 0);
-    LLVMTypeRef i32t = LLVMInt32TypeInContext(ctx->llvm_ctx);
-    LLVMTypeRef i64t = LLVMInt64TypeInContext(ctx->llvm_ctx);
-
-    LLVMValueRef val = n->value ? visit_expr(n->value, ctx)
-                                : LLVMConstInt(i64t, 0, 0);
-    LLVMTypeRef vt = LLVMTypeOf(val);
-    if (vt != i64t) {
-        if (LLVMGetTypeKind(vt) == LLVMIntegerTypeKind)
-            val = LLVMBuildIntCast2(ctx->llvm_builder, val, i64t, 1, "exc_cast");
-        else if (LLVMGetTypeKind(vt) == LLVMPointerTypeKind)
-            val = LLVMBuildPtrToInt(ctx->llvm_builder, val, i64t, "exc_cast");
-        else
-            val = LLVMConstInt(i64t, 0, 0);
-    }
-    LLVMBuildStore(ctx->llvm_builder, val, exc_val_g);
-
-    LLVMValueRef jbuf = LLVMBuildLoad2(ctx->llvm_builder, i8pt, exc_jbuf_g, "jbuf");
-    LLVMValueRef one  = LLVMConstInt(i32t, 1, 0);
-    LLVMValueRef args[2] = { jbuf, one };
-    LLVMTypeRef  ljparams[2] = { i8pt, i32t };
-    LLVMTypeRef  ljfty = LLVMFunctionType(LLVMVoidTypeInContext(ctx->llvm_ctx), ljparams, 2, 0);
-    LLVMBuildCall2(ctx->llvm_builder, ljfty, get_longjmp_fn(ctx), args, 2, "");
-    LLVMBuildUnreachable(ctx->llvm_builder);
-}
-
-inline void visit_try_stmt(try_stmt* n, ir_context* ctx) {
-    LLVMTypeRef i8t   = LLVMInt8TypeInContext(ctx->llvm_ctx);
-    LLVMTypeRef i8pt  = LLVMPointerType(i8t, 0);
-    LLVMTypeRef i32t  = LLVMInt32TypeInContext(ctx->llvm_ctx);
-    LLVMTypeRef i64t  = LLVMInt64TypeInContext(ctx->llvm_ctx);
-    LLVMValueRef fn   = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->llvm_builder));
-
-    auto [exc_val_g, exc_jbuf_g] = get_exc_globals(ctx);
-
-    // Alloca a jmp_buf (256 bytes, 16-byte aligned).
-    LLVMTypeRef jbuf_t = LLVMArrayType(i8t, 256);
-    LLVMValueRef jbuf  = LLVMBuildAlloca(ctx->llvm_builder, jbuf_t, "jbuf");
-    LLVMSetAlignment(jbuf, 16);
-
-    // Decay array to i8* pointer.
-    LLVMValueRef zero  = LLVMConstInt(i32t, 0, 0);
-    LLVMValueRef idxs[2] = { zero, zero };
-    LLVMValueRef jbuf_i8 = LLVMBuildGEP2(ctx->llvm_builder, jbuf_t, jbuf, idxs, 2, "jbuf_i8");
-
-    // Save old jmp_buf pointer and install ours.
-    LLVMValueRef old_jbuf = LLVMBuildLoad2(ctx->llvm_builder, i8pt, exc_jbuf_g, "old_jbuf");
-    LLVMBuildStore(ctx->llvm_builder, jbuf_i8, exc_jbuf_g);
-
-    // rc = setjmp(jbuf_i8)   [Windows: _setjmp(jbuf, NULL)]
-    LLVMValueRef setjmp_fn = get_setjmp_fn(ctx);
-    LLVMValueRef rc;
-    if constexpr (ARC_WIN_SETJMP) {
-        LLVMValueRef null_ptr  = LLVMConstNull(i8pt);
-        LLVMTypeRef  params2[2] = { i8pt, i8pt };
-        LLVMTypeRef  sjfty = LLVMFunctionType(i32t, params2, 2, 0);
-        LLVMValueRef args2[2] = { jbuf_i8, null_ptr };
-        rc = LLVMBuildCall2(ctx->llvm_builder, sjfty, setjmp_fn, args2, 2, "sjrc");
-    } else {
-        LLVMTypeRef  sjfty = LLVMFunctionType(i32t, &i8pt, 1, 0);
-        rc = LLVMBuildCall2(ctx->llvm_builder, sjfty, setjmp_fn, &jbuf_i8, 1, "sjrc");
-    }
-
-    // Branch: rc != 0 → except_bb, else → try_bb
-    LLVMValueRef thrown = LLVMBuildICmp(ctx->llvm_builder, LLVMIntNE,
-                                        rc, LLVMConstInt(i32t, 0, 0), "thrown");
-    LLVMBasicBlockRef try_bb    = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "try");
-    LLVMBasicBlockRef except_bb = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "except");
-    LLVMBasicBlockRef after_bb  = LLVMAppendBasicBlockInContext(ctx->llvm_ctx, fn, "after_try");
-    LLVMBuildCondBr(ctx->llvm_builder, thrown, except_bb, try_bb);
-
-    // --- try body ---
-    LLVMPositionBuilderAtEnd(ctx->llvm_builder, try_bb);
-    visit_block_stmt(n->body, ctx);
-    if (!ctx->is_terminated()) {
-        LLVMBuildStore(ctx->llvm_builder, old_jbuf, exc_jbuf_g); // restore on normal exit
-        LLVMBuildBr(ctx->llvm_builder, after_bb);
-    }
-
-    // --- except handler ---
-    LLVMPositionBuilderAtEnd(ctx->llvm_builder, except_bb);
-    LLVMBuildStore(ctx->llvm_builder, old_jbuf, exc_jbuf_g); // restore on exception exit
-    // Declare exception variable in a new scope.
-    ctx->push_scope();
-    if (n->exc_type != nullptr) {
-        // Named exception: except (type name) — alloca and store the exception value.
-        LLVMTypeRef exc_t    = llvm_type_of(n->exc_type, ctx);
-        LLVMValueRef exc_var = LLVMBuildAlloca(ctx->llvm_builder, exc_t, n->exc_name.c_str());
-        // Load stored exception value and cast to the declared type.
-        LLVMValueRef exc_val = LLVMBuildLoad2(ctx->llvm_builder, i64t, exc_val_g, "exc_val");
-        LLVMValueRef casted;
-        if (exc_t == i64t) {
-            casted = exc_val;
-        } else if (LLVMGetTypeKind(exc_t) == LLVMIntegerTypeKind) {
-            casted = LLVMBuildIntCast2(ctx->llvm_builder, exc_val, exc_t, 1, "exc_narrow");
-        } else if (LLVMGetTypeKind(exc_t) == LLVMPointerTypeKind) {
-            casted = LLVMBuildIntToPtr(ctx->llvm_builder, exc_val, exc_t, "exc_ptr");
+        LLVMTypeRef outer_t = ctx->current_error_union_type;
+        LLVMTypeRef i8pt    = LLVMPointerType(LLVMInt8TypeInContext(ctx->llvm_ctx), 0);
+        if (LLVMGetTypeKind(outer_t) == LLVMStructTypeKind) {
+            LLVMValueRef payload = LLVMCountStructElementTypes(result_t) >= 2
+                ? LLVMBuildExtractValue(ctx->llvm_builder, result, 1, "eu_payload")
+                : LLVMConstNull(i8pt);
+            LLVMValueRef eu = LLVMGetUndef(outer_t);
+            eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, err_tag, 0, "eu_prop_tag");
+            if (LLVMCountStructElementTypes(outer_t) >= 2)
+                eu = LLVMBuildInsertValue(ctx->llvm_builder, eu, payload, 1, "eu_prop_payload");
+            LLVMBuildRet(ctx->llvm_builder, eu);
         } else {
-            casted = LLVMConstNull(exc_t);
+            LLVMBuildRet(ctx->llvm_builder, err_tag);
         }
-        LLVMBuildStore(ctx->llvm_builder, casted, exc_var);
-        ctx->declare_local(n->exc_name, exc_var, exc_t);
+    } else {
+        LLVMBuildUnreachable(ctx->llvm_builder);
     }
-    // else: catch-all except (...) — no exception variable, just run handler.
-    visit_block_stmt(n->handler, ctx);
-    ctx->pop_scope();
-    if (!ctx->is_terminated())
-        LLVMBuildBr(ctx->llvm_builder, after_bb);
+    LLVMPositionBuilderAtEnd(ctx->llvm_builder, ok_bb);
+    // Success value is discarded (statement context)
+}
 
-    LLVMPositionBuilderAtEnd(ctx->llvm_builder, after_bb);
+// ------------------------------------------------------------------ res block statement
+// res { stmts } acts as a local scope that can return an error or a value.
+// Errors raised inside (via `error.X` as a statement expr) propagate to the caller
+// when wrapped with `try res { }`, or are caught with `res { } except |e| {}`.
+// The last expression in the block is the block's success value.
+
+inline void visit_res_block_stmt(res_block_stmt* s, ir_context* ctx) {
+    if (!s->body) return;
+    // res blocks compile identically to plain blocks; try/except on the enclosing
+    // expression handle error capture. The distinction is at parse/analyzer level.
+    ctx->push_scope();
+    visit_block_stmt(s->body, ctx);
+    ctx->pop_scope();
 }
 
 // ------------------------------------------------------------------ break / continue
@@ -635,10 +787,11 @@ inline void visit_stmt(ast_node* node, ir_context* ctx) {
     if (auto* n = dynamic_cast<continue_stmt*>(node)) { visit_continue_stmt(n, ctx); return; }
     if (auto* n = dynamic_cast<var_decl*>(node))      { visit_local_var_decl(n, ctx); return; }
     if (auto* n = dynamic_cast<expr_stmt*>(node))     { visit_expr_stmt(n, ctx);    return; }
-    if (auto* n = dynamic_cast<asm_stmt*>(node))      { visit_asm_stmt(n, ctx);     return; }
-    if (auto* n = dynamic_cast<defer_stmt*>(node))    { visit_defer_stmt(n, ctx);   return; }
-    if (auto* n = dynamic_cast<throw_stmt*>(node))    { visit_throw_stmt(n, ctx);   return; }
-    if (auto* n = dynamic_cast<try_stmt*>(node))      { visit_try_stmt(n, ctx);     return; }
+    if (auto* n = dynamic_cast<asm_stmt*>(node))        { visit_asm_stmt(n, ctx);        return; }
+    if (auto* n = dynamic_cast<defer_stmt*>(node))      { visit_defer_stmt(n, ctx);      return; }
+    if (auto* n = dynamic_cast<errdefer_stmt*>(node))   { visit_errdefer_stmt(n, ctx);   return; }
+    if (auto* n = dynamic_cast<try_expr_stmt*>(node))   { visit_try_expr_stmt(n, ctx);   return; }
+    if (auto* n = dynamic_cast<res_block_stmt*>(node))  { visit_res_block_stmt(n, ctx);  return; }
 
     throw std::runtime_error("IR: Unknown statement kind in visit_stmt");
 }

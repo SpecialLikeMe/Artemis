@@ -1,6 +1,6 @@
 # Artemis Language Specification
 
-**Version:** 0.1.0  
+**Version:** 0.2.0  
 **Status:** Draft
 
 ---
@@ -9,79 +9,101 @@
 
 ### 1.1 Primitive Integer Types
 
-| Type   | Width | Signed | Notes                          |
-|--------|-------|--------|--------------------------------|
-| `i8`   | 8     | Yes    | Also spelled `char`            |
-| `i16`  | 16    | Yes    |                                |
-| `i32`  | 32    | Yes    | Also spelled `int`             |
-| `i64`  | 64    | Yes    |                                |
-| `i128` | 128   | Yes    |                                |
-| `i256` | 256   | Yes    | Software emulation             |
-| `i512` | 512   | Yes    | Software emulation             |
-| `u8`   | 8     | No     |                                |
-| `u16`  | 16    | No     |                                |
-| `u32`  | 32    | No     | Also spelled `uint`            |
-| `u64`  | 64    | No     |                                |
-| `u128` | 128   | No     |                                |
-| `u256` | 256   | No     | Software emulation             |
-| `u512` | 512   | No     | Software emulation             |
+| Type   | Width | Signed | Alias  |
+|--------|-------|--------|--------|
+| `i8`   | 8     | Yes    | `char` |
+| `i16`  | 16    | Yes    |        |
+| `i32`  | 32    | Yes    | `int`  |
+| `i64`  | 64    | Yes    |        |
+| `i128` | 128   | Yes    |        |
+| `i256` | 256   | Yes    | software emulation |
+| `i512` | 512   | Yes    | software emulation |
+| `u8`   | 8     | No     |        |
+| `u16`  | 16    | No     |        |
+| `u32`  | 32    | No     | `uint` |
+| `u64`  | 64    | No     |        |
+| `u128` | 128   | No     |        |
+| `u256` | 256   | No     | software emulation |
+| `u512` | 512   | No     | software emulation |
 
-`char` is an alias for `i8`. `char*` (pointer to `char`) is the canonical string type, interchangeable with `i8*` and `u8*` when assigning.
+`char` is an alias for `i8`. `char*` (pointer to `char`) is the canonical string type, interchangeable with `i8*` and `u8*`.
 
-Integer types are implicitly convertible to one another in assignments. Narrowing conversions (e.g. assigning an `i32` to a `u8`) are permitted without an explicit cast; the value is truncated to the destination width at runtime.
+Integer types are implicitly convertible to one another. Narrowing conversions are permitted; the value is truncated to the destination width.
 
 ### 1.2 Primitive Floating-Point Types
 
-| Type   | Format        | Notes                      |
-|--------|---------------|----------------------------|
-| `f8`   | 8-bit float   | Stored as i8 internally    |
-| `f16`  | half          |                            |
-| `f32`  | single        |                            |
-| `f64`  | double        | Also spelled `float`       |
-| `f128` | quad          |                            |
-| `f256` | —             | Maps to fp128 (LLVM limit) |
-| `f512` | —             | Maps to fp128 (LLVM limit) |
-(use of f256 and f512 is heavily discourage until the map issue has been resolved)
+| Type   | Format |
+|--------|--------|
+| `f8`   | 8-bit float (stored as i8 internally) |
+| `f16`  | half precision |
+| `f32`  | single precision |
+| `f64`  | double precision (`float` alias) |
+| `f128` | quad precision |
+| `f256` | maps to fp128 (LLVM limit) |
+| `f512` | maps to fp128 (LLVM limit) |
 
-### 1.3 Boolean Types
+### 1.3 Boolean
 
-| Type   | Width | Notes                        |
-|--------|-------|------------------------------|
-| `bool` | 8     | Standard boolean             |
-| `b1`   | 1     | Single-bit boolean           |
-| `b8`   | 8     |                              |
-| `b16`  | 16    |                              |
-| `b32`  | 32    |                              |
-| `b64`  | 64    |                              |
-| `b128` | 128   |                              |
-| `b256` | 256   |                              |
-| `b512` | 512   |                              |
+`bool` — 1-bit logical. Literals: `true`, `false`. Widens to any integer; zero-extends.
 
-### 1.4 Void Type
+Arbitrary-width booleans: `bN` (e.g. `b8`, `b32`).
 
-`void` — used as a function return type to indicate no value is returned. `void*` is a generic pointer.
+### 1.4 Void
 
-### 1.5 Derived Types
+`void` — no value. Used as function return type when nothing is returned.
 
-- **Pointer:** `T*`, `T**`, etc. Pointer depth is unlimited.
-- **Array:** `T[N]` where `N` is a constant-size expression.
-- **Struct:** aggregate type with named fields.
-- **Union:** overlapping storage for multiple field types.
-- **Enum:** named integer constants backed by `i32`.
-- **Typedef:** alias for any type.
-- **Function pointer:** `ret(param_types)*` — a pointer to a function. See §12.
-- **Class (istruc):** object type with methods and inheritance. See §11.
+### 1.5 Pointers
 
-### 1.6 Type Qualifiers and Storage Classes
+```
+T*          // mutable pointer to T
+const T*    // pointer to immutable T
+T* const    // immutable pointer (const pointer, mutable data)
+T**         // pointer to pointer to T
+```
 
-| Keyword     | Meaning                                     |
-|-------------|---------------------------------------------|
-| `const`     | Value may not be modified after declaration |
-| `extern`    | Symbol has external linkage                 |
-| `extern std`| C standard library linkage                  |
-| `extern "C"`| C ABI block — no name mangling              |
-| `inline`    | Hint: expand call inline                    |
-| `register`  | Hint: keep in CPU register                  |
+Any pointer type may be cast to/from `void*`. The null pointer constant is `null`; it is assignable to any pointer or nullable type.
+
+Pointer arithmetic: `ptr + n`, `ptr - n`, `ptr[n]` all supported.
+
+### 1.6 Arrays
+
+```
+T name[N];      // fixed-size stack array of N elements
+T name[N] = { v0, v1, ... };  // with initializer
+```
+
+`sizeof(name)` gives total byte size; `sizeof(name[0])` gives element size. Indexing: `arr[i]`.
+
+### 1.7 Function Pointers
+
+```
+RetType(Param0, Param1, ...)* ptr_name;
+```
+
+Example:
+
+```
+i32(i32, i32)* op = &add;
+i32 result = op(3, 4);
+```
+
+### 1.8 Nullable Types
+
+`?T` marks a value that may be `null`. It is a wrapper that allows `null` assignment and null-check tests without requiring an explicit pointer.
+
+```
+?i32 x = null;
+if (x == null) { ... }
+```
+
+### 1.9 Const / Volatile
+
+`const T name` — immutable variable (value cannot be changed after initialization).  
+`volatile T name` — volatile-qualified; inhibits optimization of reads/writes.
+
+### 1.10 `auto` (Type Inference)
+
+`auto` as a variable type infers the type from the initializer. In function signatures, `auto fn() !T` means the return type is an error union (see §10).
 
 ---
 
@@ -90,991 +112,1280 @@ Integer types are implicitly convertible to one another in assignments. Narrowin
 ### 2.1 Variable Declarations
 
 ```
-type_spec name [= initializer] ;
+T name;                        // zero-initialized
+T name = expr;                 // copy-init (for class types: calls operator= if defined)
+T name(arg0, arg1, ...);       // constructor call
+T name{arg0, arg1, ...};       // constructor call (brace form)
+T name = T { .field = val };   // named aggregate initializer
+const T name = expr;           // immutable
+constexpr T name = expr;       // compile-time constant (evaluated at compile time)
+consteval T name;              // user manages construction manually via __construct__
 ```
 
-Examples:
-```c
-i32 x;
-const f64 pi = 3.14159;
-i32* ptr;
-i32 arr[10];
-extern i32 global;
-```
+**Constructor invocation:** For `istruc` class types, the constructor is invoked by `()` or `{}` forms. The `= expr` form calls `operator=` if the class defines one, or performs a raw store otherwise. There is no implicit constructor invocation through `=` alone.
 
-### 2.2 Function Declarations
-
-Prototype (forward declaration):
-```
-ret_type name ( param_list ) ;
-```
-
-Definition:
-```
-ret_type name ( param_list ) block
-```
-
-A variadic function appends `...` after the last named parameter:
-```c
-void printf(const i8* fmt, ...);
-```
-
-Multiple functions may share the same name if their parameter types differ (**overloading**). The compiler selects the best match at each call site and mangles IR names automatically. See §9.
-
-The entry-point function **must** be named `main` and **must** return `i32`. The return value is the process exit code. Any other return type for `main` is a compile-time error.
-
-```c
-i32 main() { return 0; }
-```
-
-### 2.3 Struct Declarations
+### 2.2 `extern`
 
 ```
-struct Name { field_list } ;
+extern T name;                  // external variable
+extern RetType funcname(params); // external function declaration
+extern "C" RetType funcname(params); // C-linkage (no name mangling)
+extern "C" { ... }              // C-linkage block
+extern std.module;              // import a standard library module
 ```
 
-Fields are `var_decl` statements without initialisers. No bit-fields.
+### 2.3 `static`
 
-### 2.4 Union Declarations
+Inside a function: `static T name = expr;` — variable with static (process-lifetime) storage, initialized once.  
+Inside an `istruc`: `static T name;` — class-level storage (one instance per type).
 
-```
-union Name { field_list } ;
-```
-
-Storage is allocated for the widest field. All fields share the same starting address.
-
-### 2.5 Enum Declarations
+### 2.4 `typedef`
 
 ```
-enum Name { variant [= expr] , ... } ;
+typedef OldType NewName;
 ```
 
-Variants without an explicit value are auto-numbered from 0. Variants are globally scoped constants of type `i32`.
-
-### 2.6 Typedef
+### 2.5 `using`
 
 ```
-typedef type alias ;
+using let = const auto;
 ```
 
-Creates an alias that is fully interchangeable with the underlying type.
+Contextual alias for type expressions.
+
+### 2.6 `inline` / `register`
+
+`inline` on a function: hint to inline at call sites.  
+`register` on a variable: hint to keep in register.
 
 ---
 
-## 3. Expressions
+## 3. Literals
 
-### 3.1 Operator Precedence (highest to lowest)
+| Literal | Example | Notes |
+|---------|---------|-------|
+| Integer | `42`, `0xFF`, `0b1010`, `0o17` | decimal, hex, binary, octal |
+| Integer with suffix | `42u`, `42u64` | unsigned/width suffix |
+| Float | `3.14`, `1.0e-5` | `f64` by default |
+| String | `"hello"` | `i8*`; null-terminated |
+| Char | `'a'` | `i8` value |
+| Bool | `true`, `false` | |
+| Null | `null` | null pointer / nullable |
 
-| Level | Operators                          | Associativity |
-|-------|------------------------------------|---------------|
-| 14    | `()` `[]` `.` `->` (postfix `++` `--`) | Left        |
-| 13    | Unary `+` `-` `!` `~` `*` `&` `++` `--` `sizeof` `(cast)` | Right |
-| 12    | `*` `/` `%`                        | Left          |
-| 11    | `+` `-`                            | Left          |
-| 10    | `<<` `>>`                          | Left          |
-| 9     | `<` `>` `<=` `>=`                  | Left          |
-| 8     | `==` `!=`                          | Left          |
-| 7     | `&`                                | Left          |
-| 6     | `^`                                | Left          |
-| 5     | `\|`                               | Left          |
-| 4     | `&&`                               | Left          |
-| 3     | `\|\|`                             | Left          |
-| 2     | `?:` (ternary)                     | Right         |
-| 1     | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | Right |
-
-### 3.2 Operators
-
-**Arithmetic:** `+` `-` `*` `/` `%`  
-**Bitwise:** `&` `|` `^` `~` `<<` `>>`  
-**Logical:** `&&` `||` `!`  
-**Comparison:** `==` `!=` `<` `>` `<=` `>=`  
-**Assignment:** `=` `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`  
-**Increment/decrement:** `++` `--` (prefix and postfix)  
-**Address-of / dereference:** `&expr` `*expr`  
-**Cast:** `(type)expr`  
-**Sizeof:** `sizeof(type)` or `sizeof(expr)`  
-**Ternary:** `cond ? then_expr : else_expr`  
-**Member access:** `expr.field` (struct/union/class by value or pointer)  
-**Arrow:** `expr->field` — shorthand for `(*expr).field`; works on any pointer-to-aggregate  
-**Subscript:** `expr[index]`  
-**Call:** `callee(arg, ...)`
-
-### 3.3 Annotations
-
-`@identifier` attaches a compile-time annotation tag to an expression. The annotation name is preserved in the AST for use by tooling or future language features. Currently no runtime effect.
+String literals default-initialize a writable stack-allocated `""` when declared as `char*` with no value.
 
 ---
 
-## 4. Statements
+## 4. Expressions
 
-### 4.1 Expression Statement
-
-```
-expr ;
-```
-
-### 4.2 Block
+### 4.1 Arithmetic
 
 ```
-{ stmt* }
+a + b    a - b    a * b    a / b    a % b
+++a    a++    --a    a--
+-a    +a
 ```
 
-A block creates a new lexical scope.
-
-### 4.3 Variable Declaration Statement
-
-Any variable declaration inside a function body.
-
-### 4.4 If / Else
+### 4.2 Comparison
 
 ```
-if ( expr ) stmt
-if ( expr ) stmt else stmt
+a == b    a != b    a < b    a > b    a <= b    a >= b
 ```
 
-The condition may be any scalar or pointer expression. Zero / null is falsy.
-
-### 4.5 While
+### 4.3 Logical
 
 ```
-while ( expr ) stmt
+a && b    a || b    !a
 ```
 
-### 4.6 For
+### 4.4 Bitwise
 
 ```
-for ( init ; cond ; step ) stmt
+a & b    a | b    a ^ b    ~a    a << b    a >> b
 ```
 
-`init` may be a variable declaration or an expression statement. Any of the three clauses may be empty.
-
-### 4.7 Switch
+### 4.5 Assignment
 
 ```
-switch ( expr ) {
-    case const_expr : stmt*
+a = b
+a += b    a -= b    a *= b    a /= b    a %= b
+a &= b    a |= b    a ^= b    a <<= b    a >>= b
+```
+
+Assignment to an `istruc` variable calls `operator=` if the class defines it. Otherwise it performs a raw store.
+
+### 4.6 Ternary
+
+```
+cond ? then_expr : else_expr
+```
+
+### 4.7 Cast
+
+```
+(TargetType)expr
+```
+
+Explicit cast; supports numeric widening/narrowing, pointer reinterpretation, and void* conversions.
+
+### 4.8 `sizeof`
+
+```
+sizeof(Type)
+sizeof(expr)
+```
+
+Returns `u64` byte count.
+
+### 4.9 Address-of / Dereference
+
+```
+&var        // address of variable → T*
+*ptr        // dereference pointer
+```
+
+### 4.10 Member Access
+
+```
+obj.field       // direct member access (also works on pointer — auto-deref)
+obj.method()    // method call (self pointer is implicit)
+ptr->field      // explicit pointer member access (equivalent to (*ptr).field)
+```
+
+### 4.11 Subscript
+
+```
+arr[i]
+```
+
+### 4.12 Aggregate Initializer
+
+```
+TypeName { .field0 = val0, .field1 = val1 }    // named-field form
+.{ .field0 = val0, .field1 = val1 }            // inferred-type form (type inferred from context)
+```
+
+### 4.13 Error Literals
+
+```
+error.Name
+```
+
+Produces an error tag value (i32) for use in error-union returning functions. See §10.
+
+### 4.14 `try` Expression
+
+```
+T val = try fn_returning_error_union();
+```
+
+If the callee returned an error, `try` propagates it as the return value of the current (also `!T`) function. If it succeeded, unwraps the value.
+
+### 4.15 `except` Expression
+
+```
+fn_returning_error_union() except |e| {
+    // e is error_t { i32 code; i8* name; i8* payload; }
+}
+```
+
+Catches an error from the preceding call. The handler block runs only if the call returned an error. See §10.
+
+### 4.16 `noexcept`
+
+```
+bool b = noexcept(fn());
+```
+
+Returns `true` if the call expression would not throw (i.e., the called function is `noexcept`).
+
+---
+
+## 5. Statements
+
+### 5.1 Block
+
+```
+{
+    stmt1;
+    stmt2;
+}
+```
+
+### 5.2 `if` / `else`
+
+```
+if (cond) { ... }
+if (cond) { ... } else { ... }
+if (cond) { ... } else if (cond2) { ... }
+
+constexpr if (cond) { ... }        // compile-time branch
+if constexpr (cond) { ... }        // equivalent
+```
+
+### 5.3 `while`
+
+```
+while (cond) { ... }
+```
+
+### 5.4 `for`
+
+```
+for (init; cond; step) { ... }
+```
+
+`init` may be a variable declaration or expression statement.
+
+### 5.5 `switch`
+
+```
+switch (expr) {
+    case val0: { ... break; }
+    case val1: { ... break; }
+    default:   { ... }
+}
+```
+
+Cases do not implicitly fall through.
+
+### 5.6 `return`
+
+```
+return;           // void return
+return expr;      // return value
+```
+
+### 5.7 `break` / `continue`
+
+```
+break;      // exit innermost loop or switch
+continue;   // skip to next loop iteration
+```
+
+### 5.8 `defer`
+
+```
+defer stmt;           // execute stmt when current scope exits
+defer { stmt1; stmt2; }  // defer a block
+```
+
+Deferred statements execute in LIFO order when the enclosing scope exits (including via `return`).
+
+### 5.9 Inline Assembly
+
+```
+__asm__ {
+    instruction text
+    : input_name "constraint" (var)
+    : output_name "=constraint" (var)
+    : "clobber", ...
+}
+```
+
+Constraint sections are optional. Use `"cca"` as a clobber to auto-detect clobbers.
+
+---
+
+## 6. Functions
+
+### 6.1 Declaration
+
+```
+RetType funcname(ParamType param, ...) {
     ...
-    default : stmt*
 }
 ```
 
-Cases fall through by default. Use `break` to stop. The switch expression must be an integer type.
-
-### 4.8 Return
+### 6.2 Trailing Return Type (Error Union)
 
 ```
-return ;
-return expr ;
-```
-
-A `return` with no value is only valid in `void` functions.
-
-### 4.9 Break / Continue
-
-`break` exits the nearest enclosing `while`, `for`, or `switch`.  
-`continue` skips to the next iteration of the nearest enclosing `while` or `for`.  
-Both are errors outside a loop (or outside a `switch` for `break`).
-
-### 4.10 Defer
-
-```
-defer expr ;
-defer block
-```
-
-Schedules the expression or block to execute at the end of the current scope (or before any `return` that exits the scope). Multiple `defer` statements in the same scope run in **reverse order** (LIFO). See §13.5 for full semantics.
-
----
-
-## 5. Annotations
-
-Annotations use the `@` sigil followed by an identifier:
-
-```c
-@noinline foo();
-@deprecated bar = 5;
-```
-
-The annotation is parsed as a unary prefix expression over the following expression. No semantics are defined in v0.1.0; they are intended as extension points for future attributes and for tooling.
-
----
-
-## 6. Preprocessor
-
-The Artemis preprocessor runs before lexing, driven by `@`-prefixed directives. Directives must appear at the start of a line.
-
-### 6.1 `@define`
-
-```
-@define <NAME> <expansion>
-@define <NAME> <>           // empty (flag) define
-```
-
-After definition, every occurrence of `NAME` in source text is replaced by the expansion. Expansions can be multi-token. Regex-capture defines are also supported:
-
-```
-@define <PREFIX_(.+)> <value_$1>
-```
-
-### 6.2 `@undef`
-
-```
-@undef NAME
-```
-
-Removes a previous definition.
-
-### 6.3 `@ifdef` / `@ifndef` / `@elifdef` / `@elifndef` / `@else` / `@endif`
-
-```
-@ifdef  NAME
-  // included only if NAME is defined
-@elifdef  OTHER
-  // included if OTHER is defined and NAME was not
-@else
-  // fallback
-@endif
-
-@ifndef NAME
-  // included only if NAME is NOT defined
-@endif
-```
-
-Conditional blocks can be nested. Source inside an inactive branch is completely discarded before parsing.
-
-### 6.4 `@error`
-
-```
-@error "message"
-```
-
-Emits a compile-time error if the directive is in an active branch.
-
-### 6.5 `@include`
-
-```
-@include "relative/path/to/file.arc"
-```
-
-Textually inserts the contents of the named file at the include site. Only the `""` (relative path) form is supported; paths are resolved relative to the current source file. The `<>` angle-bracket form is **not** valid syntax.
-
-To import standard library packages use `extern std.<pkg>;` instead (see §16).
-
-### 6.5.1 `extern std.*` — Standard Library Imports
-
-```
-extern std.math;
-extern std.alloc.bump;
-extern std.rand;
-```
-
-Imports a standard library package into the current compilation unit. The compiler locates the corresponding file under `compiler/std/include/` and textually includes it. Dot-separated paths map to directory separators (`std.alloc.bump` → `alloc/bump.arc`).
-
-All types and functions from the package become available by their bare names (e.g., `bump`, `abs_i32`, `xoshiro_state`).
-
-### 6.6 `@embed`
-
-```
-@embed <filename>
-```
-
-Includes the raw bytes of a file as an array initializer.
-
-### 6.7 Built-in defines
-
-| Name         | Value                   |
-|--------------|-------------------------|
-| `_WIN32`     | Defined on Windows      |
-| `_LINUX`     | Defined on Linux        |
-| `_MACOS`     | Defined on macOS        |
-
----
-
-## 7. Calling Convention and Extern Linkage  <!-- was §6 -->
-
-Functions without a storage class default to external (visible to the linker) if they are top-level definitions.
-
-`extern T name(...)` — declares a symbol with external linkage. No body is emitted; the symbol is resolved at link time. Used to call C library functions:
-
-```c
-extern void* malloc(u64 size);
-extern void  free(void* ptr);
-```
-
-`extern std` — identical to `extern`; signals that the function comes from the C standard library (for tooling and future safety analysis).
-
-All function calls use the C calling convention on the target platform (LLVM default).
-
----
-
-## 7. Interoperability
-
-Artemis can call any C-ABI function by declaring it with `extern`. Artemis-compiled functions are also callable from C as long as their signatures map cleanly to C types.
-
-Type correspondence:
-
-| Artemis        | C                  |
-|----------------|--------------------|
-| `char` / `i8`  | `char` / `int8_t`  |
-| `i32`          | `int32_t` / `int`  |
-| `i64`          | `int64_t`          |
-| `u64`          | `uint64_t`         |
-| `f32`          | `float`            |
-| `f64`          | `double`           |
-| `void*`        | `void*`            |
-| `char*` / `i8*`| `char*`            |
-
----
-
-## 8. Grammar (informal)
-
-```
-program       ::= top_level*
-top_level     ::= struct_decl | enum_decl | union_decl | typedef_decl | func_or_var
-func_or_var   ::= type_spec identifier ( func_suffix | var_suffix )
-func_suffix   ::= '(' param_list ')' ( block | ';' )
-var_suffix    ::= ( '[' expr ']' )? ( '=' expr )? ';'
-type_spec     ::= storage_class* qualifier* prim_type pointer_stars
-storage_class ::= 'extern' | 'extern std' | 'inline' | 'register'
-qualifier     ::= 'const' | 'volatile' | 'signed' | 'unsigned'
-prim_type     ::= 'void' | 'char' | 'i8' | 'i16' | ... | 'u8' | ... | 'f32' | ... | 'bool' | 'b1' | ...
-               | identifier  (struct/enum/union/typedef name)
-pointer_stars ::= '*'*
-param_list    ::= (type_spec identifier (',' type_spec identifier)* (',' '...')? )?
-block         ::= '{' stmt* '}'
-stmt          ::= block | var_decl_stmt | expr_stmt | if_stmt | while_stmt
-               | for_stmt | switch_stmt | return_stmt | break_stmt | continue_stmt
-expr          ::= assignment_expr
-assignment_expr ::= ternary_expr ( assign_op assignment_expr )?
-```
-
----
-
-## 9. Method Overloading
-
-Functions with the same name but different parameter types or counts are **overloads**. The compiler picks the best match at the call site.
-
-```c
-void print(i32 x) { ... }
-void print(f64 x) { ... }
-
-print(1);    // calls print(i32)
-print(1.0);  // calls print(f64)
-```
-
-**Name mangling:** When a function is overloaded the compiler emits mangled IR names of the form `funcname__type1_type2`. A function that is **not** overloaded keeps its original name. There is no explicit syntax to trigger mangling; it is automatic.
-
----
-
-## 10. `extern "C"` Blocks
-
-Wrap C-ABI declarations in an `extern "C"` block to prevent name mangling and ensure standard C calling convention.
-
-```c
-extern "C" {
-    void   c_init(i32 flags);
-    i32    c_read(void* buf, u64 len);
-}
-
-void use() {
-    c_init(0);
-    c_read(nullptr, 0);
+auto funcname(params) !T {
+    ...
 }
 ```
 
-All declarations inside the block are treated as if individually declared `extern`. Functions inside an `extern "C"` block may themselves be overloaded (mangling is still suppressed for each individual declaration).
+The actual return type is `!T` — an error union of `T` and any `error.Name` value. See §10.
+
+### 6.3 Variadic Functions
+
+```
+RetType funcname(T param, ...) { ... }
+```
+
+Accepts C-style variadic arguments.
+
+### 6.4 `noexcept`
+
+```
+void funcname() noexcept { ... }
+```
+
+Marks the function as non-throwing. `noexcept(fn())` tests this at compile time.
+
+### 6.5 Generic Functions
+
+```
+T identity<T>(T x) { return x; }
+
+// explicit instantiation
+identity<i32>(42)
+
+// inferred instantiation
+identity(42)   // T inferred as i32
+```
+
+Type parameters go in `<>` after the function name.
+
+### 6.6 Overloading
+
+Artemis does not support function overloading by argument type. Each distinct function must have a unique name. Methods on `istruc` types may have the same name as free functions.
+
+### 6.7 `const_resolve`
+
+```
+const_resolve funcname(params) { ... }
+```
+
+Function macro evaluated at compile time. Used for proc-macro expansion.
 
 ---
 
-## 11. Classes (`istruc`)
+## 7. Namespaces
 
-Artemis uses `istruc` (short for *instance structure*) for class-like aggregate types with methods, inheritance, and virtual dispatch.
+```
+namespace Name {
+    T func(params) { ... }
+    istruc MyClass { ... }
+}
+```
 
-### 11.1 Basic Declaration
+Access with dot notation:
 
-```c
+```
+Name.func(args)
+Name.MyClass var;
+```
+
+Namespaces may be nested:
+
+```
+namespace Outer {
+namespace Inner {
+    void fn() { ... }
+}
+}
+Outer.Inner.fn();
+```
+
+---
+
+## 8. Structs
+
+```
+struct Name {
+    T field0;
+    T field1;
+};
+```
+
+Plain C-style aggregates. No methods. Initialize with aggregate initializer `{ .field = val }` or by direct field assignment.
+
+```
+struct Point { i32 x; i32 y; }
+Point p = Point { .x = 1, .y = 2 };
+```
+
+---
+
+## 9. Enums
+
+Artemis has two distinct enum forms: plain C-style enums and ADT (Algebraic Data Type) enums.
+
+### 9.1 Plain Enum
+
+```
+enum Color { red, green, blue }
+```
+
+Variants are integer constants starting at 0. Access as `Color.red`, etc.
+
+```
+i32 c = Color.green;
+```
+
+### 9.2 ADT Enum (Tagged Unions)
+
+An ADT enum is a tagged union. The variable holds the tag and a payload. There are four variant forms.
+
+**Variant form 1 — plain tag (no payload):**
+
+```
+enum Status { ok, fail }
+Status s = Status.ok;
+```
+
+**Variant form 2 — tuple variant:**
+
+```
+enum Result {
+    ok,
+    err(const i8*, i32),
+}
+Result x = Result.err("bad input", 42);
+const i8* msg  = (*x)[0];
+i32       code = (*x)[1];
+```
+
+Payload fields are accessed by index via `(*var)[N]`.
+
+**Variant form 3 — named struct variant:**
+
+```
+enum Event {
+    none,
+    key_press { i32 key; i32 modifiers; },
+    mouse_move { f32 x; f32 y; },
+}
+Event e = Event.key_press { .key = 65, .modifiers = 0 };
+i32 k = (*e).key;
+```
+
+Payload fields are accessed by name via `(*var).field`.
+
+**Variant form 4 — istruc body variant:**
+
+```
+enum Msg {
+    empty,
+    text .{
+        char* rc;
+        void __construct__(Msg.text* self, char* a) {
+            self.rc = a;
+        }
+    },
+}
+Msg bar = Msg.text("Hello world");
+char* s = (*bar).rc;
+```
+
+The `.{ ... }` form embeds an `istruc`-like body with fields and methods. A user-defined `__construct__` can be declared; its self parameter uses the qualified name `EnumName.VariantName`. Constructor invocation uses `EnumName.VariantName(args...)`.
+
+**Accessing payload — general rule:**
+
+- The enum variable (`bar`) holds the tagged union value (the tag + raw bytes).
+- `(*bar)` dereferences to the actual payload. Use `(*bar).field` for named struct/istruc variants, `(*bar)[N]` for tuple variants.
+
+**Method calls on istruc body variants:**
+
+```
+e.get_code()   // equivalent to: find variant, deref, call method
+```
+
+Method calls directly on the enum variable are supported; the compiler resolves the variant's istruc method.
+
+---
+
+## 10. Error Unions
+
+Error unions express fallible operations without exceptions.
+
+### 10.1 Declaring a Fallible Function
+
+```
+auto maybe_divide(i32 a, i32 b) !i32 {
+    if (b == 0) { return error.DivByZero; }
+    return a / b;
+}
+```
+
+The `!T` trailing return type marks the function as returning either `T` (success) or an error tag.
+
+### 10.2 Error Literals
+
+```
+error.Name
+```
+
+A named error tag. Tags are `i32` values internally. Any name is valid; there is no enum declaration needed.
+
+### 10.3 `except` — Catching Errors
+
+```
+maybe_divide(10, 0) except |e| {
+    // e: error_t — has fields: i32 code, i8* name, i8* payload
+    printf("Error: %s\n", e.name);
+}
+```
+
+The `except |varname| { ... }` block runs only if the preceding expression returned an error. If the expression succeeded, the block is skipped.
+
+### 10.4 `try` — Propagating Errors
+
+```
+auto outer(i32 x) !i32 {
+    i32 v = try inner(x);   // propagates error if inner fails
+    return v * 2;
+}
+```
+
+`try expr` unwraps the value if success, or propagates the error as the current function's return value (which must also be `!T`).
+
+### 10.5 `res` Block
+
+```
+res {
+    // inline error-handling resource block
+    T val = try some_fn();
+    ...
+}
+```
+
+A `res` block scopes error propagation; errors inside propagate out of the block.
+
+---
+
+## 11. Nullable Types
+
+```
+?T name = null;
+?i32 x  = some_value;
+
+if (x == null) { ... }
+if (x != null) { ... use x ... }
+```
+
+`?T` wraps any type to allow `null` as a valid value. This is distinct from pointer nullability.
+
+---
+
+## 12. `istruc` — Classes
+
+`istruc` declares a class (named struct with methods).
+
+### 12.1 Basic Declaration
+
+```
 istruc Point {
     i32 x;
     i32 y;
 
-    void move(&self, i32 dx, i32 dy) {
-        x = x + dx;
-        y = y + dy;
+    void __construct__(Point* self, i32 a, i32 b) {
+        self.x = a;
+        self.y = b;
+    }
+
+    i32 sum(const Point* self) {
+        return self.x + self.y;
     }
 }
 ```
 
-Default member access is **public**. The `istruc` keyword replaces `class`.
+### 12.2 Construction
 
-### 11.2 Self Parameter
+```
+Point p(3, 4);          // parenthesis form
+Point q{3, 4};          // brace form
+Point r = Point { .x = 1, .y = 2 };  // aggregate init (if no __construct__)
+```
 
-Instance methods use `&self` (mutable) or `&const self` (immutable) as the first parameter. The parameter is **implicitly passed** by the caller — it does not appear in call sites. Inside the body, `self` refers to the current instance pointer, and all fields are also directly in scope.
+The `= expr` form calls `operator=` if defined; otherwise raw store. It does not invoke the constructor.
 
-```c
+### 12.3 Method Calls
+
+```
+p.sum()         // self pointer is implicit
+p.scale(2)
+```
+
+Inside a method, `self` refers to the implicit first parameter (which must be declared explicitly).
+
+### 12.4 `const` Methods
+
+```
+i32 get(const Point* self) { return self.x; }
+```
+
+Declare `self` as `const T*` to prevent mutation.
+
+### 12.5 `static` Members
+
+```
 istruc Counter {
-    i32 value;
+    static i32 count;
+    ...
+}
+Counter.count = 0;
+```
 
-    void increment(&self) { value = value + 1; }
-    i32  get(&const self) { return value; }
+### 12.6 Operator Overloading
+
+Supported operators: `operator[]`, `operator=`, and others declared via `operator` keyword.
+
+```
+istruc Vec {
+    i32 data[4];
+    i32 operator[](Vec* self, i32 i) { return self.data[i]; }
+    void operator=(Vec* self, Vec* other) { ... }
 }
 ```
 
-### 11.3 Access Modifiers
+`operator=` is called when assigning to an `istruc` variable if defined.
 
-Access modifiers are **per-member** (Java style), not section-based:
+### 12.7 `consteval`
 
-```c
-istruc Foo {
-    public  i32 visible;
-    private i32 hidden;
+```
+consteval Timer u;
+u.__construct__(20);  // user calls constructor manually
+```
 
-    public void bar(&self) {}
-    private void internal(&self) {}
+`consteval` allocates the object without running any constructor. The user must call `__construct__` explicitly.
+
+### 12.8 Generic `istruc`
+
+```
+istruc Box<T> {
+    T value;
 }
-```
-
-### 11.4 Inheritance
-
-Single inheritance via `:`:
-
-```c++
-istruc Animal {
-    int legs;
-    virtual void speak() {}
-}
-
-istruc Dog : Animal {
-    int fur_length;
-    void speak() override { /* ... */ }
-}
-```
-
-All methods inherited from a base are automatically virtual unless the override is marked `final`.
-
-### 11.5 Virtual Methods and `mandatory`
-
-```c++
-istruc Base {
-    virtual void optional() {}            // base impl, override not required
-    mandatory virtual void required();    // derived MUST implement
-}
-```
-
-A `mandatory virtual` method must be overridden in every non-abstract derived class; failing to do so is a compile-time error.
-
-### 11.6 Method Qualifiers
-
-After `)` and before `{`:
-
-| Qualifier  | Meaning                                           |
-|------------|---------------------------------------------------|
-| `const`    | Method does not mutate the instance               |
-| `override` | Explicitly marks this as overriding a base method |
-| `final`    | Prevents further overriding in derived classes    |
-
-```c
-void tick(&const self) const override final {}
-```
-
-### 11.7 Static Methods
-
-```c
-istruc Math {
-    static i32 abs(i32 x) { return x < 0 ? -x : x; }
-}
-```
-
-`static` methods belong to the class, not an instance. They do not receive `&self`.
-
-### 11.8 Constructor and Destructor
-
-The constructor is named `__construct__` and the destructor `__destruct__`. Constructor init-list syntax is supported:
-
-```c
-istruc Vec2 {
-    i32 x; i32 y;
-    __construct__(&self, i32 vx, i32 vy) : x(vx), y(vy) {}
-    __destruct__(&self) {}
-}
-```
-
-### 11.9 Operator Overloading
-
-```c++
-istruc Vec2 {
-    i32 x; i32 y;
-
-    Vec2 operator+(&const self, Vec2 rhs) const {
-        Vec2 result;
-        result.x = x + rhs.x;
-        result.y = y + rhs.y;
-        return result;
-    }
-}
-```
-
-### 11.10 Conversion Operators
-
-```c++
-istruc MyFloat {
-    f64 val;
-    operator f64() const { return val; }
-    operator int() const { return (i32)val; }
-}
-```
-
-### 11.11 `local` (Friend-like)
-
-`local` grants access to private members of the class, similar to C++ `friend`:
-
-```c++
-istruc Secret {
-    private i32 hidden;
-    local void expose(Secret* s);
-}
-```
-
-### 11.12 Virtual Data Members
-
-```c
-istruc Node {
-    virtual i32 id;   // must be same type in every derived class
-}
-```
-
----
-
-## 12. Function Pointers
-
-Syntax: `returntype(paramlist)* varname`
-
-```c
-i32 add(i32 a, i32 b) { return a + b; }
-
-void demo() {
-    i32(i32 a, i32 b)* fp = &add;
-    i32 result = fp(3, 4);   // indirect call
-}
-```
-
-Parameter names in the function pointer type are optional; only the types are significant:
-
-```c
-void(i32, i32)* callback;   // no param names — legal
-```
-
-Taking the address of a function:
-
-```c
-void(i32 x)* p = &my_func;
-```
-
-Function pointers can be stored in structs, passed as parameters, and returned from functions.
-
----
-
-## 13. Allocators (`memstr`)
-
-Artemis uses Zig-style allocators for explicit, composable heap control.
-
-### 13.1 The `memstr` Interface
-
-Every allocator exposes three operations through a vtable:
-
-| Method   | Signature                         | Description                          |
-|----------|-----------------------------------|--------------------------------------|
-| `.mmap`  | `void*(u128 size) -> void*`       | Allocate `size` bytes                |
-| `.rmap`  | `void*(void* ptr, u128 new_size)` | Reallocate an existing allocation    |
-| `.deinit`| `void()`                          | Release all resources in the allocator |
-
-### 13.2 Accepting an Allocator
-
-Any function that allocates heap memory must take `&memstr <name>` as a parameter:
-
-```c
-void* create_buffer(&memstr alloc, u64 size) {
-    return alloc.mmap(size);
-}
-```
-
-### 13.3 Passing an Allocator
-
-Allocators are passed explicitly. An implicit default allocator (backed by `malloc`/`realloc`/`free`) is used when no allocator is provided:
-
-```c
-void* buf = create_buffer(size);         // implicit default allocator
-void* buf2 = create_buffer(my_alloc, size); // explicit custom allocator
-```
-
-### 13.4 Deinitialising
-
-Call `.uinit()` to run the allocator's `deinit` function and release all tracked memory:
-
-```c
-alloc.uinit();
-```
-
-### 13.5 `memstr` vs `&memstr` — Declaration vs Reference
-
-**`memstr TypeName { }`** declares a type that manages its own heap memory. Types from `std.alloc` (bump, arena, pool, etc.) are all `memstr` types. They can be created as ordinary stack variables:
-
-```arc
-bump a(4096);   // stack variable — fine, bump is a memstr type
-a.alloc_bytes(64);
-a.deinit();
-```
-
-The compiler does NOT require a `&memstr` context just to create or use a `memstr` value. The constraint is only in the other direction: a function that accepts `&memstr alloc` can receive any `memstr` instance.
-
-**`&memstr name`** in a function parameter means "accept any memstr-compatible allocator by reference". The allocator's concrete type is erased; only its `alloc_raw`, `realloc`, and `free` interface is used. This is how generic allocating functions are written.
-
-A plain `istruc` that contains `malloc`/`free` calls directly is rejected by the compiler — only types declared with `memstr` may manage heap memory internally.
-
-### 13.6 `defer` — Scope-Exit Execution
-
-The `defer` keyword schedules an expression or block to run at the end of the current scope (LIFO order if multiple). Deferred items also run before any `return` in the scope.
-
-```c
-void use_allocator(&memstr alloc) {
-    defer alloc.uinit();              // runs on scope exit
-
-    void* buf = alloc.mmap(1024);
-    defer alloc.rmap(buf, 0);         // frees buf on scope exit (after uinit? reversed)
-
-    // ... use buf ...
-}   // deferred items run here in reverse order
-```
-
-`defer` with a block:
-
-```c
-void f() {
-    defer {
-        log("cleanup");
-        flush();
-    }
-    // ... work ...
-}
-```
-
----
-
-## 14. Updated Grammar
-
-The grammar from §8 is extended with the new constructs:
-
-```
-top_level ::= ... | istruc_decl | extern_c_block | memstr_decl | func_or_var
-
-istruc_decl ::= 'istruc' identifier (':' identifier)? '{' class_member* '}'
-class_member ::= access_modifier? field_decl
-               | access_modifier? method_decl
-
-access_modifier ::= 'public' | 'private' | 'protected'
-
-field_decl  ::= ['virtual'] type_spec identifier ';'
-method_decl ::= ['static'] ['mandatory'] ['virtual'] type_spec identifier
-                '(' method_params ')' method_qualifiers (block | ';')
-method_params  ::= ('&self' | '&const self')? (',' param)*
-method_qualifiers ::= ('const' | 'override' | 'final')*
-
-extern_c_block ::= 'extern' '"C"' '{' func_or_var_proto* '}'
-
-func_ptr_type  ::= type_spec '(' param_list ')' '*'
-type_spec      ::= ... | func_ptr_type | '&self' | '&const self' | '&memstr'
-
-stmt ::= ... | defer_stmt
-defer_stmt ::= 'defer' (block | expr ';')
-
-expr ::= ... | expr '->' identifier    (desugars to (*expr).identifier)
-```
-
-## 15. Additional Features
-
-### 15.1 `noexcept`
-
-`noexcept` may appear as a method/function modifier (after `)` before `{`, or
-among the leading modifiers of a class method). It is also valid as a unary
-operator `noexcept(expr)`, which evaluates to a compile-time `bool` (currently
-always `true`). `noexcept` is informational only; it does not affect codegen.
-
-```
-void foo() noexcept {}
-i32  bar() noexcept const override {}     // inside a class
-bool b = noexcept(foo());
-```
-
-### 15.2 `explicit`
-
-`explicit` may be applied to a class constructor (`__construct__`). It is parsed
-and recorded (`class_method.is_explicit`) but currently does not change codegen.
-
-```
-explicit void __construct__(&self, i32 a) { self.v = a; }
-```
-
-### 15.3 Stackable method modifiers
-
-Class method modifiers may now appear in any combination/order, subject to:
-an access modifier (`public`/`private`/`protected`) comes first; the return type
-is directly before the name and `(`; and `const`/`override`/`final`/`noexcept`
-may also appear after `)`. The set `virtual`, `mandatory`, `static`, `explicit`,
-`noexcept`, `const`, `override`, `final` is accepted in any stack.
-
-```
-public final void x() noexcept const override {}
-```
-
-### 15.4 Implicit constructors
-
-A variable declaration may invoke a constructor directly:
-
-```
-Point p(3, 4);     // equivalent to: Point p; p.__construct__(3, 4);
-Point q{10, 20};   // brace form
-Counter c;         // auto-calls a no-arg __construct__ if one exists
-```
-
-The constructor is resolved by walking the class inheritance chain for
-`ClassName__MT___construct__`. A zero-argument (self-only) constructor is invoked
-automatically even without explicit `()`.
-
-### 15.5 Virtual inheritance rules
-
-A method/field is virtual in a derived class only if it is explicitly declared
-`virtual` (or `mandatory virtual`), or it is `override`/`final` of a method that
-occupies a base vtable slot. Non-overriding plain methods in a derived class are
-NOT virtual and do not enter the vtable.
-
-### 15.6 Class value initialization
-
-Named-field struct initialization is supported for class types, with an explicit
-type name or a context-inferred `.{ ... }`:
-
-```
-Token x = Token { .id = 5, .kind = 6 };
-Token y = .{ .id = 1, .kind = 2 };       // type inferred from the variable
-```
-
-### 15.7 Generics (monomorphization)
-
-Functions and istruc/struct declarations may declare type parameters in `<...>`.
-Concrete uses are monomorphized: a specialized instance is emitted on first use
-for each distinct set of type arguments (mangled as `name__G_<t1>_<t2>...`).
-Type arguments may be explicit or inferred from argument types.
-
-```c++
-T identity<T>(T x) { return x; }
-i32 a = identity(42);        // T inferred as i32
-i64 b = identity<i64>(99);   // explicit
-
-istruc Box<T> { T value; }
 Box<i32> b;
+b.value = 77;
 ```
 
-### 15.8 `constexpr`
+Type parameters go in `<>` after the class name.
 
-`constexpr` constant variables, `constexpr if` / `if constexpr` (compile-time
-branch elimination), and `constexpr { ... }` blocks are supported. The `sta`
-keyword is reserved for comptime type-erased parameters.
+### 12.9 Interfaces
+
+```
+interface Describable {
+    i32 describe(Describable* self);
+}
+
+istruc Point : Describable {
+    i32 x; i32 y;
+    i32 describe(Point* self) { return self.x * 100 + self.y; }
+}
+```
+
+A class declares conformance to an interface with `: InterfaceName`. The compiler verifies that all declared methods and fields are present.
+
+Interface field stubs:
+
+```
+interface HasId {
+    i32 id;
+    i8* name = (i8*)0;   // optional field with default value
+}
+```
+
+Fields without defaults must be present in the implementing struct. Fields with defaults are optional.
+
+### 12.10 Method Name Mangling
+
+Methods are internally mangled as `ClassName__MT_methodname`. `operator=` is `ClassName__MT_operator=`. This is an implementation detail; user code uses the `.method()` syntax.
+
+---
+
+## 13. Allocators / `memstr`
+
+Artemis does not have a built-in heap allocator keyword. Allocation is explicit via `malloc`/`free` or user-defined allocator structs.
+
+The `memstr` type marker in function parameters indicates an allocator-compatible struct:
+
+```
+void push(vector* self, T val, &memstr a) {
+    // a is an allocator passed by reference
+    a.mmap(size);    // allocate
+    a.deinit(ptr);   // free
+}
+```
+
+`&memstr name` in a parameter list accepts any istruc that provides allocator methods. This is a structural duck-typing mechanism.
+
+Standard allocator patterns:
+
+- **Heap allocator**: wraps `malloc`/`free` in an `istruc`
+- **Arena allocator**: bump-pointer allocator over a single block
+- **Pool allocator**: fixed-size slab allocator
+
+---
+
+## 14. Generics
+
+### 14.1 Generic Functions
+
+```
+T max<T>(T a, T b) { return a > b ? a : b; }
+
+// usage
+max<i32>(3, 5)    // explicit
+max(3, 5)          // inferred
+```
+
+### 14.2 Generic Structs
+
+```
+istruc Pair<A, B> {
+    A first;
+    B second;
+}
+
+Pair<i32, f64> p;
+p.first = 1;
+p.second = 2.0;
+```
+
+### 14.3 `sta` — Comptime Type-Erased Parameters
+
+`sta` marks a compile-time-erased parameter (structural typing without a concrete type name). Used internally for generic allocator passing.
+
+---
+
+## 15. Preprocessor
+
+Preprocessor directives use `@`:
+
+| Directive | Description |
+|-----------|-------------|
+| `@define <NAME> <value>` | Define a macro constant |
+| `@undef <NAME>` | Undefine a macro |
+| `@ifdef <NAME>` | Conditional: if defined |
+| `@ifndef <NAME>` | Conditional: if not defined |
+| `@else` | Else branch |
+| `@elif <NAME>` | Else-if branch |
+| `@elifdef <NAME>` | Else-if defined |
+| `@elifndef <NAME>` | Else-if not defined |
+| `@endif` | End conditional block |
+| `@error <message>` | Emit compile error |
+| `@include <file>` | Include source file |
+| `@embed <file>` | Embed file contents as code |
+| `@pragma once` | Include guard |
+
+Example:
+
+```
+@define <DEBUG> <1>
+@define <MAX_SIZE> <1024>
+
+@ifdef DEBUG
+    printf("debug mode\n");
+@endif
+```
+
+---
+
+## 16. Inline Assembly
+
+```
+__asm__ {
+    instructions
+    : inputname "constraint" (var)
+    : outputname "=constraint" (var)
+    : "clobbers"
+}
+```
+
+- Instructions reference variables by `%name` or positional `*N`.
+- Constraint modifiers: `"r"` (register), `"m"` (memory), `"i"` (immediate).
+- `"cca"` as a clobber string means auto-detect.
+- All three `:` sections are optional.
+
+Example:
+
+```
+i32 a = 3; i32 b = 4; i32 result;
+__asm__ {
+    add %a, %b
+    : result "=r" (result)
+    : a "r" (a), b "r" (b)
+}
+```
+
+---
+
+## 17. `constexpr` / `consteval`
+
+### 17.1 `constexpr` Variables
 
 ```
 constexpr i32 N = 6;
-if constexpr (1 < 2) { ... } else { ... }   // only the taken branch is emitted
-constexpr if (COND) { ... }
+constexpr i32 M = N + 1;   // computed at compile time
 ```
 
-### 15.9 Inline Assembly (`__asm__`)
+`constexpr` variables are compile-time constants usable as array sizes, template arguments, and in constant expressions.
 
-Artemis supports Intel-syntax inline assembly via the `__asm__` statement. The body is a `{ }` block whose content is split into sections by lines whose first non-whitespace character is `:`.
+### 17.2 `constexpr if`
 
 ```
-__asm__ {
-    <instructions>
-    : "modifier"(input_var), ...
-    : "=modifier"(output_var), ...
-    : "clobber_reg", ...
+constexpr if (SOME_CONST == 1) {
+    ...
 }
 ```
 
-Sections after the second `:` list clobbered registers. Any section may be empty or absent. Inside the instruction text, `%varname` is replaced by the corresponding LLVM operand index (`$N`).
+The branch that is not taken is not compiled.
 
-```c
-i32 a = 7, b = 5, result = 0;
-__asm__ {
-    mov eax, %a
-    add eax, %b
-    mov %result, eax
-    : "r"(a), "r"(b)
-    : "=r"(result)
-    : "eax"
-}
-// result == 12
-```
-
-Rules:
-- All variables referenced with `%name` in the instruction text must appear in an input or output constraint section.
-- Output constraints must use the `"=modifier"` form.
-- The `__asm__` without any constraint sections is valid (useful for `nop` or side-effect instructions):
-  `__asm__ { nop }`
-
-### 15.10 Access Modifier Enforcement
-
-The semantic analyser enforces access modifiers on class members:
-
-| Modifier    | Accessible from                              |
-|-------------|----------------------------------------------|
-| `public`    | Anywhere                                     |
-| `private`   | Only methods of the **same** class           |
-| `protected` | Methods of the same class or any derived class |
-
-Accessing a `private` or `protected` member from a disallowed context is a compile-time error:
-
-```c++
-istruc Wallet {
-    private i32 balance;
-    public i32 get(&const self) { return self.balance; }  // OK: same class
-}
-
-i32 main() {
-    Wallet w;
-    i32 x = w.balance;  // ERROR: 'balance' is private
-    i32 y = w.get();    // OK: public method
-}
-```
-
-### 15.11 Grammar additions
+### 17.3 `consteval` Variables
 
 ```
-func_decl   ::= type_spec identifier type_params? '(' params ')' 'noexcept'? (block | ';')
-istruc_decl ::= 'istruc' identifier type_params? (':' identifier)? '{' class_member* '}'
-type_params ::= '<' identifier (',' identifier)* '>'
-type_spec   ::= ... | identifier type_args?
-type_args   ::= '<' type_spec (',' type_spec)* '>'
+consteval Timer u;
+u.__construct__(20);
+```
 
-method_modifiers  ::= ('virtual'|'mandatory'|'static'|'explicit'|'noexcept'
-                       |'const'|'override'|'final')*
-method_qualifiers ::= ('const'|'override'|'final'|'noexcept')*
+`consteval` declares a variable without running its constructor. The user invokes `__construct__` manually. Useful when construction order must be controlled explicitly.
 
-call        ::= identifier type_args? '(' args ')'
-expr        ::= ... | type_name '{' field_init (',' field_init)* '}'
-              | '.{' field_init (',' field_init)* '}'      (context-inferred)
-              | 'noexcept' '(' expr ')'
-field_init  ::= '.' identifier '=' expr
-var_decl    ::= type_spec identifier ( '(' args ')' | '{' args '}' )? ('=' expr)? ';'
+---
 
-stmt        ::= ... | 'constexpr'? 'if' '(' expr ')' stmt ('else' stmt)?
-              | 'if' 'constexpr' '(' expr ')' stmt ('else' stmt)?
-              | 'constexpr' type_spec identifier '=' expr ';'
-              | 'constexpr' block
-              | '__asm__' asm_body
+## 18. Type Reflection
 
-asm_body    ::= '{' asm_instructions (':' asm_constraints)* '}'
-asm_constraints ::= ('"' modifier '"' '(' varname ')' (',' ...)*)?
+```
+get_ifo_t(Type)
+```
+
+Returns compile-time type information for `Type`. Used for proc-macro and metaprogramming purposes.
+
+---
+
+## 19. Standard Library
+
+Standard library modules are imported with:
+
+```
+extern std.module_name;
+```
+
+### 19.1 `std.fmt`
+
+Full I/O and string formatting library.
+
+**Stdout:**
+```
+std.fmt.out_print(i8* s)
+std.fmt.out_println(i8* s)
+std.fmt.out_print_i32(i32 v)
+std.fmt.out_print_i64(i64 v)
+std.fmt.out_print_u32(u32 v)
+std.fmt.out_print_u64(u64 v)
+std.fmt.out_print_f32(f32 v)
+std.fmt.out_print_f64(f64 v)
+std.fmt.out_print_bool(bool b)
+std.fmt.out_print_char(i8 c)
+std.fmt.out_print_hex(u64 v)
+std.fmt.out_print_ptr(void* p)
+std.fmt.out_flush()
+```
+
+**Stderr:**
+```
+std.fmt.err_print(i8* s)
+std.fmt.err_println(i8* s)
+std.fmt.err_print_i32(i32 v)
+std.fmt.err_flush()
+```
+
+**Buffer formatting:**
+```
+i32 std.fmt.fmt_i32(i8* buf, u64 cap, i32 v)
+i32 std.fmt.fmt_i64(i8* buf, u64 cap, i64 v)
+i32 std.fmt.fmt_u32(i8* buf, u64 cap, u32 v)
+i32 std.fmt.fmt_u64(i8* buf, u64 cap, u64 v)
+i32 std.fmt.fmt_f64(i8* buf, u64 cap, f64 v)
+i32 std.fmt.fmt_hex(i8* buf, u64 cap, u64 v)
+i32 std.fmt.fmt_ptr(i8* buf, u64 cap, void* p)
+```
+
+**File I/O (low-level):**
+```
+void* std.fmt.file_open(i8* path, i8* mode)
+i32   std.fmt.file_close(void* fp)
+u64   std.fmt.file_read_bytes(void* fp, void* buf, u64 n)
+u64   std.fmt.file_write_bytes(void* fp, void* buf, u64 n)
+i64   std.fmt.file_read_all(i8* path, i8* buf, u64 cap)
+bool  std.fmt.file_at_eof(void* fp)
+bool  std.fmt.file_has_error(void* fp)
+void  std.fmt.file_seek_start(void* fp, i64 off)
+void  std.fmt.file_seek_cur(void* fp, i64 off)
+void  std.fmt.file_seek_end(void* fp, i64 off)
+i64   std.fmt.file_tell(void* fp)
+void  std.fmt.file_flush(void* fp)
+```
+
+**String operations:**
+```
+i32  std.fmt.str_len(i8* s)
+bool std.fmt.str_eq(i8* a, i8* b)
+void std.fmt.str_copy(i8* dst, i8* src, u64 cap)
+void std.fmt.str_append(i8* dst, i8* src, u64 cap)
+bool std.fmt.str_starts_with(i8* s, i8* prefix)
+bool std.fmt.str_ends_with(i8* s, i8* suffix)
+i32  std.fmt.str_find(i8* haystack, i8* needle)
+i32  std.fmt.str_to_i32(i8* s)
+i64  std.fmt.str_to_i64(i8* s)
+```
+
+### 19.2 `std.fs`
+
+File system operations.
+
+**`istruc std.fs.file`** — file handle:
+```
+bool open(file* self, i8* path, i8* mode)
+void close(file* self)
+u64  read_bytes(file* self, void* buf, u64 n)
+u64  write_bytes(file* self, void* buf, u64 n)
+bool write_str(file* self, i8* s)
+i32  read_char(file* self)
+bool read_line(file* self, i8* buf, i32 cap)
+void seek_start(file* self, i64 off)
+void seek_cur(file* self, i64 off)
+void seek_end(file* self, i64 off)
+i64  tell(file* self)
+i64  size(file* self)
+i64  read_all(file* self, i8* buf, u64 cap)
+bool at_eof(file* self)
+bool has_error(file* self)
+bool is_open(file* self)
+void flush(file* self)
+```
+
+**Path utilities (`std.fs.path`):**
+```
+bool std.fs.path.exists(i8* p)
+bool std.fs.path.is_readable(i8* p)
+bool std.fs.path.is_writable(i8* p)
+i32  std.fs.path.basename_start(i8* path)
+i32  std.fs.path.extension_start(i8* path)
+void std.fs.path.join(i8* out, u64 cap, i8* dir, i8* name)
+```
+
+**Directory / misc:**
+```
+bool std.fs.make_dir(i8* path)
+bool std.fs.remove_file(i8* path)
+bool std.fs.remove_dir(i8* path)
+bool std.fs.rename_path(i8* old, i8* new)
+i8*  std.fs.cwd(i8* buf, u64 cap)
+bool std.fs.cd(i8* path)
+```
+
+**Constants:** `std.fs.F_OK`, `R_OK`, `W_OK`, `X_OK`
+
+### 19.3 `std.vector`
+
+Dynamic resizable array.
+
+```
+extern std.vector;
+
+std.vector<i32> v;              // default construct
+std.vector<i32> v(cap, alloc); // with initial capacity
+```
+
+**Methods:**
+```
+void push(vector* self, T val, &memstr a)
+T    pop(vector* self)
+T    at(vector* self, i32 i)
+T*   get(vector* self, i32 i)
+void set(vector* self, i32 i, T val)
+void insert(vector* self, i32 idx, T val, &memstr a)
+void remove_at(vector* self, i32 idx)
+void clear(vector* self)
+bool is_empty(vector* self)
+i32  size(vector* self)
+i32  capacity(vector* self)
+T*   raw(vector* self)
+bool contains(vector* self, T val)
+i32  index_of(vector* self, T val)
+void reserve(vector* self, i32 new_cap, &memstr a)
+void resize(vector* self, i32 new_len, T fill, &memstr a)
+void reverse(vector* self)
+void grow(vector* self, &memstr a)
+void deinit(vector* self, &memstr a)
+T    operator[](vector* self, i32 i)
+```
+
+**Free functions:**
+```
+std.vector<T> std.make_vector<T>(T* ptr, i32 len)
+T*             std.make_ptr<T>(vector<T>* v)
+```
+
+### 19.4 `std.hash`
+
+Non-cryptographic and cryptographic hash functions.
+
+**Wyhash:**
+```
+u64 std.hash.wyhash_hash_bytes(u8* data, u64 len, u64 seed)
+u64 std.hash.wyhash_hash_str(i8* s, u64 seed)
+u64 std.hash.wyhash_hash_i64(i64 v, u64 seed)
+u64 std.hash.wyhash_hash_u64(u64 v, u64 seed)
+u64 std.hash.wyhash_hash_f64(f64 v, u64 seed)
+```
+
+**FNV-1a:**
+```
+u64 std.hash.fnv_hash_bytes(u8* data, u64 len)
+u64 std.hash.fnv_hash_str(i8* s)
+u32 std.hash.fnv_hash32_bytes(u8* data, u64 len)
+```
+
+**SHA-256:**
+```
+struct std.hash.sha256_digest { u8 bytes[32]; }
+
+istruc std.hash.sha256_ctx {
+    void __construct__(sha256_ctx* self)
+    void update(sha256_ctx* self, u8* data, u64 len)
+    sha256_digest finalize(sha256_ctx* self)
+}
+
+std.hash.sha256_digest std.hash.sha256_hash_bytes(u8* data, u64 len)
+std.hash.sha256_digest std.hash.sha256_hash_str(i8* s)
+```
+
+**Constants:** `std.hash.FNV_OFFSET`, `std.hash.FNV_PRIME`, `WYHASH_SECRET0`–`WYHASH_SECRET3`
+
+### 19.5 `std.atomic`
+
+Atomic-style primitives (currently implemented as direct field ops — not yet hardware-atomic).
+
+**Types:** `std.atomic.i32_t`, `i64_t`, `bool_t`, `ptr_t`, `spin_lock`, `ref_count`
+
+**`i32_t` methods:**
+```
+i32  load(i32_t* self)
+void store(i32_t* self, i32 v)
+i32  fetch_add(i32_t* self, i32 delta)
+i32  fetch_sub(i32_t* self, i32 delta)
+i32  fetch_and(i32_t* self, i32 mask)
+i32  fetch_or(i32_t* self, i32 mask)
+i32  fetch_xor(i32_t* self, i32 mask)
+i32  compare_exchange(i32_t* self, i32 expected, i32 desired)
+bool cas(i32_t* self, i32 expected, i32 desired)
+i32  inc(i32_t* self)
+i32  dec(i32_t* self)
+```
+
+**Fence stubs:** `std.atomic.fence_acquire()`, `fence_release()`, `fence_seq_cst()`
+
+**Constants:** `RELAXED`, `ACQUIRE`, `RELEASE`, `ACQ_REL`, `SEQ_CST`
+
+### 19.6 `std.encode`
+
+Unicode encode/decode utilities.
+
+**UTF-8:**
+```
+u32 std.encode.utf8_decode_one(u8* buf, u64 len, u64* pos)
+i32 std.encode.utf8_encode_one(u32 cp, u8* buf)
+bool std.encode.utf8_validate(u8* buf, u64 len)
+i32  std.encode.utf8_count(u8* buf, u64 len)
+```
+
+**`istruc std.encode.utf8_string`** — UTF-8 string wrapper:
+```
+i32  len_bytes(utf8_string* self)
+u8*  raw(utf8_string* self)
+i8*  c_str(utf8_string* self)
+bool eq(utf8_string* self, utf8_string* o)
+```
+
+**UTF-16:**
+```
+u32 std.encode.utf16_decode_one(u16* buf, u64 len_units, u64* pos)
+i32 std.encode.utf16_encode_one(u32 cp, u16* buf)
+```
+
+**`istruc std.encode.utf16_string`**, **`istruc std.encode.utf32_string`** — analogous wrappers.
+
+### 19.7 `std.debug`
+
+Assertions and panic.
+
+```
+void std.debug.panic(i8* msg)
+void std.debug.panic_fmt(i8* fmt, i32 val)
+void std.debug.bounds_check(i32 idx, i32 len, i8* context)
+void std.debug.null_check(void* p, i8* context)
+void std.debug.assert(bool cond, i8* msg)   // only active when @define <DEBUG> <1>
+void std.debug.poison(void* p, u64 n)
+bool std.debug.is_poisoned(void* p, u64 n)
+void std.debug.breakpoint()
+```
+
+### 19.8 `std.test`
+
+Test runner and assertion framework.
+
+**`istruc std.test.runner`** — test runner:
+```
+void begin(runner* self, i8* name)
+void record_fail(runner* self)
+void end(runner* self)
+i32  finish(runner* self)   // returns 1 if any tests failed, 0 otherwise
+```
+
+**`istruc std.test.test_alloc`** — tracking allocator:
+```
+void* alloc(test_alloc* self, u64 size)
+void  dealloc(test_alloc* self, void* p, u64 size)
+bool  has_leaks(test_alloc* self)
+i32   leak_count(test_alloc* self)
+void  report_leaks(test_alloc* self)
+```
+
+**Hard assertions (abort on failure):**
+```
+void std.test.assert_true(bool cond, i8* msg, i8* file, i32 line)
+void std.test.assert_false(bool cond, i8* msg, i8* file, i32 line)
+void std.test.assert_eq_i32(i32 a, i32 b, i8* msg, i8* file, i32 line)
+void std.test.assert_eq_i64(i64 a, i64 b, i8* msg, i8* file, i32 line)
+void std.test.assert_eq_f64(f64 a, f64 b, f64 eps, i8* msg, i8* file, i32 line)
+void std.test.assert_eq_str(i8* a, i8* b, i8* msg, i8* file, i32 line)
+void std.test.assert_null(void* p, i8* msg, i8* file, i32 line)
+void std.test.assert_not_null(void* p, i8* msg, i8* file, i32 line)
+```
+
+**Soft assertions (record failure, continue):**
+```
+void std.test.expect_true(runner* r, bool cond, i8* msg)
+void std.test.expect_eq_i32(runner* r, i32 a, i32 b, i8* msg)
+void std.test.expect_eq_str(runner* r, i8* a, i8* b, i8* msg)
+void std.test.expect_null(runner* r, void* p, i8* msg)
+void std.test.expect_not_null(runner* r, void* p, i8* msg)
 ```
 
 ---
 
-## 16. Standard Library (`extern std.*`)
+## 20. Compiler Flags
 
-The standard library lives under `compiler/std/include/`. Each package is a single `.arc` file (or `pkg/module.arc` for sub-packages). Import with:
+| Flag | Description |
+|------|-------------|
+| `-O0` | No optimization |
+| `-O1` | Basic optimization |
+| `-O2` | Standard optimization |
+| `-O3` | Aggressive optimization |
+| `-emit-llvm` | Emit LLVM IR instead of native binary |
+| `-o <file>` | Output file path |
+| `-I <dir>` | Add include search directory |
+| `--no-std` | Do not include standard library |
 
-```arc
-extern std.<pkg>;          // e.g. extern std.math;
-extern std.<pkg>.<mod>;   // e.g. extern std.alloc.bump;
-```
+---
 
-All exported types and functions are accessible by their bare (unqualified) names after import.
+## 21. Default Initialization Rules
 
-### 16.1 `std.alloc` — Allocators
+| Type | Default value |
+|------|--------------|
+| Integer (`iN`, `uN`) | `0` |
+| Float (`fN`) | `0.0` |
+| Bool | `false` |
+| Pointer (`T*`) | `null` (0) |
+| `char*` / `i8*` / `u8*` | writable stack-allocated `""` |
+| `?T` | `null` |
+| `istruc` with zero-arg `__construct__` | constructor called |
+| `istruc` without constructor | zeroed memory |
+| Array | elements zero-initialized |
 
-Sub-packages: `std.alloc.bump`, `std.alloc.arena`, `std.alloc.pool`, `std.alloc.ring`, `std.alloc.free_list`, `std.alloc.slab`.
+---
 
-Each allocator is an `istruc` (same name as the sub-package, e.g. `bump`) that implements a `memstr`-compatible interface: `alloc`, `realloc`, `free`, and `reset` / `destroy` where applicable. Constructor takes allocator-specific parameters (capacity in bytes, object size, etc.).
+## Appendix A: Keyword Reference
 
-| Type | Strategy |
-|------|----------|
-| `bump` | Linear bump pointer; O(1) alloc, O(1) reset |
-| `arena` | Multi-block bump with automatic growth |
-| `pool` | Fixed-size object pool; O(1) alloc and free |
-| `ring` | Circular ring buffer allocator |
-| `free_list` | Intrusive free-list; arbitrary-size coalescing |
-| `slab` | Page-based slab for small fixed-size objects |
-
-### 16.2 `std.math` — Mathematics
-
-Import: `extern std.math;`
-
-**Constants:** `PI`, `TAU`, `E`, `PHI`, `SQRT2`, `LN2`, `LN10`, `INF`, `NAN_V`
-
-**Integer utilities:** `abs_i32`, `abs_i64`, `min_i32`, `max_i32`, `min_i64`, `max_i64`, `min_f32`, `max_f32`, `min_f64`, `max_f64`, `clamp_i32`, `clamp_f32`, `clamp_f64`, `sign_i32`, `sign_f64`, `gcd`, `lcm`, `div_ceil`, `div_floor`, `is_even`, `is_odd`, `is_power_of_two`, `next_power_of_two`, `popcount_u32`, `clz_u32`, `ctz_u32`, `bit_reverse_u32`
-
-**Floating-point:** `lerp`, `lerp_f32`, `deg_to_rad`, `rad_to_deg`, `snap`, `log_base`
-
-**Geometry:** `istruc vec2`, `istruc vec3`, `istruc mat4`, `istruc quat` — all with standard arithmetic operators and methods (add, sub, dot, cross, normalize, len, rotate, etc.)
-
-**Statistics** (behind `extern std.math;`): `mean`, `variance`, `std_dev` — operate on `f64*` arrays.
-
-C libm externs (`sin`, `cos`, `sqrt`, `fabs`, `floor`, `ceil`, `pow`, etc.) are re-exported by this module.
-
-### 16.3 `std.rand` — Random Number Generation
-
-Import: `extern std.rand;`
-
-| Type | Algorithm |
-|------|-----------|
-| `xoshiro_state` | Xoshiro256** — high-quality 64-bit generator |
-| `pcg_state` | PCG32 — 32-bit generator with stream control |
-
-**`xoshiro_state` constructor:** `xoshiro_state rng(seed_u64)`
-
-**`xoshiro_state` methods:** `next_u64`, `next_u32`, `next_f64`, `next_f32`, `next_bool`, `range_i32(lo, hi)`, `range_f64(lo, hi)`, `fill_bytes(buf, n)`
-
-**`pcg_state` constructor:** `pcg_state rng(seed_u64, seq_u64)`
-
-**`pcg_state` methods:** `next_u32`, `next_f64`, `next_bool`, `range_i32(lo, hi)`
-
-**Free function:** `gaussian(xoshiro_state* rng, f64 mean, f64 std_dev)` — Box-Muller normal distribution.
-
-### 16.4 `std.hash` — Hashing
-
-Import: `extern std.hash;`
-
-**FNV-1a:** `fnv1a_32(u8* data, u64 len)` → `u32`, `fnv1a_64(u8* data, u64 len)` → `u64`
-
-**WyHash:** `wyhash(u8* data, u64 len, u64 seed)` → `u64` — fast non-cryptographic hash.
-
-**DJB2:** `djb2(u8* data, u64 len)` → `u64`
-
-### 16.5 `std.atomic` — Atomic Operations
-
-Import: `extern std.atomic;`
-
-Thin wrappers over GCC/Clang built-in atomics (`__atomic_*`). Provides `istruc atomic_i32`, `istruc atomic_i64`, `istruc atomic_u32`, `istruc atomic_u64`, `istruc atomic_bool` — each with `load`, `store`, `add`, `sub`, `cas` (compare-and-swap), and `exchange` methods.
-
-### 16.6 Future Packages
-
-The following packages are specified and will be implemented:
-
-| Package | Description |
+| Keyword | Description |
 |---------|-------------|
-| `std.vector` | Growable array |
-| `std.map` | Sorted key-value map (red-black tree) |
-| `std.unordered_map` | Hash map |
-| `std.set` | Sorted set |
-| `std.unordered_set` | Hash set |
-| `std.sll` | Singly-linked list |
-| `std.dll` | Doubly-linked list |
-| `std.soa` | Struct-of-arrays container |
-| `std.arch.system` | OS detection, env vars, exit |
-| `std.fs` | File I/O, directory listing |
-| `std.net` | TCP/UDP sockets |
-| `std.process` | Process spawn and pipes |
-| `std.thread` | POSIX / Win32 thread abstraction |
-| `std.fmt` | String formatting and printing |
-| `std.encode` | UTF-8, base64, hex codecs |
-| `std.json` | JSON parse and serialize |
-| `std.toml` | TOML parse |
-| `std.test` | Unit test framework |
-| `std.debug` | Stack traces, assertions, memory checking |
-| `std.arch.simd` | SIMD intrinsic wrappers |
+| `if`, `else` | Conditional |
+| `while` | While loop |
+| `for` | For loop |
+| `switch`, `case`, `default` | Switch statement |
+| `return` | Return from function |
+| `break`, `continue` | Loop control |
+| `true`, `false` | Boolean literals |
+| `null` | Null pointer / nullable |
+| `void` | No-value type |
+| `const` | Immutable qualifier |
+| `volatile` | Volatile qualifier |
+| `static` | Static storage |
+| `extern` | External linkage / import |
+| `inline` | Inline hint |
+| `register` | Register hint |
+| `sizeof` | Size of type/expr |
+| `struct` | Plain aggregate |
+| `enum` | Enum or ADT enum |
+| `union` | C-style union |
+| `istruc` | Class (struct with methods) |
+| `interface` | Contract declaration |
+| `namespace` | Namespace scope |
+| `typedef` | Type alias |
+| `using` | Contextual alias |
+| `operator` | Operator overload |
+| `noexcept` | No-throw marker / test |
+| `constexpr` | Compile-time constant |
+| `consteval` | Manual-construction marker |
+| `auto` | Type inference / error-union placeholder |
+| `defer` | Deferred execution |
+| `try` | Error propagation |
+| `except` | Error catching |
+| `res` | Error-handling resource block |
+| `error` | Error literal (`error.Name`) |
+| `__asm__` | Inline assembly |
+| `sta` | Comptime type-erased parameter |
+
+---
+
+## Appendix B: Name Mangling
+
+| Pattern | Mangled form |
+|---------|-------------|
+| Method `method` on class `Foo` | `Foo__MT_method` |
+| `operator=` on class `Foo` | `Foo__MT_operator=` |
+| Namespace `ns` + name `bar` | `ns__NS_bar` |
+| ADT istruc variant `Enum.Variant` | `Enum__NS_Variant` (as a type name) |
+| ADT variant constructor | `EnumName__VariantName__ctor` |
+
+Scope resolution `.` in source code maps to `__NS_` in internal names.
+
+---
+
+## Appendix C: Grammar (Partial)
+
+```
+program       .= decl*
+decl          .= var_decl | func_decl | struct_decl | enum_decl | istruc_decl
+                | namespace_decl | interface_decl | typedef | extern_decl | extern_std
+
+type          .= prim_type | id ('<' type_args '>')?  | type ('*')+ | '?' type
+                | type '[' expr ']' | ret_type '(' param_types ')' '*'
+                | 'const' type | 'volatile' type | '&' 'memstr'
+
+var_decl      .= type id ('=' expr | '(' args ')' | '{' args '}')? ';'
+                | 'constexpr' type id '=' expr ';'
+                | 'consteval' type id ';'
+
+func_decl     .= type id ('<' tparams '>')? '(' params ')' ('noexcept')? block
+                | 'auto' id ('<' tparams '>')? '(' params ')' '!' type block
+
+enum_decl     .= 'enum' id '{' variant (',' variant)* ','? '}'
+variant       .= id
+                | id '(' types ')'
+                | id '{' fields '}'
+                | id '.{' class_body '}'
+
+istruc_decl   .= 'istruc' id ('<' tparams '>')? (':' id)? '{' member* '}'
+member        .= var_decl | func_decl | 'static' var_decl
+
+namespace_decl .= 'namespace' id '{' decl* '}'
+
+interface_decl .= 'interface' id '{' interface_member* '}'
+interface_member .= func_decl_sig | var_decl
+
+stmt          .= block | if_stmt | while_stmt | for_stmt | switch_stmt
+                | return_stmt | break_stmt | continue_stmt | defer_stmt
+                | asm_stmt | var_decl | expr_stmt
+
+expr          .= literal | id | unary_op expr | expr binary_op expr
+                | expr '?' expr ':' expr | '(' type ')' expr
+                | expr '(' args ')' | expr '[' expr ']' | expr '.' id
+                | 'sizeof' '(' type_or_expr ')' | 'error' '.' id
+                | 'try' expr | expr 'except' '|' id '|' block
+                | 'null' | type '{' field_inits '}'
+                | '.' '{' field_inits '}'
+```

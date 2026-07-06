@@ -1,10 +1,11 @@
 // std.debug — Panic handler, assertions, memory poison helpers.
-// All functions at global scope after extern std.debug;
+// Access as: std.debug.panic(...), std.debug.assert(...), etc.
 
 extern i32   printf(i8* fmt, ...);
 extern void  abort();
 extern void* malloc(u64 n);
 
+namespace std {
 namespace debug {
 void panic(i8* msg) {
     printf("\nPANIC: %s\n", msg);
@@ -56,3 +57,4 @@ bool is_poisoned(void* p, u64 n) {
 void breakpoint() { }
 
 } // namespace debug
+} // namespace std

@@ -57,9 +57,9 @@ istruc lex {
 
 // --- Parser ---
 
-private json_val* parse_value(lex* l, &memstr a);
+json_val* parse_value(lex* l, &memstr a);
 
-private i8* parse_string_raw(lex* l, &memstr a) {
+i8* parse_string_raw(lex* l, &memstr a) {
     (*l).next(); // consume "
     i32 start = (*l).pos;
     i32 end = start;
@@ -76,7 +76,7 @@ private i8* parse_string_raw(lex* l, &memstr a) {
     return s;
 }
 
-private json_val* parse_array(lex* l, &memstr a) {
+json_val* parse_array(lex* l, &memstr a) {
     (*l).next(); // consume [
     json_val* v = (json_val*)a.mmap(sizeof(json_val));
     (*v).kind = JSON_ARRAY;
@@ -101,7 +101,7 @@ private json_val* parse_array(lex* l, &memstr a) {
     return v;
 }
 
-private json_val* parse_object(lex* l, &memstr a) {
+json_val* parse_object(lex* l, &memstr a) {
     (*l).next(); // consume {
     json_val* v = (json_val*)a.mmap(sizeof(json_val));
     (*v).kind = JSON_OBJECT;
@@ -132,7 +132,7 @@ private json_val* parse_object(lex* l, &memstr a) {
     return v;
 }
 
-private json_val* parse_value(lex* l, &memstr a) {
+json_val* parse_value(lex* l, &memstr a) {
     (*l).skip_ws();
     i8 c = (*l).peek();
     json_val* v = (json_val*)a.mmap(sizeof(json_val));

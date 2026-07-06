@@ -31,21 +31,21 @@ namespace geom {
 }
 
 i32 main() {
-    geom::Point p = geom::make_point(3, 4);
+    geom.Point p = geom.make_point(3, 4);
     if (p.x != 3) { return 1; }
     if (p.y != 4) { return 2; }
 
-    geom::Point o = geom::origin();
+    geom.Point o = geom.origin();
     if (o.x != 0) { return 3; }
     if (o.y != 0) { return 4; }
 
-    geom::Point tl = geom::make_point(1, 1);
-    geom::Rect  r  = geom::make_rect(tl, 5, 3);
-    if (geom::rect_area(r) != 15) { return 5; }
+    geom.Point tl = geom.make_point(1, 1);
+    geom.Rect  r  = geom.make_rect(tl, 5, 3);
+    if (geom.rect_area(r) != 15) { return 5; }
 
-    // Namespace constants accessible via ::
-    if (geom::ORIGIN_X != 0) { return 6; }
-    if (geom::ORIGIN_Y != 0) { return 7; }
+    // Namespace constants accessible via .
+    if (geom.ORIGIN_X != 0) { return 6; }
+    if (geom.ORIGIN_Y != 0) { return 7; }
 
     return 0;
 }

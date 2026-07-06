@@ -1,0 +1,16 @@
+[project]
+name = "artemis_boot"
+version = "0.1.0"
+main = "main.arc"
+owner = ""
+authors = []
+
+[build]
+output_dir = "build/"
+source_dir = "."
+
+[symbol]
+defined_symbols = []
+
+[targets]
+main_f = ["exe"]

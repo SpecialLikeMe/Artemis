@@ -298,7 +298,7 @@ TEST(Parser, IstrucInheritance) {
 
 TEST(Parser, IstrucWithMethod) {
     auto* prog = do_parse(
-        "istruc Counter { i32 value; void reset(&self) {} }"
+        "istruc Counter { i32 value; void reset(Counter* self) {} }"
     );
     auto* cd = dynamic_cast<class_decl*>(prog->decls[0]);
     ASSERT_TRUE(cd != nullptr);
@@ -366,6 +366,49 @@ TEST(Parser, DeferExpr) {
     ASSERT_TRUE(ds != nullptr);
     ASSERT_TRUE(ds->expr != nullptr);
     ASSERT_TRUE(ds->blk == nullptr);
+}
+
+// ------------------------------------------------------------------ New feature: const_resolve macro
+
+TEST(Parser, MacroDefinitionRegistered) {
+    // const_resolve parses and registers the macro; the program gets one decl (the no-op stub).
+    auto* prog = do_parse(
+        "const_resolve dbl { ($x:expr) => { ($x) + ($x) }, }"
+    );
+    ASSERT_TRUE(prog->decls.size() >= 1);
+    // The definition itself produces a namespace_decl stub named __macro_dbl.
+    auto* nd = dynamic_cast<namespace_decl*>(prog->decls[0]);
+    ASSERT_TRUE(nd != nullptr);
+    ASSERT_EQ(nd->name, "__macro_dbl");
+}
+
+TEST(Parser, MacroInvocationExpandsInExpr) {
+    // Macro called inside an expression: the expansion is spliced in transparently.
+    auto* prog = do_parse(
+        "const_resolve dbl { ($x:expr) => { ($x) + ($x) }, }"
+        "void f() { i32 r = dbl(5); }"
+    );
+    ASSERT_EQ(prog->decls.size(), 2u);
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[1]);
+    ASSERT_TRUE(fn != nullptr);
+    // Just verifies that the program parsed without throwing.
+}
+
+TEST(Parser, MacroInvocationExpandsInStmt) {
+    // Macro called as a statement-level expansion.
+    auto* prog = do_parse(
+        "const_resolve let32 { ($n:ident = $v:expr) => { i32 $n = $v }, }"
+        "void f() { let32(x = 7); }"
+    );
+    ASSERT_EQ(prog->decls.size(), 2u);
+    auto* fn = dynamic_cast<func_decl*>(prog->decls[1]);
+    ASSERT_TRUE(fn != nullptr);
+    auto* blk = dynamic_cast<block_stmt*>(fn->body);
+    ASSERT_EQ(blk->stmts.size(), 1u);
+    // The statement should be a local var decl.
+    auto* vd = dynamic_cast<var_decl*>(blk->stmts[0]);
+    ASSERT_TRUE(vd != nullptr);
+    ASSERT_EQ(vd->name, "x");
 }
 
 // ------------------------------------------------------------------ New feature: arrow operator (desugar)

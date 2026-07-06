@@ -1,4 +1,4 @@
-// std.map — Ordered key-value map (red-black tree, equivalent to C++ std::map).
+// std.map — Ordered key-value map (red-black tree, equivalent to C++ std.map).
 
 namespace std {
 
@@ -20,7 +20,7 @@ istruc map<K, V> {
     map_node<K,V>* nil_sentinel;  // sentinel nil node (BLACK, null children)
     i32            size_count;
 
-    private map_node<K,V>* make_node(map* self, K key, V val, &memstr a) {
+    map_node<K,V>* make_node(map* self, K key, V val, &memstr a) {
         map_node<K,V>* n = (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>));
         (*n).key    = key;
         (*n).val    = val;
@@ -41,7 +41,7 @@ istruc map<K, V> {
         self.size_count = 0;
     }
 
-    private void rotate_left(map* self, map_node<K,V>* x) {
+    void rotate_left(map* self, map_node<K,V>* x) {
         map_node<K,V>* y = (*x).right;
         (*x).right = (*y).left;
         if ((*y).left != self.nil_sentinel) (*(*y).left).parent = x;
@@ -53,7 +53,7 @@ istruc map<K, V> {
         (*x).parent = y;
     }
 
-    private void rotate_right(map* self, map_node<K,V>* y) {
+    void rotate_right(map* self, map_node<K,V>* y) {
         map_node<K,V>* x = (*y).left;
         (*y).left = (*x).right;
         if ((*x).right != self.nil_sentinel) (*(*x).right).parent = y;
@@ -65,7 +65,7 @@ istruc map<K, V> {
         (*y).parent = x;
     }
 
-    private void fix_insert(map* self, map_node<K,V>* z) {
+    void fix_insert(map* self, map_node<K,V>* z) {
         while ((*(*z).parent).color == MAP_RED) {
             if ((*z).parent == (*(*(*z).parent).parent).left) {
                 map_node<K,V>* y = (*(*(*z).parent).parent).right;
@@ -122,7 +122,7 @@ istruc map<K, V> {
         self.size_count = self.size_count + 1;
     }
 
-    private map_node<K,V>* find_node(map* self, K key) {
+    map_node<K,V>* find_node(map* self, K key) {
         map_node<K,V>* x = self.root;
         while (x != self.nil_sentinel) {
             if (key < (*x).key)       x = (*x).left;
@@ -144,7 +144,7 @@ istruc map<K, V> {
     bool is_empty(map* self) { return self.size_count == 0; }
 
     // In-order traversal via callback
-    private void inorder(map* self, map_node<K,V>* n, void(K, V)* cb) {
+    void inorder(map* self, map_node<K,V>* n, void(K, V)* cb) {
         if (n == self.nil_sentinel) { return; }
         self.inorder((*n).left, cb);
         cb((*n).key, (*n).val);

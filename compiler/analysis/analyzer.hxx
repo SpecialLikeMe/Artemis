@@ -56,9 +56,32 @@ static bool heap_expr(const expr_node* e) {
 
 class analyzer {
 public:
+    bool skip_heap_check = false; // set via --unsafe flag
+
     void analyze(program_node* prog) {
         // global scope lives for the entire analysis
         scope.push();
+
+        // Pre-register the built-in error_t struct used in `except |e| { e.code / e.name / e.payload }`.
+        // The IR defines this as {i32 code, i8* name, i8* payload}.
+        {
+            auto make_field = [&](const std::string& fname, type_node t) -> var_decl* {
+                auto* f   = new var_decl();
+                f->name   = fname;
+                f->type   = make_type(t);
+                owned_vars.push_back(std::unique_ptr<var_decl>(f));
+                return f;
+            };
+            auto* sd = new struct_decl();
+            sd->name = "error_t";
+            type_node i32t;  i32t.is_primitive = true;  i32t.prim = prim_type_t::arb_int;  i32t.bit_width = 32;
+            type_node i8pt;  i8pt.is_primitive = true;  i8pt.prim = prim_type_t::char_t;   i8pt.pointer_depth = 1;
+            sd->fields.push_back(make_field("code",    i32t));
+            sd->fields.push_back(make_field("name",    i8pt));
+            sd->fields.push_back(make_field("payload", i8pt));
+            owned_structs.push_back(std::unique_ptr<struct_decl>(sd));
+            scope.declare_struct(sd);
+        }
 
         // Pass 1: register all top-level type/function names so bodies can reference
         // anything declared later in the file.
@@ -84,8 +107,9 @@ private:
     std::unordered_set<std::string>             generic_class_names;
 
     // Arenas so returned type_node* pointers stay valid for the lifetime of the analyzer.
-    std::vector<std::unique_ptr<type_node>> owned_types;
-    std::vector<std::unique_ptr<var_decl>>  owned_vars;  // synthetic var_decl for params
+    std::vector<std::unique_ptr<type_node>>   owned_types;
+    std::vector<std::unique_ptr<var_decl>>    owned_vars;    // synthetic var_decl for params
+    std::vector<std::unique_ptr<struct_decl>> owned_structs; // synthetic struct_decl (e.g. error_t)
 
     // -------------------------------------------------------------- helpers
 
@@ -98,8 +122,8 @@ private:
         return owned_types.back().get();
     }
 
-    type_node* prim(prim_type_t p) {
-        type_node t; t.is_primitive = true; t.prim = p;
+    type_node* prim(prim_type_t p, uint32_t bw = 0) {
+        type_node t; t.is_primitive = true; t.prim = p; t.bit_width = bw;
         return make_type(t);
     }
 
@@ -241,8 +265,11 @@ private:
         if (auto* d = dynamic_cast<namespace_decl*>(node)) {
             scope.declare_namespace(d->name);
             for (auto* decl : d->decls) {
-                if (auto* fd = dynamic_cast<func_decl*>(decl))
-                    fd->name = d->name + "__NS_" + fd->name;
+                if (auto* fd = dynamic_cast<func_decl*>(decl)) {
+                    // extern/"C" functions keep their original C name — don't namespace-mangle them.
+                    if (!fd->is_extern_c)
+                        fd->name = d->name + "__NS_" + fd->name;
+                }
                 if (auto* cd = dynamic_cast<class_decl*>(decl))
                     cd->name = d->name + "__NS_" + cd->name;
                 if (auto* sd = dynamic_cast<struct_decl*>(decl))
@@ -253,6 +280,9 @@ private:
                     td->alias = d->name + "__NS_" + td->alias;
                 if (auto* vd = dynamic_cast<var_decl*>(decl))
                     vd->name = d->name + "__NS_" + vd->name;
+                // Nested namespace: prepend parent name so its contents get the full path.
+                if (auto* nd = dynamic_cast<namespace_decl*>(decl))
+                    nd->name = d->name + "__NS_" + nd->name;
                 register_decl(decl);
             }
             return;
@@ -297,6 +327,46 @@ private:
             m->mangled_name = fd->name;
             scope.declare_func(fd);
         }
+
+        // Register #[derive(...)] synthesised functions so call-site analysis succeeds.
+        for (auto& attr : d->attributes) {
+            if (attr.name != "derive") continue;
+            for (auto& dname : attr.args) {
+                // Build a minimal func_decl for each synthesised derive function.
+                auto* fd = new func_decl();
+                fd->line = d->line;
+                auto* cls_ptr_t = new type_node();
+                cls_ptr_t->is_primitive = false;
+                cls_ptr_t->name = d->name;
+                cls_ptr_t->pointer_depth = 1;
+                auto* cls_t = new type_node();
+                cls_t->is_primitive = false;
+                cls_t->name = d->name;
+                cls_t->pointer_depth = 0;
+                auto* void_t = new type_node();
+                void_t->is_primitive = true;
+                void_t->prim = prim_type_t::void_t;
+                if (dname == "Debug") {
+                    // void __derive_Debug_Name(Name* self)
+                    fd->name = "__derive_Debug_" + d->name;
+                    fd->ret_type = void_t;
+                    param_decl p; p.name = "self"; p.type = cls_ptr_t; p.line = d->line;
+                    fd->params.push_back(p);
+                } else if (dname == "Clone") {
+                    // Name __derive_Clone_Name(Name* self)
+                    fd->name = "__derive_Clone_" + d->name;
+                    fd->ret_type = cls_t;
+                    param_decl p; p.name = "self"; p.type = cls_ptr_t; p.line = d->line;
+                    fd->params.push_back(p);
+                } else if (dname == "Default") {
+                    // Name __derive_Default_Name()
+                    fd->name = "__derive_Default_" + d->name;
+                    fd->ret_type = cls_t;
+                }
+                // body=nullptr means forward declaration — valid for extern-like synthetics
+                scope.declare_func(fd);
+            }
+        }
     }
 
     // -------------------------------------------------------------- pass 2: visit top-level
@@ -305,6 +375,10 @@ private:
         // Generic templates are not type-checked until instantiated (monomorphization).
         if (auto* d = dynamic_cast<func_decl*>(node))  { if (!d->type_params.empty()) return; }
         if (auto* d = dynamic_cast<class_decl*>(node)) { if (!d->type_params.empty()) return; }
+        // Proc macro functions (attr/derive marker) — registered as callables but body not type-checked here.
+        if (auto* d = dynamic_cast<func_decl*>(node))  {
+            if (d->pm_kind != func_decl::proc_macro_kind::none) return;
+        }
         if (auto* d = dynamic_cast<func_decl*>(node))      { visit_func_decl(d);        return; }
         if (auto* d = dynamic_cast<struct_decl*>(node))    { visit_struct_decl(d);      return; }
         if (auto* d = dynamic_cast<enum_decl*>(node))      { visit_enum_decl(d);        return; }
@@ -316,7 +390,10 @@ private:
         if (dynamic_cast<memstr_decl*>(node))               { return; } // stub: just skip for now
         if (auto* d = dynamic_cast<namespace_decl*>(node)) { visit_namespace_decl(d); return; }
         if (auto* d = dynamic_cast<using_decl*>(node))     { visit_using_decl(d); return; }
-        // Macro stub nodes (const_resolve, proc macros) — stored as namespace_decl with __macro_ prefix
+        if (auto* d = dynamic_cast<proc_macro_decl*>(node)) { visit_proc_macro_decl(d); return; }
+        // Macro stub nodes (const_resolve) — stored as namespace_decl with __macro_ prefix
+        if (auto* d = dynamic_cast<namespace_decl*>(node))
+            if (d->name.rfind("__macro_", 0) == 0) return; // skip macro stubs
         throw std::runtime_error(err(node->line, "Unrecognised top-level declaration"));
     }
 
@@ -340,6 +417,8 @@ private:
                 if (cd->is_interface) continue; // interfaces need no body visiting
                 if (!cd->type_params.empty()) continue; // skip generic class templates
                 visit_class_decl(cd);
+            } else if (auto* nd = dynamic_cast<namespace_decl*>(decl)) {
+                visit_namespace_decl(nd);
             }
         }
         current_namespace = saved_ns;
@@ -349,28 +428,69 @@ private:
         // Interface declarations have no fields/bodies — nothing to visit
         if (d->is_interface) return;
 
-        // Check that `: Name` refers to an interface (not a class — inheritance is gone)
-        if (!d->base_name.empty()) {
-            if (scope.is_interface_type(d->base_name)) {
-                // Verify all interface methods are implemented
-                class_decl* iface = scope.find_interface(d->base_name);
+        // Enforce interface contracts for every interface listed after ':'
+        for (const auto& iname : d->interface_names) {
+            if (scope.is_interface_type(iname)) {
+                class_decl* iface = scope.find_interface(iname);
+                // Required methods: stub (no body) — istruc MUST provide them
                 for (auto* im : iface->methods) {
+                    if (im->body) continue; // has default implementation — optional
                     bool found = false;
-                    for (auto* cm : d->methods) {
+                    for (auto* cm : d->methods)
                         if (cm->name == im->name) { found = true; break; }
-                    }
                     if (!found)
                         throw std::runtime_error(err(d->line,
-                            "'" + d->name + "' does not implement interface method '" +
-                            im->name + "' required by '" + d->base_name + "'"));
+                            "'" + d->name + "' does not implement required method '" +
+                            im->name + "' from interface '" + iname + "'"));
                 }
-            } else if (scope.classes.count(d->base_name)) {
+                // Required fields: no initializer — istruc MUST provide them
+                for (auto* iff : iface->fields) {
+                    if (iff->init.has_value()) continue; // has default — optional
+                    bool found = false;
+                    for (auto* cf : d->fields)
+                        if (cf->name == iff->name) { found = true; break; }
+                    if (!found)
+                        throw std::runtime_error(err(d->line,
+                            "'" + d->name + "' does not implement required field '" +
+                            iff->name + "' from interface '" + iname + "'"));
+                }
+                // Inherit default methods the istruc did NOT override
+                for (auto* im : iface->methods) {
+                    if (!im->body) continue;
+                    bool overridden = false;
+                    for (auto* cm : d->methods)
+                        if (cm->name == im->name) { overridden = true; break; }
+                    if (!overridden) d->methods.push_back(im);
+                }
+                // Inherit default fields the istruc did NOT override
+                for (auto* iff : iface->fields) {
+                    if (!iff->init.has_value()) continue;
+                    bool overridden = false;
+                    for (auto* cf : d->fields)
+                        if (cf->name == iff->name) { overridden = true; break; }
+                    if (!overridden) d->fields.push_back(iff);
+                }
+            } else if (scope.classes.count(iname)) {
                 throw std::runtime_error(err(d->line,
                     "Inheritance is not supported; use interfaces instead ('" +
-                    d->base_name + "' is a class, not an interface)"));
+                    iname + "' is a class, not an interface)"));
             } else {
                 throw std::runtime_error(err(d->line,
-                    "Unknown interface '" + d->base_name + "'"));
+                    "Unknown interface '" + iname + "'"));
+            }
+        }
+
+        // Process #[derive(...)] attributes: validate names (unknown = user proc macro,
+        // built-ins Debug/Clone/Default are accepted without error).
+        static const std::unordered_set<std::string> builtin_derives = {"Debug", "Clone", "Default"};
+        for (auto& attr : d->attributes) {
+            if (attr.name == "derive") {
+                for (auto& arg : attr.args) {
+                    if (!builtin_derives.count(arg))
+                        throw std::runtime_error(err(d->line,
+                            "Unknown derive macro '" + arg + "'; "
+                            "built-in derives are: Debug, Clone, Default"));
+                }
             }
         }
 
@@ -381,9 +501,6 @@ private:
 
         // Check all methods
         for (auto* m : d->methods) {
-            if (m->is_mandatory_virtual || m->is_virtual || m->is_override)
-                throw std::runtime_error(err(m->line,
-                    "Method '" + m->name + "': virtual/override/mandatory are not supported; use interfaces"));
 
             if (!m->body) continue; // forward declaration, skip body check
 
@@ -499,6 +616,11 @@ private:
     }
 
     void visit_global_var_decl(var_decl* d) {
+        // sta-typed globals are comptime namespaces; skip type-checking.
+        if (d->is_sta || (d->type && d->type->is_sta)) {
+            scope.declare_var(d->name, d);
+            return;
+        }
         check_var_type(d->type, d->line);
         if (d->init.has_value()) {
             type_node* it = visit_expr(d->init.value());
@@ -513,9 +635,16 @@ private:
     void visit_func_decl(func_decl* fd) {
         check_type_known(fd->ret_type, fd->line);
 
+        // A noexcept function cannot also be an error-union (!T) function — contradiction.
+        if (fd->is_noexcept && fd->is_error_union)
+            throw std::runtime_error(err(fd->line,
+                "Function '" + fd->name +
+                "' cannot be both 'noexcept' and '!T' (error union return)"));
+
         if (fd->name == "main") {
             bool ok = fd->ret_type && fd->ret_type->is_primitive
-                   && fd->ret_type->prim == prim_type_t::i32
+                   && fd->ret_type->prim == prim_type_t::arb_int
+                   && fd->ret_type->bit_width == 32
                    && fd->ret_type->pointer_depth == 0;
             if (!ok)
                 throw std::runtime_error(err(fd->line,
@@ -531,7 +660,7 @@ private:
         // param name inside the body is caught as a redeclaration.
         // Heap-use check: top-level functions that call malloc/calloc/realloc must
         // accept a &memstr allocator parameter (istruc methods are exempt).
-        if (fd->body && fd->name != "main" && !fd->is_extern_c) {
+        if (!skip_heap_check && fd->body && fd->name != "main" && !fd->is_extern_c) {
             if (heap_block(fd->body)) {
                 bool has_alloc = false;
                 for (auto& p : fd->params)
@@ -577,22 +706,24 @@ private:
         if (auto* n = dynamic_cast<expr_stmt*>(node))     { visit_expr(n->expr);    return; }
         if (auto* n = dynamic_cast<asm_stmt*>(node))      { visit_asm_stmt(n);      return; }
         if (auto* n = dynamic_cast<defer_stmt*>(node))    { visit_defer_stmt(n);    return; }
+        if (auto* n = dynamic_cast<errdefer_stmt*>(node)) { visit_errdefer_stmt(n); return; }
         if (auto* n = dynamic_cast<for_range_stmt*>(node)) { visit_for_range(n); return; }
-        if (auto* n = dynamic_cast<throw_stmt*>(node))    { if (n->value) visit_expr(n->value); return; }
-        if (auto* n = dynamic_cast<try_stmt*>(node))      {
+        // new error system: try expr; — propagate
+        if (auto* n = dynamic_cast<try_expr_stmt*>(node)) {
+            if (current_func && current_func->is_noexcept)
+                throw std::runtime_error(err(node->line,
+                    "'try' cannot be used inside a 'noexcept' function ('" +
+                    current_func->name + "')"));
+            if (n->expr) visit_expr(n->expr);
+            return;
+        }
+        // new error system: res { ... }
+        if (auto* n = dynamic_cast<res_block_stmt*>(node)) {
+            if (current_func && current_func->is_noexcept)
+                throw std::runtime_error(err(node->line,
+                    "'res' block cannot be used inside a 'noexcept' function ('" +
+                    current_func->name + "')"));
             visit_block(n->body);
-            scope.push();
-            // Synthesize a var_decl for the exception variable so it's visible in the handler.
-            // Skip for catch-all except (...) where exc_name is empty.
-            if (!n->exc_name.empty()) {
-                auto* edecl = new var_decl();
-                edecl->type = n->exc_type;
-                edecl->name = n->exc_name;
-                edecl->line = n->line;
-                scope.declare_var(n->exc_name, edecl);
-            }
-            visit_block(n->handler);
-            scope.pop();
             return;
         }
         throw std::runtime_error(err(node->line, "Unknown statement kind"));
@@ -609,8 +740,28 @@ private:
         if (!is_truthy(ct))
             throw std::runtime_error(err(n->line,
                 "Condition must be numeric, bool, or pointer; got '" + type_to_str(ct) + "'"));
-        visit_stmt(n->then_body);
-        if (n->else_body) visit_stmt(n->else_body);
+        // Then branch — optional capture binds the condition value (nullable stripped)
+        if (n->then_capture.has_value()) {
+            scope.push();
+            type_node cap_t = *ct; cap_t.is_nullable = false;
+            scope.declare_var(*n->then_capture, make_param_var(make_type(cap_t), *n->then_capture, n->line));
+            visit_stmt(n->then_body);
+            scope.pop();
+        } else {
+            visit_stmt(n->then_body);
+        }
+        // Else branch — optional capture
+        if (n->else_body) {
+            if (n->else_capture.has_value()) {
+                scope.push();
+                type_node cap_t = *ct; cap_t.is_nullable = false;
+                scope.declare_var(*n->else_capture, make_param_var(make_type(cap_t), *n->else_capture, n->line));
+                visit_stmt(n->else_body);
+                scope.pop();
+            } else {
+                visit_stmt(n->else_body);
+            }
+        }
     }
 
     void visit_while(while_stmt* n) {
@@ -733,7 +884,23 @@ private:
         else if (n->blk) visit_block(n->blk);
     }
 
+    void visit_errdefer_stmt(errdefer_stmt* n) {
+        if (n->expr) visit_expr(n->expr);
+        else if (n->blk) visit_block(n->blk);
+    }
+
     void visit_local_var_decl(var_decl* d) {
+        // sta-typed declarations are comptime namespaces; no runtime type-checking needed.
+        if (d->is_sta || (d->type && d->type->is_sta)) {
+            scope.declare_var(d->name, d);
+            return;
+        }
+
+        // Save the original parser-owned type node before any alias resolution.
+        // We must write inferred types back into this node (not into analyzer-owned
+        // nodes) so d->type doesn't become a dangling pointer once the analyzer
+        // is destroyed.
+        type_node* original_type = d->type;
         // Resolve using aliases (e.g. 'var' → auto) before type checking.
         if (d->type && !d->type->is_primitive && !d->type->is_auto && d->type->name) {
             auto ua = using_aliases.find(*d->type->name);
@@ -752,9 +919,12 @@ private:
             if (init_e->kind == expr_kind::class_init)
                 init_e->is_implicit_init = true;
             type_node* it = visit_expr(init_e);
-            // auto type: infer from initializer (set d->type so IR can use it).
+            // auto type: infer from initializer. Copy the inferred type into the
+            // original parser-owned node so the IR sees stable memory after the
+            // analyzer is destroyed (analyzer-owned nodes in owned_types are freed).
             if (d->type->is_auto) {
-                d->type = it;
+                *original_type = *it;
+                d->type = original_type;
                 scope.declare_var(d->name, d);
                 return;
             }
@@ -789,9 +959,61 @@ private:
             case expr_kind::member:     return visit_member(e);
             case expr_kind::cast:       return visit_cast(e);
             case expr_kind::sizeof_e:   return visit_sizeof(e);
+            case expr_kind::get_ifo_t_e: {
+                // Returns ifo::ifo_t* — treated as void* for type-checking purposes
+                auto* t = make_type(type_node{}); t->is_primitive = false; t->pointer_depth = 1;
+                t->name = "ifo_t"; return t;
+            }
             case expr_kind::ternary:    return visit_ternary(e);
             case expr_kind::annotation: return prim(prim_type_t::void_t); // @id has no type
             case expr_kind::class_init: return visit_class_init(e);
+            case expr_kind::null_lit: {
+                // null is a null-pointer constant: assignable to any pointer or ?T type.
+                // Its synthetic type carries is_null_literal=true so assignable() can enforce
+                // that it cannot be stored in a non-pointer, non-nullable slot.
+                auto* t = make_type(type_node{});
+                t->is_primitive = true; t->prim = prim_type_t::void_t;
+                t->pointer_depth = 1; t->is_null_literal = true;
+                return t;
+            }
+            case expr_kind::null_coal: {
+                // lhs ?? rhs  or  lhs ?? { block }
+                type_node* lt = visit_expr(e->lhs);
+                if (e->rhs) visit_expr(e->rhs);
+                if (e->handler_block) visit_block(e->handler_block);
+                // Return type is the inner (unwrapped) type of lhs
+                type_node inner = *lt; inner.is_nullable = false;
+                return make_type(inner);
+            }
+            case expr_kind::error_lit: return prim(prim_type_t::arb_int, 32); // error tag is i32
+            case expr_kind::import_expr:
+            case expr_kind::sta_type_expr: {
+                // Comptime-only expressions: return a synthetic sta type node.
+                auto* t = make_type(type_node{}); t->is_sta = true; t->name = "sta";
+                return t;
+            }
+            case expr_kind::try_expr:
+                if (current_func && current_func->is_noexcept)
+                    throw std::runtime_error(err(e->line,
+                        "'try' cannot be used inside a 'noexcept' function ('" +
+                        current_func->name + "')"));
+                if (e->operand) visit_expr(e->operand);
+                return prim(prim_type_t::arb_int, 32); // success value type (simplified)
+            case expr_kind::except_expr: {
+                if (e->object) visit_expr(e->object);
+                if (!e->str_val.empty() && e->handler_block) {
+                    scope.push();
+                    // Declare binding as error_t {code:i32, name:i8*}
+                    type_node et_raw; et_raw.is_primitive = false; et_raw.name = "error_t";
+                    type_node* et = make_type(et_raw);
+                    scope.declare_var(e->str_val, make_param_var(et, e->str_val, e->line));
+                    visit_block(e->handler_block);
+                    scope.pop();
+                } else if (e->handler_block) {
+                    visit_block(e->handler_block);
+                }
+                return prim(prim_type_t::arb_int, 32);
+            }
             default:
                 throw std::runtime_error(err(e->line, "Unknown expression kind"));
         }
@@ -808,9 +1030,7 @@ private:
                 auto cit = scope.classes.find(cname);
                 if (cit != scope.classes.end()) {
                     for (auto* m : cit->second->methods) {
-                        if (m->is_constructor && m->is_explicit)
-                            throw std::runtime_error(err(e->line,
-                                "Semantic Error: cannot use explicit constructor for implicit conversion"));
+                        (void)m; // explicit constructors no longer enforced
                     }
                 }
             }
@@ -832,9 +1052,9 @@ private:
         return prim(prim_type_t::void_t);
     }
 
-    type_node* visit_int_lit(expr_node* /*e*/)   { return prim(prim_type_t::i32); }
-    type_node* visit_float_lit(expr_node* /*e*/) { return prim(prim_type_t::f64); }
-    type_node* visit_bool_lit(expr_node* /*e*/)  { return prim(prim_type_t::boolean); }
+    type_node* visit_int_lit(expr_node* /*e*/)   { return prim(prim_type_t::arb_int, 32); }
+    type_node* visit_float_lit(expr_node* /*e*/) { return prim(prim_type_t::arb_float, 64); }
+    type_node* visit_bool_lit(expr_node* /*e*/)  { return prim(prim_type_t::arb_bool, 1); }
 
     type_node* visit_string_lit(expr_node* /*e*/) {
         type_node t; t.is_primitive = true; t.prim = prim_type_t::char_t;
@@ -885,7 +1105,7 @@ private:
 
         // Enum variant used as integer constant
         if (scope.enum_variants.count(e->str_val))
-            return prim(prim_type_t::i32);
+            return prim(prim_type_t::arb_int, 32);
 
         // Enum type name used as scope qualifier (EnumName::VariantName)
         if (scope.enums.count(e->str_val)) {
@@ -922,7 +1142,7 @@ private:
                     throw std::runtime_error(err(ln,
                         "Logical NOT (!) requires numeric, bool, or pointer type, got '" +
                         type_to_str(ot) + "'"));
-                return prim(prim_type_t::boolean);
+                return prim(prim_type_t::arb_bool, 1);
 
             case unary_op::pre_inc:
             case unary_op::pre_dec:
@@ -966,24 +1186,13 @@ private:
         }
     }
 
-    // Returns the method return type if the class (named tname) has operator op, else nullptr.
-    // Also enforces access modifier on the matched method.
-    type_node* find_class_op(const std::string& tname, const std::string& op_str, uint64_t ln = 0) {
+    type_node* find_class_op(const std::string& tname, const std::string& op_str, uint64_t = 0) {
         std::string search = tname;
         while (!search.empty() && scope.classes.count(search)) {
             class_decl* cd = scope.classes[search];
             for (auto* m : cd->methods) {
-                if (m->is_operator_overload && m->operator_str == op_str) {
-                    if (m->access == access_mod::priv && current_class != search)
-                        throw std::runtime_error(err(ln,
-                            "Cannot use private 'operator" + op_str + "' of '" + search +
-                            "' from outside the class"));
-                    if (m->access == access_mod::prot && !is_derived_from(current_class, search))
-                        throw std::runtime_error(err(ln,
-                            "Cannot use protected 'operator" + op_str + "' of '" + search +
-                            "' from unrelated context"));
+                if (m->is_operator_overload && m->operator_str == op_str)
                     return m->ret_type;
-                }
             }
             search = cd->base_name;
         }
@@ -1012,7 +1221,7 @@ private:
                 case binary_op::lt: case binary_op::gt:
                 case binary_op::lte: case binary_op::gte:
                 case binary_op::log_and: case binary_op::log_or:
-                    return prim(prim_type_t::boolean);
+                    return prim(prim_type_t::arb_bool, 1);
                 default:
                     return is_type_param_like(lt) ? rt : lt;
             }
@@ -1060,26 +1269,26 @@ private:
                 if (lt->pointer_depth > 0) { need_int(rt, "right"); return lt; }
                 if (rt->pointer_depth > 0) { need_int(lt, "left");  return rt; }
                 need_num(lt, "left"); need_num(rt, "right");
-                return prim(promote_prim(lt->prim.value(), rt->prim.value()));
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
 
             case binary_op::sub:
                 if (lt->pointer_depth > 0 && rt->pointer_depth > 0) {
                     if (!types_equal(lt, rt))
                         throw std::runtime_error(err(ln, "Pointer subtraction requires matching pointer types"));
-                    return prim(prim_type_t::i64);
+                    return prim(prim_type_t::arb_int, 64);
                 }
                 if (lt->pointer_depth > 0) { need_int(rt, "right"); return lt; }
                 need_num(lt, "left"); need_num(rt, "right");
-                return prim(promote_prim(lt->prim.value(), rt->prim.value()));
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
 
             case binary_op::mul:
             case binary_op::div:
                 need_num(lt, "left"); need_num(rt, "right");
-                return prim(promote_prim(lt->prim.value(), rt->prim.value()));
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
 
             case binary_op::mod:
                 need_int(lt, "left"); need_int(rt, "right");
-                return prim(promote_prim(lt->prim.value(), rt->prim.value()));
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
 
             // ---- comparison ----
             case binary_op::eq:
@@ -1087,7 +1296,7 @@ private:
                 if (!eq_comparable(lt, rt))
                     throw std::runtime_error(err(ln,
                         "Cannot compare '" + type_to_str(lt) + "' with '" + type_to_str(rt) + "'"));
-                return prim(prim_type_t::boolean);
+                return prim(prim_type_t::arb_bool, 1);
 
             case binary_op::lt:
             case binary_op::gt:
@@ -1097,7 +1306,7 @@ private:
                     throw std::runtime_error(err(ln,
                         "Cannot order-compare '" + type_to_str(lt) +
                         "' with '" + type_to_str(rt) + "'"));
-                return prim(prim_type_t::boolean);
+                return prim(prim_type_t::arb_bool, 1);
 
             // ---- logical ----
             case binary_op::log_and:
@@ -1105,14 +1314,14 @@ private:
                 if (!is_truthy(lt) || !is_truthy(rt))
                     throw std::runtime_error(err(ln,
                         "Logical operator requires truthy (numeric/bool/pointer) operands"));
-                return prim(prim_type_t::boolean);
+                return prim(prim_type_t::arb_bool, 1);
 
             // ---- bitwise ----
             case binary_op::bit_and:
             case binary_op::bit_or:
             case binary_op::bit_xor:
                 need_int(lt, "left"); need_int(rt, "right");
-                return prim(promote_prim(lt->prim.value(), rt->prim.value()));
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
 
             case binary_op::shl:
             case binary_op::shr:
@@ -1210,6 +1419,17 @@ private:
                 }
             }
         }
+        // Multi-level namespace call: ns1::ns2::func(args) — callee's object is itself a member chain
+        if (e->callee->kind == expr_kind::member &&
+            e->callee->object &&
+            e->callee->object->kind == expr_kind::member) {
+            std::string chain = collect_ns_chain(e->callee->object);
+            if (!chain.empty()) {
+                // Rewrite to a direct function call: chain__NS_func(args)
+                e->callee->kind    = expr_kind::identifier;
+                e->callee->str_val = chain + "__NS_" + e->callee->member_name;
+            }
+        }
 
         // Resolve callee: identifier → function name lookup with overload resolution
         if (e->callee->kind != expr_kind::identifier) {
@@ -1293,30 +1513,7 @@ private:
         func_decl* fd = resolve_overload(fname, overloads, arg_types, ln);
         e->resolved_overload = fd;
 
-        // Access check for static method calls (Class__MT_method mangled name).
-        {
-            auto mt = fname.find("__MT_");
-            if (mt != std::string::npos) {
-                std::string owner_class = fname.substr(0, mt);
-                std::string meth_name   = fname.substr(mt + 5);
-                if (scope.classes.count(owner_class)) {
-                    class_decl* cd = scope.classes[owner_class];
-                    for (auto* m : cd->methods) {
-                        if (m->name == meth_name) {
-                            if (m->access == access_mod::priv && current_class != owner_class)
-                                throw std::runtime_error(err(ln,
-                                    "Cannot call private method '" + meth_name + "' of '" +
-                                    owner_class + "' from outside the class"));
-                            if (m->access == access_mod::prot && !is_derived_from(current_class, owner_class))
-                                throw std::runtime_error(err(ln,
-                                    "Cannot call protected method '" + meth_name + "' of '" +
-                                    owner_class + "' from unrelated context"));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+
 
         size_t expected = fd->params.size();
         size_t got      = e->args.size();
@@ -1346,45 +1543,29 @@ private:
                     (at ? type_to_str(at) : "?") + "' (declare it with 'memstr', not 'istruc')"));
         }
 
+        // Nullable mismatch: passing ?T to a non-nullable T parameter is an error
+        for (size_t i = 0; i < std::min(arg_types.size(), fd->params.size()); ++i) {
+            type_node* pt = fd->params[i].type;
+            type_node* at = arg_types[i];
+            if (!pt || !at) continue;
+            if (at->is_nullable && !pt->is_nullable && pt->pointer_depth == 0)
+                throw std::runtime_error(err(ln,
+                    "Argument " + std::to_string(i + 1) + " to '" + fname +
+                    "' is nullable (?T) but the parameter expects a non-nullable value; "
+                    "unwrap it explicitly"));
+        }
+
         return fd->ret_type;
     }
 
     func_decl* resolve_overload(const std::string& fname,
                                 const std::vector<func_decl*>* overloads,
-                                const std::vector<type_node*>& arg_types,
+                                const std::vector<type_node*>& /*arg_types*/,
                                 uint64_t ln) {
-        // Single overload: no selection needed
-        if (overloads->size() == 1) return (*overloads)[0];
-
-        // Try exact match first, then relaxed (assignable) match
-        func_decl* best = nullptr;
-        for (auto* fd : *overloads) {
-            size_t np = fd->params.size();
-            if (!fd->is_variadic && np != arg_types.size()) continue;
-            if (fd->is_variadic && arg_types.size() < np) continue;
-            bool match = true;
-            for (size_t i = 0; i < np; i++) {
-                if (!assignable_td(fd->params[i].type, arg_types[i])) { match = false; break; }
-            }
-            if (match) {
-                if (best) {
-                    // Ambiguous: prefer exact type match
-                    bool cur_exact = true, best_exact = true;
-                    for (size_t i = 0; i < np; i++) {
-                        if (!types_equal(fd->params[i].type, arg_types[i])) cur_exact = false;
-                        if (!types_equal(best->params[i].type, arg_types[i])) best_exact = false;
-                    }
-                    if (cur_exact && !best_exact) best = fd;
-                    // If still ambiguous, keep first match (could emit warning)
-                } else {
-                    best = fd;
-                }
-            }
-        }
-        if (!best)
-            throw std::runtime_error(err(ln,
-                "No matching overload of '" + fname + "' for given arguments"));
-        return best;
+        // Overloading is not supported; there is at most one registered function per name.
+        if (!overloads || overloads->empty())
+            throw std::runtime_error(err(ln, "Undefined function '" + fname + "'"));
+        return (*overloads)[0];
     }
 
     type_node* visit_subscript(expr_node* e) {
@@ -1426,8 +1607,22 @@ private:
         return make_type(elem);
     }
 
+    // Walk a member-chain that represents a namespace path (ns1::ns2::...::name) and
+    // return the mangled prefix (e.g. "std__NS_hash") if every segment is a namespace.
+    // Returns "" if the chain is not a pure namespace path.
+    std::string collect_ns_chain(expr_node* e) {
+        if (e->kind == expr_kind::identifier)
+            return scope.is_namespace(e->str_val) ? e->str_val : "";
+        if (e->kind != expr_kind::member) return "";
+        std::string parent = collect_ns_chain(e->object);
+        if (parent.empty()) return "";
+        std::string full = parent + "__NS_" + e->member_name;
+        return scope.is_namespace(full) ? full : "";
+    }
+
     type_node* visit_member(expr_node* e) {
         // Namespace-qualified variable/constant: ns::name — rewrite to plain identifier
+        // Single-level: ns::name where object is an identifier
         if (e->object->kind == expr_kind::identifier) {
             const std::string& obj = e->object->str_val;
             if (scope.is_namespace(obj) && !scope.lookup_var(obj)
@@ -1435,6 +1630,15 @@ private:
                 // Rewrite member(ns, name) → identifier(ns__NS_name)
                 e->kind = expr_kind::identifier;
                 e->str_val = obj + "__NS_" + e->member_name;
+                return visit_identifier(e);
+            }
+        }
+        // Multi-level: ns1::ns2::name where object is itself a member chain of namespaces
+        if (e->object->kind == expr_kind::member) {
+            std::string chain = collect_ns_chain(e->object);
+            if (!chain.empty()) {
+                e->kind = expr_kind::identifier;
+                e->str_val = chain + "__NS_" + e->member_name;
                 return visit_identifier(e);
             }
         }
@@ -1454,7 +1658,7 @@ private:
                             t->name = ed->name;
                             return t;
                         }
-                        return prim(prim_type_t::i32);
+                        return prim(prim_type_t::arb_int, 32);
                     }
                 }
                 throw std::runtime_error(err(e->line,
@@ -1479,6 +1683,10 @@ private:
             throw std::runtime_error(err(ln,
                 "Cannot access member '" + e->member_name + "': type is not a struct or union"));
 
+        // &memstr virtual dispatch: return void so the call type-checks without error.
+        // The IR handles the actual vtable dispatch.
+        if (resolved->is_memstr_ref) return prim(prim_type_t::void_t);
+
         const std::string tname = resolved->name.value_or("");
 
         if (scope.structs.count(tname)) {
@@ -1494,27 +1702,11 @@ private:
                 "No field '" + e->member_name + "' in union '" + tname + "'"));
         }
         if (scope.classes.count(tname)) {
-            // Helper: enforce access modifier from current_class context.
-            auto check_access = [&](access_mod am, const std::string& owner, const std::string& mname) {
-                if (am == access_mod::pub) return;
-                if (am == access_mod::priv) {
-                    if (current_class != owner)
-                        throw std::runtime_error(err(ln,
-                            "Cannot access private member '" + mname + "' of '" + owner + "'"));
-                } else { // protected
-                    if (!is_derived_from(current_class, owner))
-                        throw std::runtime_error(err(ln,
-                            "Cannot access protected member '" + mname + "' of '" + owner + "' from unrelated context"));
-                }
-            };
-
             class_decl* cd = scope.classes[tname];
             for (auto* f : cd->fields)
-                if (f->name == e->member_name) { check_access(f->access, tname, f->name); return f->type; }
-            // Check methods (returns a function pointer type)
+                if (f->name == e->member_name) return f->type;
             for (auto* m : cd->methods) {
                 if (m->name == e->member_name) {
-                    check_access(m->access, tname, m->name);
                     auto* fpt = make_type(type_node{});
                     fpt->is_func_ptr = true; fpt->fp_ret = m->ret_type;
                     for (auto& p : m->params) fpt->fp_params.push_back(p.type);
@@ -1527,10 +1719,9 @@ private:
             while (!base_name.empty() && scope.classes.count(base_name)) {
                 class_decl* base = scope.classes[base_name];
                 for (auto* f : base->fields)
-                    if (f->name == e->member_name) { check_access(f->access, base_name, f->name); return f->type; }
+                    if (f->name == e->member_name) return f->type;
                 for (auto* m : base->methods) {
                     if (m->name == e->member_name) {
-                        check_access(m->access, base_name, m->name);
                         auto* fpt = make_type(type_node{});
                         fpt->is_func_ptr = true; fpt->fp_ret = m->ret_type;
                         for (auto& p : m->params) fpt->fp_params.push_back(p.type);
@@ -1548,7 +1739,7 @@ private:
             auto* ed = scope.enums[tname];
             // Check plain variant name first (scope resolution for non-ADT or tag access)
             for (auto* ev : ed->variants)
-                if (ev->name == e->member_name) return prim(prim_type_t::i32);
+                if (ev->name == e->member_name) return prim(prim_type_t::arb_int, 32);
             // For ADT enums: search all variant payload fields
             if (ed->is_adt) {
                 for (auto* ev : ed->variants) {
@@ -1577,30 +1768,10 @@ private:
     }
 
     type_node* visit_cast(expr_node* e) {
-        type_node* src = visit_expr(e->operand); // type-check the expression being cast
+        visit_expr(e->operand); // type-check the expression being cast
         if (!e->cast_type)
             throw std::runtime_error(err(e->line, "Cast has no target type"));
         check_type_known(e->cast_type, e->line);
-        // Check access on conversion operators: (TargetType)obj where obj is a class type
-        // routes through operator TargetType. Enforce its access modifier.
-        if (src && !src->is_primitive && src->pointer_depth == 0 && src->name.has_value()) {
-            std::string src_class = src->name.value();
-            if (scope.classes.count(src_class)) {
-                class_decl* cd = scope.classes[src_class];
-                for (auto* m : cd->methods) {
-                    if (m->is_conversion_op) {
-                        if (m->access == access_mod::priv && current_class != src_class)
-                            throw std::runtime_error(err(e->line,
-                                "Cannot use private conversion operator of '" + src_class +
-                                "' from outside the class"));
-                        if (m->access == access_mod::prot && !is_derived_from(current_class, src_class))
-                            throw std::runtime_error(err(e->line,
-                                "Cannot use protected conversion operator of '" + src_class +
-                                "' from unrelated context"));
-                    }
-                }
-            }
-        }
         return e->cast_type;
     }
 
@@ -1623,7 +1794,7 @@ private:
         }
         if (e->cast_type)  check_type_known(e->cast_type, e->line);
         else if (e->operand) visit_expr(e->operand);
-        return prim(prim_type_t::u64);
+        return prim(prim_type_t::arb_uint, 64);
     }
 
     type_node* visit_ternary(expr_node* e) {
@@ -1649,6 +1820,12 @@ private:
         if (!d->alias.empty() && d->type_alias) {
             using_aliases[d->alias] = d->type_alias;
         }
+    }
+
+    void visit_proc_macro_decl(proc_macro_decl* /*d*/) {
+        // Proc macro declarations are registered for future invocation but not compiled
+        // to IR in this pass — their bodies are tokenstream transformers executed at
+        // compile time (planned). No analysis needed yet.
     }
 
     void visit_for_range(for_range_stmt* n) {

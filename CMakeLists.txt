@@ -25,6 +25,9 @@ add_executable(artemis src/main.cpp)
 target_include_directories(artemis PRIVATE ${CMAKE_SOURCE_DIR}/compiler)
 target_link_libraries(artemis PRIVATE ${LLVM_LIBS})
 target_compile_options(artemis PRIVATE ${WARN_FLAGS})
+# Embed the stdlib path at build time so the compiler can find it regardless of CWD.
+target_compile_definitions(artemis PRIVATE
+    ARTEMIS_STDLIB_PATH="${CMAKE_SOURCE_DIR}/compiler/std/include")
 
 # ------------------------------------------------------------------ aciso build system / package manager
 set(ACISO_SRCS

@@ -1,4 +1,4 @@
-// std.set — Ordered set (red-black tree, equivalent to C++ std::set).
+// std.set — Ordered set (red-black tree, equivalent to C++ std.set).
 
 namespace std {
 
@@ -28,7 +28,7 @@ istruc set<K> {
         self.size_count = 0;
     }
 
-    private void rotate_left(set* self, set_node<K>* x) {
+    void rotate_left(set* self, set_node<K>* x) {
         set_node<K>* y = (*x).right;
         (*x).right = (*y).left;
         if ((*y).left != self.nil) (*(*y).left).parent = x;
@@ -40,7 +40,7 @@ istruc set<K> {
         (*x).parent = y;
     }
 
-    private void rotate_right(set* self, set_node<K>* y) {
+    void rotate_right(set* self, set_node<K>* y) {
         set_node<K>* x = (*y).left;
         (*y).left = (*x).right;
         if ((*x).right != self.nil) (*(*x).right).parent = y;
@@ -52,7 +52,7 @@ istruc set<K> {
         (*y).parent = x;
     }
 
-    private void fix_insert(set* self, set_node<K>* z) {
+    void fix_insert(set* self, set_node<K>* z) {
         while ((*(*z).parent).color == SET_RED) {
             if ((*z).parent == (*(*(*z).parent).parent).left) {
                 set_node<K>* u = (*(*(*z).parent).parent).right;
@@ -106,7 +106,7 @@ istruc set<K> {
         self.size_count = self.size_count + 1;
     }
 
-    private set_node<K>* find_node(set* self, K key) {
+    set_node<K>* find_node(set* self, K key) {
         set_node<K>* x = self.root;
         while (x != self.nil) {
             if (key < (*x).key)  x = (*x).left;
@@ -121,7 +121,7 @@ istruc set<K> {
     i32  size(set* self)     { return self.size_count; }
     bool is_empty(set* self) { return self.size_count == 0; }
 
-    private void inorder(set* self, set_node<K>* n, void(K)* cb) {
+    void inorder(set* self, set_node<K>* n, void(K)* cb) {
         if (n == self.nil) { return; }
         self.inorder((*n).left, cb);
         cb((*n).key);

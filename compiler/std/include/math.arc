@@ -41,6 +41,7 @@ extern f32 powf(f32 b, f32 e);
 extern f32 logf(f32 x);
 extern f32 expf(f32 x);
 
+namespace std {
 namespace math {
 constexpr f64 PI     = 3.14159265358979323846;
 constexpr f64 TAU    = 6.28318530717958647692;
@@ -371,3 +372,4 @@ u32 bit_reverse_u32(u32 x) {
 
 
 } // namespace math
+} // namespace std

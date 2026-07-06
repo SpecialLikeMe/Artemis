@@ -3,7 +3,7 @@ extern std.alloc.slab;
 
 i32 main() {
     // Slab of 8-byte objects (i64 size)
-    slab s((u64)8);
+    std.alloc.slab s((u64)8);
     if (s.head != (void*)0) { return 1; }
 
     // Alloc some objects (will trigger slab_page creation)

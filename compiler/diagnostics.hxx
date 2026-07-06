@@ -44,8 +44,32 @@ public:
     }
 
     // Convert a caught std::runtime_error (from the lexer/parser/analyzer) into a diagnostic.
+    // Attempts to extract "at line N" from the message for accurate location reporting.
     void absorb(const std::runtime_error& e, int line = 0, int col = 0) {
-        error(line, col, e.what());
+        std::string msg = e.what();
+        // Parse "at line N" or "at line N," from message — present in all compiler throws.
+        if (line == 0) {
+            auto pos = msg.find("at line ");
+            if (pos != std::string::npos) {
+                pos += 8;
+                int parsed = 0;
+                while (pos < msg.size() && std::isdigit((unsigned char)msg[pos]))
+                    parsed = parsed * 10 + (msg[pos++] - '0');
+                if (parsed > 0) line = parsed;
+            }
+        }
+        // Strip the "Parser Error at line N: " / "Analyzer Error at line N: " prefix
+        // so the message body shown is concise.
+        std::string body = msg;
+        for (const char* pfx : {"Parser Error at line ", "Analyzer Error at line ",
+                                 "Lexer Error at line ", "Error at line "}) {
+            auto p = body.find(pfx);
+            if (p == 0) {
+                auto colon = body.find(": ", p + std::strlen(pfx));
+                if (colon != std::string::npos) { body = body.substr(colon + 2); break; }
+            }
+        }
+        error(line, col, body);
     }
 
     bool has_errors()  const { return err_count > 0; }

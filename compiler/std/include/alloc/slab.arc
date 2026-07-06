@@ -72,7 +72,7 @@ memstr slab {
             pg = (*pg).next;
         }
         // All pages full — allocate a new slab_page
-        slab_page* new_pg = malloc(SLAB_PAGE_SIZE);
+        consteval slab_page* new_pg = malloc(SLAB_PAGE_SIZE);
         (*new_pg).__construct__(self.slot_size);
         (*new_pg).next = self.head;
         self.head = new_pg;

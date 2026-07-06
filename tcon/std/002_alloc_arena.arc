@@ -2,7 +2,7 @@
 extern std.alloc.arena;
 
 i32 main() {
-    arena a(8192);
+    std.alloc.arena a(8192);
     if (a.base == (void*)0) { return 1; }
     if (a.remaining() != 8192) { return 2; }
 

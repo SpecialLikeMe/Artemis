@@ -1,22 +1,24 @@
 # 10. Classes (istruc)
 
-`istruc` (inline struct with methods) provides object-oriented features with zero overhead unless you use virtual dispatch.
+`istruc` (inline struct with methods) provides object-oriented features without vtable or garbage-collector overhead. It is like a C struct with methods attached. There is no inheritance — use [interfaces](26_interfaces.md) for shared behaviour contracts.
 
-## Basic istruc
+---
+
+## Basic Declaration
 
 ```arc
 istruc Vec3 {
     f64 x; f64 y; f64 z;
 
-    void __construct__(&self, f64 x, f64 y, f64 z) {
-        self.x = x; self.y = y; self.z = z;
+    void __construct__(Vec3* self, f64 a, f64 b, f64 c) {
+        self.x = a; self.y = b; self.z = c;
     }
 
-    f64 dot(&self, Vec3* other) {
-        return self.x * (*other).x + self.y * (*other).y + self.z * (*other).z;
+    f64 dot(const Vec3* self, Vec3 other) {
+        return self.x * other.x + self.y * other.y + self.z * other.z;
     }
 
-    Vec3 add(&self, Vec3 other) {
+    Vec3 add(const Vec3* self, Vec3 other) {
         Vec3 result(self.x + other.x, self.y + other.y, self.z + other.z);
         return result;
     }
@@ -25,55 +27,132 @@ istruc Vec3 {
 i32 main() {
     Vec3 a(1.0, 0.0, 0.0);
     Vec3 b(0.0, 1.0, 0.0);
-    f64  d = a.dot(&b);   // 0.0
+    f64  d = a.dot(b);   // 0.0
     return 0;
 }
 ```
 
-## Constructors (`__construct__`)
+---
 
-The method named `__construct__` is called automatically at the declaration site:
+## Explicit Self Parameter
+
+Every method declares an explicit pointer to the owning type as its **first** parameter. The convention is to name it `self`. Dot-notation calls (`a.method()`) automatically pass the receiver as that first argument.
 
 ```arc
-Vec3 v(1.0, 2.0, 3.0);   // calls v.__construct__(1.0, 2.0, 3.0)
+istruc Counter {
+    i32 count;
+
+    void increment(Counter* self) {
+        self.count = self.count + 1;
+    }
+
+    i32 get(const Counter* self) {
+        return self.count;
+    }
+}
+
+Counter c;
+c.increment();     // equivalent to Counter.increment(&c)
+i32 v = c.get();   // equivalent to Counter.get(&c)
 ```
 
-A zero-argument `__construct__` is called when you declare with no args:
+`const T* self` means the method does not write through the receiver — it is a read-only method. See [Pointer Const Semantics](27_pointer_const.md).
+
+---
+
+## Constructors (`__construct__`)
+
+A method named `__construct__` is called automatically when a variable is declared with `()` or `{}`:
+
+```arc
+Vec3 v(1.0, 2.0, 3.0);   // calls __construct__(1.0, 2.0, 3.0)
+Vec3 w{1.0, 2.0, 3.0};   // same with brace form
+```
+
+A zero-argument constructor is invoked when you declare with no arguments:
+
 ```arc
 istruc Empty {
     i32 x;
-    void __construct__(&self) { self.x = 0; }
+    void __construct__(Empty* self) { self.x = 0; }
 }
-Empty e;   // calls e.__construct__()
+Empty e;    // calls e.__construct__()
 ```
 
-## Access Modifiers
+### Multiple Constructors (Overloaded)
+
+You may define multiple `__construct__` overloads with different signatures. The compiler selects the one matching the call-site argument types.
+
+```arc
+istruc Buffer {
+    i32* data;
+    i32  cap;
+
+    void __construct__(Buffer* self) {
+        self.data = (i32*)0;
+        self.cap  = 0;
+    }
+
+    void __construct__(Buffer* self, i32 n, &memstr alloc) {
+        self.data = (i32*)alloc.mmap((u64)(sizeof(i32) * n));
+        self.cap  = n;
+    }
+}
+
+Buffer empty_buf;              // zero-arg ctor
+Buffer sized_buf(64, alloc);   // capacity ctor
+```
+
+### Assignment (`=`) vs Construction
+
+**Construction** happens only via `()` or `{}`:
+```arc
+Vec3 v(1.0, 2.0, 3.0);    // constructor called
+Vec3 w{1.0, 2.0, 3.0};    // constructor called
+```
+
+**Assignment** (`= expr`) calls `operator=` if the class defines one, otherwise performs a raw memory copy:
+```arc
+Vec3 v = some_other_vec3;  // calls Vec3.operator= if defined, else raw store
+```
+
+`= expr` does **not** invoke `__construct__`. If you need initialization from an expression, define `operator=`.
+
+---
+
+## Read-Only Methods
+
+Declare `self` as `const T*` to mark a method as non-mutating:
 
 ```arc
 istruc BankAccount {
-    public    i32 id;
-    private   f64 balance;
-    protected f64 interest_rate;
+    i32 balance;
+    i32 pin;
 
-    public void deposit(&self, f64 amount) {
-        self.balance = self.balance + amount;
+    bool verify(const BankAccount* self, i32 p) {
+        return self.pin == p;          // reads only; cannot assign self.pin = ...
     }
-    public f64 get_balance(&self) { return self.balance; }
-    private void recalculate(&self) { /* ... */ }
+
+    i32 get_balance(const BankAccount* self) {
+        return self.balance;
+    }
+
+    void deposit(BankAccount* self, i32 amount) {
+        self.balance = self.balance + amount;   // mutating: non-const self
+    }
 }
 ```
 
-- `public` (default): accessible everywhere
-- `private`: only within the class's own methods
-- `protected`: within the class and its subclasses
+---
 
 ## Static Methods
 
-Static methods belong to the class, not instances. Call via `ClassName.method()`:
+Static methods belong to the class, not any instance. Call them via `ClassName.method()` or `ClassName.method()`:
 
 ```arc
 istruc Factory {
     i32 value;
+
     static Factory make(i32 val) {
         Factory f;
         f.value = val;
@@ -84,91 +163,139 @@ istruc Factory {
 Factory f = Factory.make(42);
 ```
 
-## Inheritance
+Static methods do not receive an implicit `self` parameter.
+
+---
+
+## Aggregate Initializer
+
+If an `istruc` has no `__construct__`, use the named-field form to initialize it:
 
 ```arc
-istruc Animal {
-    i32 legs;
-    void __construct__(&self, i32 l) { self.legs = l; }
-    void speak(&self) { /* base */ }
+istruc Token {
+    i32 id;
+    i32 kind;
+    i32 total(const Token* self) { return self.id + self.kind; }
 }
 
-istruc Dog : Animal {
-    void __construct__(&self) { self.legs = 4; }
-    void fetch(&self) { /* ... */ }
-}
+Token t = Token { .id = 5, .kind = 6 };
+i32 v = t.total();   // 11
 ```
 
-## Virtual Dispatch
-
-Prefix methods with `virtual` to enable polymorphism. Use `override` in subclasses:
-
-```arc
-istruc Shape {
-    virtual f64 area(&self) { return 0.0; }
-}
-
-istruc Circle : Shape {
-    f64 radius;
-    void __construct__(&self, f64 r) { self.radius = r; }
-    override f64 area(&self) { return 3.14159 * self.radius * self.radius; }
-}
-
-istruc Square : Shape {
-    f64 side;
-    void __construct__(&self, f64 s) { self.side = s; }
-    override f64 area(&self) { return self.side * self.side; }
-}
-```
-
-## `mandatory virtual`
-
-Forces all subclasses to provide an override:
-```arc
-istruc Base {
-    mandatory virtual void do_work(&self);
-}
-```
-
-## `local` (Friend-Like Declarations)
-
-Functions declared with `local` inside an istruc can access its private members:
-```arc
-istruc Node {
-    private i32 data;
-    local i32 get_node_data(Node* n) { return (*n).data; }
-}
-```
+---
 
 ## Operator Overloading
 
-Covered in detail in [Chapter 14](14_operators.md). Brief example:
+See [Chapter 14](14_operators.md) for the full operator list. Each overloaded operator is a method with an explicit `self` pointer:
+
 ```arc
-istruc Complex {
-    f64 re; f64 im;
-    Complex operator+(Complex other) {
-        Complex r;
-        r.re = self.re + other.re;
-        r.im = self.im + other.im;
+istruc Vec2 {
+    i32 x; i32 y;
+
+    Vec2 operator+(const Vec2* self, Vec2 other) {
+        Vec2 r;
+        r.x = self.x + other.x;
+        r.y = self.y + other.y;
         return r;
     }
+
+    bool operator==(const Vec2* self, Vec2 other) {
+        return self.x == other.x && self.y == other.y;
+    }
 }
+
+Vec2 a(1, 2);
+Vec2 b(3, 4);
+Vec2 c = a + b;      // calls operator+
+bool eq = (a == a);  // calls operator==
 ```
 
-## Conversion Operators
+### `operator=`
+
+Define `operator=` to control what happens on assignment:
 
 ```arc
-istruc Celsius {
-    f64 value;
-    explicit operator f64() { return self.value; }
+istruc String {
+    char* data;
+
+    void operator=(String* self, String* other) {
+        self.data = (*other).data;   // shallow copy
+    }
 }
 
-Celsius temp;
-temp.value = 100.0;
-f64 raw = (f64)temp;   // calls conversion operator
+String s1; s1.data = "hello";
+String s2 = s1;    // calls operator=
 ```
 
-> **Challenge:** Implement a singly-linked list node as an `istruc` with an `i32 value` and an `i32* next` pointer. Add a static `make(i32 v)` constructor and a method `i32 sum()` that walks the chain and returns the total.
+### Conversion Operators
+
+Define a cast target to enable explicit `(T)` casts:
+
+```arc
+istruc Ratio {
+    i32 num; i32 den;
+    void __construct__(Ratio* self, i32 n, i32 d) { self.num = n; self.den = d; }
+    operator i32(const Ratio* self) { return self.num / self.den; }
+}
+
+Ratio r(10, 3);
+i32 v = (i32)r;    // calls operator i32, result is 3
+```
+
+---
+
+## Interfaces
+
+An `istruc` can implement one or more interfaces by listing them after `:`:
+
+```arc
+interface Drawable {
+    void draw(Drawable* self);
+}
+
+istruc Circle : Drawable {
+    i32 radius;
+    void draw(Circle* self) { /* render */ }
+}
+```
+
+The compiler verifies at compile time that every required interface method and field is present. See [Chapter 26](26_interfaces.md).
+
+---
+
+## Generic `istruc`
+
+Type parameters go in `<>` after the class name:
+
+```arc
+istruc Box<T> {
+    T value;
+}
+
+Box<i32> b;
+b.value = 77;
+```
+
+Each distinct instantiation (`Box<i32>`, `Box<f64>`) is compiled to a separate concrete type. See [Chapter 11](11_generics.md).
+
+---
+
+## `consteval` — Deferred Construction
+
+Declare a variable without invoking any constructor, then call it yourself:
+
+```arc
+consteval Timer u;
+u.__construct__(20);   // called manually, e.g. inside a conditional
+```
+
+Useful for placement-new patterns or when construction order must be exact. See [Chapter 18](18_comptime.md).
+
+---
+
+## Name Mangling
+
+Methods are internally named `ClassName__MT_methodname`. `operator=` becomes `ClassName__MT_operator=`. This mangling is an implementation detail; user code always uses dot-notation.
 
 ---
 

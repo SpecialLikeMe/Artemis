@@ -30,6 +30,10 @@ memstr bump {
 
     void* alloc_bytes(bump* self, u64 n) { return self.alloc_raw(n, (u64)8); }
 
+    // &memstr interface: mmap allocates n bytes, rmap is a no-op (bump allocator can't free individually)
+    void* mmap(bump* self, u64 n) { return self.alloc_raw(n, (u64)8); }
+    void  rmap(bump* self, void* p, u64 n) { }
+
     void reset(bump* self) { self.used = 0; }
 
     void deinit(bump* self) { free(self.base); }

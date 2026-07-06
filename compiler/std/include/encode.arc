@@ -1,22 +1,20 @@
 // std.encode — UTF-8, UTF-16, UTF-32 validation, codepoint decoding.
-// All functions/types at global scope after extern std.encode;
-//   utf8_decode_one / utf8_encode_one / utf8_validate / utf8_count
-//   utf16_decode_one / utf16_encode_one
-//   utf8_string / utf16_string / utf32_string
+// Access as: std.encode.utf8_decode_one(...), std.encode.utf8_validate(...), etc.
 
 // --- UTF-8 ---
 
+namespace std {
 namespace encode {
 u32 utf8_decode_one(u8* buf, u64 len, u64* pos) {
     u64 i = (*pos);
     if (i >= len) { return 0xFFFDu; }
-    u8 b0 = buf[i];
-    if (b0 < 0x80u) { (*pos) = i + 1; return (u32)b0; }
-    if (b0 < 0xC0u) { (*pos) = i + 1; return 0xFFFDu; }
+    u8 byte0 = buf[i];
+    if (byte0 < 0x80u) { (*pos) = i + 1; return (u32)byte0; }
+    if (byte0 < 0xC0u) { (*pos) = i + 1; return 0xFFFDu; }
     u32 cp; u32 extra;
-    if (b0 < 0xE0u)      { cp = (u32)(b0 & 0x1Fu); extra = 1u; }
-    else if (b0 < 0xF0u) { cp = (u32)(b0 & 0x0Fu); extra = 2u; }
-    else                  { cp = (u32)(b0 & 0x07u); extra = 3u; }
+    if (byte0 < 0xE0u)      { cp = (u32)(byte0 & 0x1Fu); extra = 1u; }
+    else if (byte0 < 0xF0u) { cp = (u32)(byte0 & 0x0Fu); extra = 2u; }
+    else                  { cp = (u32)(byte0 & 0x07u); extra = 3u; }
     for (u32 j = 0u; j < extra; j = j + 1u) {
         i = i + 1;
         if (i >= len) { (*pos) = i; return 0xFFFDu; }
@@ -127,3 +125,4 @@ istruc utf32_string {
 }
 
 } // namespace encode
+} // namespace std

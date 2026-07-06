@@ -2,7 +2,7 @@
 extern std.alloc.free_list;
 
 i32 main() {
-    free_list fl(4096);
+    std.alloc.free_list fl(4096);
     if (fl.base == (void*)0) { return 1; }
 
     // Alloc a few blocks

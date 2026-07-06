@@ -15,7 +15,7 @@ istruc unordered_set<K> {
     i32           count;
     i32           cap;
 
-    private static u64 hash_key(i64 k) {
+    static u64 hash_key(i64 k) {
         u64 h = (u64)k;
         h = h ^ (h >> 30);
         h = h * 0xbf58476d1ce4e5b9u;
@@ -36,7 +36,7 @@ istruc unordered_set<K> {
         self.cap = 0; self.count = 0; self.slots = (uset_slot<K>*)0;
     }
 
-    private void rehash(unordered_set* self, &memstr a) {
+    void rehash(unordered_set* self, &memstr a) {
         i32 old_cap = self.cap;
         uset_slot<K>* old_slots = self.slots;
         i32 new_cap = old_cap == 0 ? 16 : old_cap * 2;

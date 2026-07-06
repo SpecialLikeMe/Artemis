@@ -1,8 +1,6 @@
-// local keyword: like C++ friend — allows a non-member function to access class fields
-// For test purposes: verify local-declared function can be called
-
+// Verify that a regular function can access istruc fields via pointer
 istruc Secret {
-    private i32 value;
+    i32 value;
 
     void __construct__(Secret* self, i32 v) {
         self.value = v;
@@ -11,8 +9,6 @@ istruc Secret {
     i32 get(const Secret* self) {
         return self.value;
     }
-
-    local i32 peek(Secret* s);
 }
 
 i32 peek(Secret* s) {

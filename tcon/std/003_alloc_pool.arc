@@ -3,7 +3,7 @@ extern std.alloc.pool;
 
 i32 main() {
     // Pool of 8 slots, each 4 bytes (i32)
-    pool p(8, (u64)4);
+    std.alloc.pool p(8, (u64)4);
     if (p.base == (void*)0) { return 1; }
     if (p.empty() == false) { return 2; }  // initially all free = "empty" (no used slots)
     if (p.full() == true) { return 3; }

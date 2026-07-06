@@ -15,6 +15,10 @@
 #include "../compiler/lexer/main.hxx"
 #include "../compiler/parser/main.hxx"
 #include "../compiler/analysis/main.hxx"
+#include "../compiler/mir/mir.hxx"
+#include "../compiler/lir/lir.hxx"
+#include "../compiler/smt/smt.hxx"
+#include "../compiler/smt/inject.hxx"
 #include "../compiler/ir/main.hxx"
 #include "../compiler/diagnostics.hxx"
 
@@ -51,6 +55,7 @@ struct cli_opts {
     bool         target_linux = false;
     bool         target_win   = false;
     bool         target_mac   = false;
+    bool         unsafe      = false;  // --unsafe: skip heap allocator check
     // Preprocessor: -D SYMBOL defines, -I path include dirs
     std::unordered_set<std::string> defines;
     std::vector<std::string>        include_paths;
@@ -81,8 +86,8 @@ static void print_usage(std::string_view prog) {
         "  -I <path>          Add directory to @include search path\n"
         "  -v, --verbose      Verbose output\n"
         "  --version          Print version and exit\n"
-        "  -h, --help         Print this message and exit\n",
-        static_cast<int>(prog.size()), prog.data());
+        "  -h, --help         Print this message and exit\n");
+    (void)prog;
 }
 
 // Returns false and prints an error if parsing fails.
@@ -134,6 +139,7 @@ static bool parse_args(int argc, char** argv, cli_opts& opts,
         else if (arg.size() > 2 && arg[0] == '-' && arg[1] == 'D') { opts.defines.insert(std::string(arg.substr(2))); }
         else if (arg == "-I" && i + 1 < argc) { opts.include_paths.push_back(argv[++i]); }
         else if (arg.size() > 2 && arg[0] == '-' && arg[1] == 'I') { opts.include_paths.push_back(std::string(arg.substr(2))); }
+        else if (arg == "--unsafe")     { opts.unsafe = true; }
         else if (is_atc && arg == "-l") { opts.target_linux = true; if (i+1<argc) opts.output = argv[++i]; }
         else if (is_atc && arg == "-w") { opts.target_win   = true; if (i+1<argc) opts.output = argv[++i]; }
         else if (is_atc && arg == "-m") { opts.target_mac   = true; if (i+1<argc) opts.output = argv[++i]; }
@@ -229,26 +235,18 @@ static std::string resolve_std_imports(const std::string& src) {
     std::string pkg_src;
     std::string main_src;
 
-    // Locate the compiler executable path (used to find stdlib alongside it)
+    // Locate the stdlib directory. Priority order:
+    //   1. Build-time embedded path (ARTEMIS_STDLIB_PATH, set by CMake)
+    //   2. ARTEMIS_HOME env var (set by installer)
+    //   3. Walk up from the compiler executable
+    //   4. Walk up from CWD
     fs::path std_root;
-    // Try executable-relative first, then CWD-relative
-    fs::path exe_dir;
-#ifdef _WIN32
-    char exe_path[4096] = {};
-    GetModuleFileNameA(nullptr, exe_path, sizeof(exe_path));
-    exe_dir = fs::path(exe_path).parent_path();
-#else
-    char exe_path[4096] = {};
-    ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (n > 0) { exe_path[n] = '\0'; exe_dir = fs::path(exe_path).parent_path(); }
-#endif
-    // 1. Walk up from exe_dir to find compiler/std/include/
-    for (fs::path p = exe_dir; p.has_parent_path() && p != p.parent_path(); p = p.parent_path()) {
-        if (fs::exists(p / "compiler" / "std" / "include")) {
-            std_root = p / "compiler" / "std" / "include"; break;
-        }
+#ifdef ARTEMIS_STDLIB_PATH
+    {
+        fs::path baked(ARTEMIS_STDLIB_PATH);
+        if (fs::exists(baked)) std_root = baked;
     }
-    // 2. Check ARTEMIS_HOME env var (set by installer)
+#endif
     if (std_root.empty()) {
         const char* home = std::getenv("ARTEMIS_HOME");
         if (home) {
@@ -259,7 +257,23 @@ static std::string resolve_std_imports(const std::string& src) {
                 std_root = h / "compiler" / "std" / "include";
         }
     }
-    // 3. Walk up from current working directory
+    if (std_root.empty()) {
+        fs::path exe_dir;
+#ifdef _WIN32
+        char exe_path[4096] = {};
+        GetModuleFileNameA(nullptr, exe_path, sizeof(exe_path));
+        exe_dir = fs::path(exe_path).parent_path();
+#else
+        char exe_path[4096] = {};
+        ssize_t nl = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (nl > 0) { exe_path[nl] = '\0'; exe_dir = fs::path(exe_path).parent_path(); }
+#endif
+        for (fs::path p = exe_dir; p.has_parent_path() && p != p.parent_path(); p = p.parent_path()) {
+            if (fs::exists(p / "compiler" / "std" / "include")) {
+                std_root = p / "compiler" / "std" / "include"; break;
+            }
+        }
+    }
     if (std_root.empty()) {
         for (fs::path p = fs::current_path(); p.has_parent_path() && p != p.parent_path(); p = p.parent_path()) {
             if (fs::exists(p / "compiler" / "std" / "include")) {
@@ -267,7 +281,10 @@ static std::string resolve_std_imports(const std::string& src) {
             }
         }
     }
-    if (std_root.empty()) std_root = fs::path("compiler") / "std" / "include"; // last-resort CWD
+    if (std_root.empty()) {
+        fprintf(stderr, "error: Cannot locate Artemis standard library.\n"
+                "  Set ARTEMIS_HOME to the Artemis install directory, or rebuild from source.\n");
+    }
 
     std::unordered_set<std::string> already_included;
     std::istringstream ss(src);
@@ -326,6 +343,89 @@ static std::string resolve_std_imports(const std::string& src) {
         }
     }
     return pkg_src + main_src;
+}
+
+// ------------------------------------------------------------------ @import resolution
+
+// Expand `const sta X = @import("Y");` into `namespace X { <file contents> }` before parsing.
+// For directory imports, looks for Y/import.arc (like Rust's mod.rs).
+static std::string resolve_import_stmts(const std::string& src, const std::string& src_path) {
+    fs::path src_dir = fs::path(src_path).parent_path();
+    if (src_dir.empty()) src_dir = fs::current_path();
+
+    std::string result;
+    std::istringstream iss(src);
+    std::string line;
+    while (std::getline(iss, line)) {
+        std::string trimmed = line;
+        size_t first = trimmed.find_first_not_of(" \t");
+        std::string t = (first == std::string::npos) ? "" : trimmed.substr(first);
+        if (!t.empty() && t.back() == '\r') t.pop_back();
+
+        // Match: const [sta] NAME = @import("PATH");
+        std::string ns_name, import_path_str;
+        bool matched = [&]() -> bool {
+            size_t p = 0;
+            if (t.substr(p, 5) != "const") return false;
+            p += 5;
+            while (p < t.size() && (t[p] == ' ' || t[p] == '\t')) p++;
+            if (p + 3 <= t.size() && t.substr(p, 3) == "sta") {
+                p += 3;
+                while (p < t.size() && (t[p] == ' ' || t[p] == '\t')) p++;
+            }
+            size_t n0 = p;
+            while (p < t.size() && (std::isalnum((unsigned char)t[p]) || t[p] == '_')) p++;
+            if (p == n0) return false;
+            ns_name = t.substr(n0, p - n0);
+            while (p < t.size() && (t[p] == ' ' || t[p] == '\t')) p++;
+            if (p >= t.size() || t[p] != '=') return false;
+            p++;
+            while (p < t.size() && (t[p] == ' ' || t[p] == '\t')) p++;
+            const std::string prefix = "@import(";
+            if (t.substr(p, prefix.size()) != prefix) return false;
+            p += prefix.size();
+            char q = '"';
+            if (p < t.size() && (t[p] == '"' || t[p] == '\'')) { q = t[p]; p++; }
+            size_t ps = p;
+            while (p < t.size() && t[p] != q && t[p] != ')') p++;
+            import_path_str = t.substr(ps, p - ps);
+            return !import_path_str.empty();
+        }();
+
+        if (matched) {
+            fs::path import_path = src_dir / import_path_str;
+            std::string file_content;
+
+            if (fs::exists(import_path) && !fs::is_directory(import_path)) {
+                file_content = read_file(import_path.string());
+            } else if (fs::is_directory(import_path)) {
+                fs::path entry = import_path / "import.arc";
+                if (!fs::exists(entry))
+                    throw std::runtime_error("@import: directory '" + import_path.string() +
+                                             "' has no import.arc entry point");
+                file_content = read_file(entry.string());
+            } else {
+                fs::path with_ext = fs::path(import_path.string() + ".arc");
+                if (fs::exists(with_ext)) {
+                    file_content = read_file(with_ext.string());
+                } else {
+                    fs::path dir_entry = import_path / "import.arc";
+                    if (fs::exists(dir_entry)) {
+                        file_content = read_file(dir_entry.string());
+                    } else {
+                        throw std::runtime_error("@import: cannot find '" + import_path_str +
+                                                 "' (tried " + with_ext.string() +
+                                                 " and " + dir_entry.string() + ")");
+                    }
+                }
+            }
+
+            result += "namespace " + ns_name + " {\n" + file_content + "\n} // end @import " + ns_name + "\n";
+        } else {
+            result += line + "\n";
+        }
+    }
+    return result;
 }
 
 // ------------------------------------------------------------------ AST printer (--emit-ast)
@@ -594,6 +694,7 @@ int main(int argc, char** argv) {
     std::string src;
     try {
         src = read_file(opts.input);
+        src = resolve_import_stmts(src, opts.input);  // @import → namespace wrapping
         src = resolve_aciso_imports(src);
         src = resolve_std_imports(src);
     } catch (const std::exception& e) {
@@ -643,11 +744,32 @@ int main(int argc, char** argv) {
 
     // ---- analyse ----
     try {
-        analyze(prog_ast);
+        analyze(prog_ast, opts.unsafe);
     } catch (const std::runtime_error& e) {
         diag.absorb(e);
         diag.finish();
         return 1;
+    }
+
+    // ---- safety analysis (MIR → LIR → SMT → inject) ----
+    std::unordered_map<expr_node*, check_kind> unsafe_ops;
+    try {
+        mir_module mir_mod = lower_to_mir(prog_ast);
+        lower_to_lir(mir_mod);
+        smt_result smt = analyze_module(mir_mod);
+        // Temporary ir_context just to receive unsafe_ops; real one is created by ir_main below.
+        ir_context tmp_ctx;
+        inject_result inj = inject_checks(smt, &tmp_ctx);
+        if (!inj.ok) {
+            for (auto& err : inj.errors)
+                fprintf(stderr, "%s\n", err.message.c_str());
+            return 1;
+        }
+        unsafe_ops = std::move(tmp_ctx.unsafe_ops);
+    } catch (const std::exception& ex) {
+        // Safety pipeline failure is non-fatal: fall back to unchecked IR generation
+        if (opts.verbose)
+            fprintf(stderr, "Warning: safety pipeline failed (%s); proceeding without checks\n", ex.what());
     }
 
     // ---- IR generation ----
@@ -692,7 +814,7 @@ int main(int argc, char** argv) {
 
     LLVMModuleRef mod;
     try {
-        mod = ir_main(prog_ast, opts.input.c_str());
+        mod = ir_main(prog_ast, opts.input.c_str(), &unsafe_ops);
     } catch (const std::runtime_error& e) {
         diag.absorb(e);
         diag.finish();

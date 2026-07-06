@@ -72,7 +72,7 @@ istruc lex {
 
 // ---- Helper: alloc a val node ----
 
-private val* alloc_val(&memstr a, i32 kind) {
+val* alloc_val(&memstr a, i32 kind) {
     val* v = (val*)a.mmap(sizeof(val));
     (*v).kind=kind; (*v).b_val=false; (*v).i_val=0; (*v).f_val=0.0;
     (*v).s_val=(i8*)0; (*v).arr_items=(val**)0; (*v).arr_len=0;
@@ -82,7 +82,7 @@ private val* alloc_val(&memstr a, i32 kind) {
 
 // ---- Table helpers ----
 
-private void table_set(val* tbl, i8* key, val* value, &memstr a) {
+void table_set(val* tbl, i8* key, val* value, &memstr a) {
     // Check existing
     for (i32 i = 0; i < (*tbl).tbl_len; i=i+1) {
         i8* k = (*tbl).tbl_pairs[i].key;
@@ -102,7 +102,7 @@ private void table_set(val* tbl, i8* key, val* value, &memstr a) {
     (*tbl).tbl_len=(*tbl).tbl_len+1;
 }
 
-private val* table_get(val* tbl, i8* key) {
+val* table_get(val* tbl, i8* key) {
     for(i32 i=0;i<(*tbl).tbl_len;i=i+1){
         i8* k=(*tbl).tbl_pairs[i].key;
         i32 j=0;bool eq=true;
@@ -114,7 +114,7 @@ private val* table_get(val* tbl, i8* key) {
 
 // ---- Key parsing ----
 
-private i8* parse_bare_key(lex* l, &memstr a) {
+i8* parse_bare_key(lex* l, &memstr a) {
     i32 start = (*l).pos;
     while (!(*l).at_end()) {
         i8 c = (*l).peek();
@@ -129,7 +129,7 @@ private i8* parse_bare_key(lex* l, &memstr a) {
     return s;
 }
 
-private i8* parse_quoted_key(lex* l, &memstr a) {
+i8* parse_quoted_key(lex* l, &memstr a) {
     (*l).next(); // consume "
     i32 start=(*l).pos;
     while(!(*l).at_end()&&(*l).peek()!='"'){
@@ -146,9 +146,9 @@ private i8* parse_quoted_key(lex* l, &memstr a) {
 
 // ---- Value parsing ----
 
-private val* parse_value(lex* l, &memstr a);
+val* parse_value(lex* l, &memstr a);
 
-private val* parse_string(lex* l, &memstr a) {
+val* parse_string(lex* l, &memstr a) {
     // Multi-line or single line
     bool ml = ((*l).peek()=='\"' && (*l).peek2()=='\"');
     if(ml) { (*l).next(); (*l).next(); }
@@ -176,7 +176,7 @@ private val* parse_string(lex* l, &memstr a) {
     return v;
 }
 
-private val* parse_literal_string(lex* l, &memstr a) {
+val* parse_literal_string(lex* l, &memstr a) {
     bool ml=((*l).peek()=='\''&&(*l).peek2()=='\'');
     if(ml){(*l).next();(*l).next();}
     (*l).next(); // '
@@ -199,7 +199,7 @@ private val* parse_literal_string(lex* l, &memstr a) {
     return v;
 }
 
-private val* parse_array(lex* l, &memstr a) {
+val* parse_array(lex* l, &memstr a) {
     (*l).next(); // [
     val* v=alloc_val(a,TOML_ARRAY);
     val* items[512]; i32 count=0;
@@ -217,7 +217,7 @@ private val* parse_array(lex* l, &memstr a) {
     return v;
 }
 
-private val* parse_inline_table(lex* l, &memstr a) {
+val* parse_inline_table(lex* l, &memstr a) {
     (*l).next(); // {
     val* v=alloc_val(a,TOML_TABLE);
     (*l).skip_ws();
@@ -235,7 +235,7 @@ private val* parse_inline_table(lex* l, &memstr a) {
     return v;
 }
 
-private val* parse_number_or_bool(lex* l, &memstr a) {
+val* parse_number_or_bool(lex* l, &memstr a) {
     // Check boolean
     if((*l).pos+3<(*l).len&&(*l).src[(*l).pos]=='t'&&(*l).src[(*l).pos+1]=='r'&&
        (*l).src[(*l).pos+2]=='u'&&(*l).src[(*l).pos+3]=='e') {
@@ -292,7 +292,7 @@ private val* parse_number_or_bool(lex* l, &memstr a) {
     val* v=alloc_val(a,TOML_INT);(*v).i_val=neg?-iv:iv;return v;
 }
 
-private val* parse_value(lex* l, &memstr a) {
+val* parse_value(lex* l, &memstr a) {
     (*l).skip_ws();
     i8 c=(*l).peek();
     if(c=='"')  return parse_string(l,a);
@@ -304,7 +304,7 @@ private val* parse_value(lex* l, &memstr a) {
 
 // ---- Navigate dotted key to nested table (creates intermediates) ----
 
-private val* resolve_table(val* root, i8** parts, i32 n_parts, &memstr a) {
+val* resolve_table(val* root, i8** parts, i32 n_parts, &memstr a) {
     val* cur = root;
     for(i32 p=0;p<n_parts;p=p+1) {
         val* child=table_get(cur,parts[p]);

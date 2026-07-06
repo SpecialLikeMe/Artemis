@@ -13,8 +13,12 @@ Artemis is a compiled, statically-typed, C-like language that targets LLVM IR. I
 - **Floating-point types:** `f32`, `f64`, `f128`, `f256`, `f512`
 - **Boolean types:** `bool`, `b1` (1-bit), `b8`, `b16`, `b32`, `b64`, `b128`, `b256`, `b512`
 - **Derived types:** pointers (`*`), fixed-size arrays (`[N]`), structs, unions, enums, typedefs
+- **Nullable types:** `?T` — any type prefixed with `?` accepts `null`; assignment of `null` to a plain non-pointer type is a compile-time error
+- **Error unions:** `!T` — functions declared `auto foo() !T {}` may return `error.Name`; callers use `try` to propagate or `except |e| {}` to handle
+- **`noexcept` enforcement:** functions marked `noexcept` cannot use `try`, `res {}`, or be declared `!T`; violations are compile-time errors
+- **Type reflection:** `get_ifo_t(T)` returns a `const ifo::ifo_t*` with name, size, align, kind, bits, and signedness of `T` at compile time
 - **Control flow:** `if`/`else`, `while`, `for`, `switch`/`case`/`default`, `break`, `continue`, `return`
-- **Functions:** first-class declarations, forward declarations (prototypes), variadic functions (`...`)
+- **Functions:** first-class declarations, forward declarations (prototypes), variadic functions (`...`); overloading is **not** supported (each function name must be unique)
 - **Storage class specifiers:** `extern`, `extern std`, `inline`, `register`, `const`
 - **Operators:** full set of arithmetic, bitwise, logical, comparison, assignment, and compound-assignment operators; prefix/postfix increment/decrement; `sizeof`; ternary `?:`; address-of `&`; dereference `*`
 - **Annotations:** `@identifier` syntax for attaching metadata to expressions
@@ -125,17 +129,20 @@ artemis hello.art --emit-ast
 
 ### Flags reference
 
-| Flag                  | Description                              |
-|-----------------------|------------------------------------------|
-| `-o <file>`           | Output file (default: `a.out`)           |
-| `-S`                  | Emit LLVM IR (`.ll`) only                |
-| `-c`                  | Emit object file (`.o`) only             |
-| `--emit-ast`          | Print AST to stdout and exit             |
-| `-O0` / `-O1` / `-O2` / `-O3` | Optimisation level (default: `-O0`) |
-| `--target <triple>`   | LLVM target triple (default: host)       |
-| `-v` / `--verbose`    | Verbose output                           |
-| `--version`           | Print version and exit                   |
-| `-h` / `--help`       | Print usage and exit                     |
+| Flag                  | Description                                                  |
+|-----------------------|--------------------------------------------------------------|
+| `-o <file>`           | Output file (default: `a.out`)                               |
+| `-S`                  | Emit LLVM IR (`.ll`) only                                    |
+| `-c`                  | Emit object file (`.o`) only                                 |
+| `--emit-ast`          | Print AST to stdout and exit (parse stage only)              |
+| `--analyze-only`      | Parse and analyze only; no codegen, no output file           |
+| `-O0` / `-O1` / `-O2` / `-O3` | Optimisation level (default: `-O0`)               |
+| `--target <triple>`   | LLVM target triple (default: host)                           |
+| `-D <name>`           | Predefine preprocessor symbol                                |
+| `-I <path>`           | Add directory to `@include` search path                      |
+| `-v` / `--verbose`    | Verbose output                                               |
+| `--version`           | Print version and exit                                       |
+| `-h` / `--help`       | Print usage and exit                                         |
 
 ---
 

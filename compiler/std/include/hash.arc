@@ -1,11 +1,9 @@
 // std.hash — Fast non-cryptographic hashes and cryptographic primitives.
-// All functions are at global scope after extern std.hash; — use prefixed names:
-//   wyhash_hash_bytes / wyhash_hash_str / wyhash_hash_i64 etc.
-//   fnv_hash_bytes / fnv_hash_str / fnv_hash32_bytes
-//   sha256_ctx / sha256_hash_bytes / sha256_hash_str
+// Access as: std.hash.wyhash_hash_str(...), std.hash.fnv_hash_bytes(...), etc.
 
 // --- Wyhash ---
 
+namespace std {
 namespace hash {
 constexpr u64 WYHASH_SECRET0 = 0xa0761d6478bd642fu;
 constexpr u64 WYHASH_SECRET1 = 0xe7037ed1a0b428dbu;
@@ -112,15 +110,15 @@ istruc sha256_ctx {
         for (i32 i = 0; i < 64; i = i + 1) self.buf[i] = 0;
     }
 
-    private u32 rotr32(sha256_ctx* self, u32 x, i32 n) { return (x >> n) | (x << (32 - n)); }
-    private u32 ch_fn(sha256_ctx* self, u32 e, u32 f, u32 g) { return (e&f)^(~e&g); }
-    private u32 maj_fn(sha256_ctx* self, u32 a, u32 b, u32 c) { return (a&b)^(a&c)^(b&c); }
-    private u32 ep0(sha256_ctx* self, u32 a) { return self.rotr32(a,2)^self.rotr32(a,13)^self.rotr32(a,22); }
-    private u32 ep1(sha256_ctx* self, u32 e) { return self.rotr32(e,6)^self.rotr32(e,11)^self.rotr32(e,25); }
-    private u32 sig0(sha256_ctx* self, u32 x){ return self.rotr32(x,7)^self.rotr32(x,18)^(x>>3); }
-    private u32 sig1(sha256_ctx* self, u32 x){ return self.rotr32(x,17)^self.rotr32(x,19)^(x>>10); }
+    u32 rotr32(sha256_ctx* self, u32 x, i32 n) { return (x >> n) | (x << (32 - n)); }
+    u32 ch_fn(sha256_ctx* self, u32 e, u32 f, u32 g) { return (e&f)^(~e&g); }
+    u32 maj_fn(sha256_ctx* self, u32 a, u32 b, u32 c) { return (a&b)^(a&c)^(b&c); }
+    u32 ep0(sha256_ctx* self, u32 a) { return self.rotr32(a,2)^self.rotr32(a,13)^self.rotr32(a,22); }
+    u32 ep1(sha256_ctx* self, u32 e) { return self.rotr32(e,6)^self.rotr32(e,11)^self.rotr32(e,25); }
+    u32 sig0(sha256_ctx* self, u32 x){ return self.rotr32(x,7)^self.rotr32(x,18)^(x>>3); }
+    u32 sig1(sha256_ctx* self, u32 x){ return self.rotr32(x,17)^self.rotr32(x,19)^(x>>10); }
 
-    private void transform(sha256_ctx* self) {
+    void transform(sha256_ctx* self) {
         u32 K[64];
         K[0]=0x428a2f98u; K[1]=0x71374491u; K[2]=0xb5c0fbcfu; K[3]=0xe9b5dba5u;
         K[4]=0x3956c25bu; K[5]=0x59f111f1u; K[6]=0x923f82a4u; K[7]=0xab1c5ed5u;
@@ -200,3 +198,4 @@ sha256_digest sha256_hash_str(i8* s) {
 }
 
 } // namespace hash
+} // namespace std

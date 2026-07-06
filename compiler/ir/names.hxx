@@ -10,22 +10,13 @@ inline std::string mangle_type(const type_node* t) {
     for (int i = 0; i < t->pointer_depth; i++) s += "P";
     if (t->is_primitive) {
         switch (t->prim.value_or(prim_type_t::void_t)) {
-            case prim_type_t::void_t:  s += "v";    break;
-            case prim_type_t::char_t:
-            case prim_type_t::i8:      s += "i8";   break;
-            case prim_type_t::i16:     s += "i16";  break;
-            case prim_type_t::i32:     s += "i32";  break;
-            case prim_type_t::i64:     s += "i64";  break;
-            case prim_type_t::i128:    s += "i128"; break;
-            case prim_type_t::u8:      s += "u8";   break;
-            case prim_type_t::u16:     s += "u16";  break;
-            case prim_type_t::u32:     s += "u32";  break;
-            case prim_type_t::u64:     s += "u64";  break;
-            case prim_type_t::u128:    s += "u128"; break;
-            case prim_type_t::f32:     s += "f32";  break;
-            case prim_type_t::f64:     s += "f64";  break;
-            case prim_type_t::boolean: s += "b";    break;
-            default:                   s += "?";    break;
+            case prim_type_t::void_t:    s += "v";  break;
+            case prim_type_t::char_t:    s += "c";  break;
+            case prim_type_t::arb_int:   s += "i" + std::to_string(t->bit_width); break;
+            case prim_type_t::arb_uint:  s += "u" + std::to_string(t->bit_width); break;
+            case prim_type_t::arb_float: s += "f" + std::to_string(t->bit_width); break;
+            case prim_type_t::arb_bool:  s += "b" + std::to_string(t->bit_width); break;
+            default:                     s += "?";  break;
         }
     } else {
         s += t->name.value_or("?");

@@ -1,8 +1,5 @@
 // std.soa — Structure-of-Arrays data structures and generic SoA helpers.
-// Each major container is mirrored as a SoA variant for cache-optimal access.
-// soa.vec<T> stores each field of T in a separate flat array.
-// Because Artemis does not yet have reflection, users express the SoA shape
-// manually via the typed SoA variants below, or by composing soa.array<T>.
+// Access as: std.soa.make_soa(...), std.soa.soa_layout, etc.
 
 namespace std {
 namespace soa {
@@ -238,6 +235,95 @@ istruc kv<K, V> {
 // ---- soa.zip_each — iterate two parallel arrays simultaneously ----
 // Usage: soa.zip_each(xs.data, ys.data, n, callback_fn);
 // The callback receives (f32 x, f32 y, i32 index) — use function pointers.
+
+// ---- make_soa: ifo_t-driven AoS → SoA transposition ----
+//
+// Given:
+//   - src:        void* pointing to an array of `count` structs, each of
+//                 byte size described by ifo.size
+//   - info:       ifo_t* from get_ifo_t(YourType) — carries field metadata
+//   - count:      number of elements in the source array
+//   - scratch:    &memstr allocator used for the intermediate SoA block
+//
+// Returns a soa_layout whose `data` field is a heap-allocated block (via
+// scratch) arranged as field_count contiguous flat arrays, one per field.
+// soa_layout.field_ptrs[i] points at the flat array for field i.
+// The source (src) is NOT modified.
+//
+// Layout of the returned block:
+//   [ field0[0..count-1] | pad | field1[0..count-1] | pad | ... ]
+//
+// field_ptrs[] give the start address of each field's array within that block.
+
+extern void* memcpy(void* dst, void* src, u64 n);
+
+// Descriptor of a transposed SoA block.
+constexpr i32 SOA_MAX_FIELDS = 64;
+
+istruc soa_layout {
+    void*  block;                        // raw allocation (pass to allocator to free)
+    u64    block_size;                   // total byte size of block
+    void*  field_ptrs[SOA_MAX_FIELDS];   // field_ptrs[i] → flat array for field i
+    i32    field_count;                  // number of fields transposed
+    i32    element_count;                // number of elements per field array
+}
+
+soa_layout make_soa(void* src, std.ifo.ifo_t* info, i32 count, &memstr scratch) {
+    soa_layout layout;
+    layout.field_count   = info.field_count;
+    layout.element_count = count;
+    layout.block         = (void*)0;
+    layout.block_size    = 0;
+
+    if (info.field_count <= 0 || count <= 0 || src == (void*)0) {
+        return layout;
+    }
+    if (info.field_count > SOA_MAX_FIELDS) {
+        return layout;
+    }
+
+    // Compute total allocation size: sum of (field_size * count) for each field,
+    // each rounded up to 16-byte alignment for SIMD friendliness.
+    u64 total = 0;
+    for (i32 f = 0; f < info.field_count; f = f + 1) {
+        u64 field_sz  = (u64)info.fields[f].size;
+        u64 row_bytes = field_sz * (u64)count;
+        row_bytes = (row_bytes + 15u) & ~15u;  // align to 16 bytes
+        total = total + row_bytes;
+    }
+
+    u8* block = (u8*)scratch.mmap(total);
+    layout.block      = (void*)block;
+    layout.block_size = total;
+
+    // Assign field_ptrs[] and zero-initialise their ranges.
+    u64 offset = 0;
+    for (i32 f = 0; f < info.field_count; f = f + 1) {
+        layout.field_ptrs[f] = (void*)(block + offset);
+        u64 field_sz  = (u64)info.fields[f].size;
+        u64 row_bytes = (field_sz * (u64)count + 15u) & ~15u;
+        // Zero the row
+        for (u64 b = 0; b < row_bytes; b = b + 1) block[offset + b] = (u8)0;
+        offset = offset + row_bytes;
+    }
+
+    // Scatter: for each element, copy each field's bytes into the right flat array.
+    u8* src_bytes = (u8*)src;
+    for (i32 elem = 0; elem < count; elem = elem + 1) {
+        u8* elem_ptr = src_bytes + (i64)elem * (i64)info.size;
+        for (i32 f = 0; f < info.field_count; f = f + 1) {
+            i32  foff = info.fields[f].offset;
+            i32  fsz  = info.fields[f].size;
+            u8*  dst_row = (u8*)layout.field_ptrs[f];
+            u8*  src_field = elem_ptr + foff;
+            // Copy fsz bytes from src_field to dst_row[elem * fsz]
+            memcpy((void*)(dst_row + (i64)elem * (i64)fsz),
+                   (void*)src_field, (u64)fsz);
+        }
+    }
+
+    return layout;
+}
 
 } // soa
 } // std

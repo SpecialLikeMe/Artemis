@@ -5,7 +5,7 @@ extern i32 printf(i8* fmt, ...);
 i32 main() {
     i8* path = "_arc_test_016.tmp";
 
-    file w;
+    std.fs.file w;
     bool ok = w.open(path, "wb");
     if (!ok) { printf("FAIL open write\n"); return 1; }
 
@@ -15,7 +15,7 @@ i32 main() {
     w.close();
 
     // Read back
-    file r;
+    std.fs.file r;
     ok = r.open(path, "rb");
     if (!ok) { printf("FAIL open read\n"); return 3; }
 

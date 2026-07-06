@@ -24,8 +24,8 @@ namespace shapes {
 }
 
 i32 main() {
-    shapes::Circle c(1.0, 2.0, 3.0);
-    shapes::Vec2   v = c.get_center();
+    shapes.Circle c(1.0, 2.0, 3.0);
+    shapes.Vec2   v = c.get_center();
     if (v.x != 1.0) { return 1; }
     if (v.y != 2.0) { return 2; }
 

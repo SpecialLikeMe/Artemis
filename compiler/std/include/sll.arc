@@ -18,7 +18,7 @@ istruc sll<T> {
         self.length = 0;
     }
 
-    private sll_node<T>* make_node(sll* self, T val, &memstr a) {
+    sll_node<T>* make_node(sll* self, T val, &memstr a) {
         sll_node<T>* n = (sll_node<T>*)a.mmap(sizeof(sll_node<T>));
         (*n).val  = val;
         (*n).next = (sll_node<T>*)0;

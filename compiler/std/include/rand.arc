@@ -24,7 +24,7 @@ istruc xoshiro_state {
 
     u64 next_u64(xoshiro_state* self) {
         u64 r1  = self.s[1] * 5;
-        u64 res = ((r1 << 7) | (r1 >> 57)) * 9;
+        u64 result = ((r1 << 7) | (r1 >> 57)) * 9;
         u64 t   = self.s[1] << 17;
         self.s[2] = self.s[2] ^ self.s[0];
         self.s[3] = self.s[3] ^ self.s[1];
@@ -33,7 +33,7 @@ istruc xoshiro_state {
         self.s[2] = self.s[2] ^ t;
         u64 s3 = self.s[3];
         self.s[3] = (s3 << 45) | (s3 >> 19);
-        return res;
+        return result;
     }
 
     u32  next_u32(xoshiro_state* self)          { return (u32)(self.next_u64() >> 32); }
@@ -99,10 +99,10 @@ istruc pcg_state {
 // --- Gaussian (Box-Muller) ---
 
 f64 gaussian(xoshiro_state* rng, f64 mean, f64 std_dev) {
-    f64 u1 = (*rng).next_f64();
-    f64 u2 = (*rng).next_f64();
-    if (u1 <= 0.0) { u1 = 1e-300; }
-    f64 z = sqrt(-2.0 * log(u1)) * cos(6.28318530717958647 * u2);
+    f64 uu1 = (*rng).next_f64();
+    f64 uu2 = (*rng).next_f64();
+    if (uu1 <= 0.0) { uu1 = 1e-300; }
+    f64 z = sqrt(-2.0 * log(uu1)) * cos(6.28318530717958647 * uu2);
     return mean + z * std_dev;
 }
 

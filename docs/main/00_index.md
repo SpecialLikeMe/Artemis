@@ -1,10 +1,10 @@
 # The Artemis Programming Guide
 
-**Version:** 0.1.0 | **Status:** Active Development
+**Version:** 0.2.0 | **Status:** Active Development
 
-This guide covers every corner of the Artemis language, build system, and package manager. Read it top to bottom to go from zero to production-ready.
+This guide covers every corner of the Artemis language, build system, and package manager.
 
-## Chapters
+## Feature Chapters
 
 1. [Introduction](01_introduction.md)
 2. [Getting Started](02_getting_started.md)
@@ -26,6 +26,13 @@ This guide covers every corner of the Artemis language, build system, and packag
 18. [Compile-Time Features](18_comptime.md)
 19. [Function Pointers](19_function_pointers.md)
 20. [The `defer` Statement](20_defer.md)
-21. [Build System](21_build_system.md)
-22. [Package Manager](22_package_manager.md)
-23. [Language Reference](23_reference.md)
+21. [Error Handling (`!T`, `try`, `except`)](24_error_handling.md)
+22. [Interfaces](26_interfaces.md)
+23. [Type Aliases and `auto`](28_typedef_auto.md)
+24. [Macros (`const_resolve` and proc macros)](29_macros.md)
+
+## Reference (Unnumbered)
+
+- [Build System](build_system.md)
+- [Package Manager](package_manager.md)
+- [Language Reference](reference.md)

@@ -23,9 +23,9 @@ extern "C" { void* malloc(u64 n); void free(void* p); i32 printf(i8* fmt, ...); 
 
 istruc Counter {
     i32 value;
-    void __construct__(&self) { self.value = 0; }
-    void inc(&self)           { self.value = self.value + 1; }
-    i32  get(&self)           { return self.value; }
+    void __construct__(Counter* self) { self.value = 0; }
+    void inc(Counter* self)           { self.value = self.value + 1; }
+    i32  get(Counter* self)           { return self.value; }
 }
 
 i32 main() {

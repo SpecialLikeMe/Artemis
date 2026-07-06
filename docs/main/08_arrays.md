@@ -38,10 +38,10 @@ istruc Grid {
     i32 width;
     i32 height;
 
-    void set(&self, i32 x, i32 y, i32 v) {
+    void set(Grid* self, i32 x, i32 y, i32 v) {
         self.cells[y * self.width + x] = v;
     }
-    i32 get(&self, i32 x, i32 y) {
+    i32 get(Grid* self, i32 x, i32 y) {
         return self.cells[y * self.width + x];
     }
 }

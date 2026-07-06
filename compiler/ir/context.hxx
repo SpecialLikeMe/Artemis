@@ -3,6 +3,14 @@
 
 // Forward declarations for generic templates (full defs in parser/main.hxx).
 struct func_decl;
+struct expr_node;
+
+// Runtime check kind: populated by SMT inject pass, consumed by IR emitter.
+enum class check_kind : uint8_t {
+    bounds,    // array index out-of-bounds
+    null_deref,// pointer null dereference
+    div_zero,  // division or remainder by zero
+};
 struct class_decl;
 struct enum_decl;
 struct type_node;
@@ -31,6 +39,9 @@ struct ir_context {
     LLVMValueRef current_func     = nullptr;
     LLVMTypeRef  current_func_type = nullptr; // the LLVMFunctionType
     LLVMTypeRef  current_ret_type  = nullptr;
+    // Error union: true when emitting a !T function; eu_type is the {i32,T} struct (or i32 for !void)
+    bool        current_func_is_error_union = false;
+    LLVMTypeRef current_error_union_type    = nullptr;
 
     // Local variable scopes (pushed/popped around blocks and function bodies)
     std::vector<ir_scope_frame> scopes;
@@ -41,7 +52,9 @@ struct ir_context {
     // Global declarations registered during pass 1
     std::unordered_map<std::string, LLVMValueRef> global_funcs;
     std::unordered_map<std::string, LLVMTypeRef>  global_func_types; // fn type (not ptr)
+    std::unordered_map<std::string, bool>          global_func_ret_unsigned; // fn name -> unsigned return
     std::unordered_map<std::string, LLVMValueRef> global_vars;
+    std::unordered_set<std::string>                global_var_unsigned; // unsigned global variable names
     std::unordered_map<std::string, LLVMTypeRef>  struct_types;           // name -> LLVMStructType
     std::unordered_map<std::string, std::vector<std::string>> struct_field_names;    // for GEP index
     std::unordered_map<std::string, std::vector<LLVMTypeRef>> struct_field_types;   // for member load
@@ -52,24 +65,33 @@ struct ir_context {
     std::unordered_map<std::string, type_node*> typedef_aliases;
 
     // Class-specific IR state
+    struct class_method_ir_info {
+        std::string  name;
+        int          param_count = 0;
+        type_node*   ret_type    = nullptr; // AST type node — used for ifo_t reflection only
+    };
     struct class_ir_info {
-        LLVMTypeRef   class_type    = nullptr;  // LLVM struct for the class
-        LLVMTypeRef   vtable_type   = nullptr;  // LLVM struct for the vtable (may be null)
-        LLVMValueRef  vtable_global = nullptr;  // @ClassName_vtable global (may be null)
-        std::vector<std::string>  vtable_slots; // virtual method names in vtable order
-        std::string   base_name;                // base class name (empty if none)
-        bool          has_virtual   = false;
-        // Field layout: includes base fields (if any) then own fields
-        std::vector<std::string>  all_field_names;
-        std::vector<LLVMTypeRef>  all_field_types;
-        // vtable pointer is at index 0 if has_virtual
+        LLVMTypeRef   class_type    = nullptr;
+        std::string   base_name;                // base class name (for base-chain method lookup)
+        std::vector<std::string>          all_field_names;
+        std::vector<LLVMTypeRef>          all_field_types;
+        std::vector<class_method_ir_info> methods;  // for ifo_t reflection
     };
     std::unordered_map<std::string, class_ir_info> class_infos;
+
+    // &memstr fat-pointer dispatch support
+    LLVMTypeRef memstr_fat_type    = nullptr;   // {ptr, ptr} = {data_ptr, vtable_ptr}
+    LLVMTypeRef memstr_vtable_type = nullptr;   // {ptr, ptr, ptr} for {mmap, rmap, deinit}
+    std::unordered_map<std::string, LLVMValueRef> memstr_vtables;  // class_name -> vtable global
+
+    // Pointee types for struct pointer fields (for correct subscript element type)
+    std::unordered_map<std::string, std::vector<LLVMTypeRef>> struct_field_pointee_types;
 
     // Defer stack: each scope level has a list of deferred items (exprs/blocks)
     // stored as pairs of (expr_node*, block_stmt*) — one of which is non-null
     using defer_item = std::pair<void*, bool>; // ptr, false=expr_node, true=block_stmt
-    std::vector<std::vector<std::pair<void*, bool>>> defer_stack; // per-scope deferred items
+    std::vector<std::vector<std::pair<void*, bool>>> defer_stack;    // per-scope deferred items
+    std::vector<std::vector<std::pair<void*, bool>>> errdefer_stack; // fired only on error exit
 
     // Current class being emitted (for self parameter lookup)
     std::string current_class_name;
@@ -87,6 +109,21 @@ struct ir_context {
     // ADT enum registry: enum name -> enum_decl* (for payload-access codegen)
     std::unordered_map<std::string, enum_decl*> adt_enums;
 
+    // Compile-time integer values for constexpr declarations, populated before pass 1a
+    // so that llvm_type_of can resolve identifier-based array sizes (e.g. field_ptrs[SOA_MAX_FIELDS]).
+    std::unordered_map<std::string, int64_t> constexpr_int_vals;
+
+    // Error name registry: populated by every error.Name literal in the module.
+    // Used to emit __artemis_error_name() lookup at end of codegen.
+    std::vector<std::pair<uint32_t, std::string>> error_registry;
+    bool error_name_fn_emitted = false; // guard: emit once per module
+
+    // Safety runtime checks: SMT inject pass populates this before IR emission.
+    // expr_node* → what kind of runtime check to wrap around it.
+    // GOOD sites are absent (no check needed). BAD sites cause compile errors
+    // before IR emission. Only UNKNOWN sites appear here.
+    std::unordered_map<expr_node*, check_kind> unsafe_ops;
+
     void push_defer_scope() { defer_stack.emplace_back(); }
     void add_defer(void* item, bool is_block) {
         if (!defer_stack.empty()) defer_stack.back().push_back({item, is_block});
@@ -96,6 +133,14 @@ struct ir_context {
         auto items = std::move(defer_stack.back());
         defer_stack.pop_back();
         return items; // caller must emit these in reverse order
+    }
+
+    void push_errdefer_scope() { errdefer_stack.emplace_back(); }
+    void add_errdefer(void* item, bool is_block) {
+        if (!errdefer_stack.empty()) errdefer_stack.back().push_back({item, is_block});
+    }
+    void pop_errdefer_scope() {
+        if (!errdefer_stack.empty()) errdefer_stack.pop_back();
     }
 
     // ---- scope helpers ----

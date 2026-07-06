@@ -110,9 +110,9 @@ istruc file {
 
 namespace path {
 
-bool exists(i8* p) { return access(p, F_OK) == 0; }
-bool is_readable(i8* p) { return access(p, R_OK) == 0; }
-bool is_writable(i8* p) { return access(p, W_OK) == 0; }
+bool exists(i8* p) { return access(p, std.fs.F_OK) == 0; }
+bool is_readable(i8* p) { return access(p, std.fs.R_OK) == 0; }
+bool is_writable(i8* p) { return access(p, std.fs.W_OK) == 0; }
 
 i32 basename_start(i8* path) {
     i32 i = 0; i32 last_sep = -1;

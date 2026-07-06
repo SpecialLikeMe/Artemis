@@ -44,26 +44,26 @@ public:
     }
 
     // Forward declarations allowed; redefinition (two bodies) is an error.
-    // Same name + same params = same overload; different params = new overload.
+    // Function overloading is not supported: duplicate names always error.
     void declare_func(func_decl* d) {
         auto& vec = global_funcs[d->name];
-        for (auto* existing : vec) {
-            if (params_match(existing, d)) {
-                // Same overload
-                if (existing->body && d->body)
+        if (!vec.empty()) {
+            // Same signature: forward-decl / body update
+            if (params_match(vec[0], d)) {
+                if (vec[0]->body && d->body)
                     throw std::runtime_error(
                         "Semantic Error at line " + std::to_string(d->line) +
                         ": Redefinition of function '" + d->name + "'");
-                if (d->body) *existing = *d; // update with body
+                if (d->body) *vec[0] = *d;
                 return;
             }
+            // Different signature: reject overloading
+            throw std::runtime_error(
+                "Semantic Error at line " + std::to_string(d->line) +
+                ": Function overloading is not supported: '" + d->name +
+                "' is already declared with a different signature");
         }
-        // New overload
         vec.push_back(d);
-        if (vec.size() > 1) {
-            // Mark all as overloaded
-            for (auto* f : vec) f->is_overloaded = true;
-        }
     }
 
     // Look up first (or only) overload - for backward compat; prefer lookup_overloads.
@@ -106,7 +106,7 @@ private:
             if (!ta || !tb) return false;
             if (ta->pointer_depth != tb->pointer_depth) return false;
             if (ta->is_primitive != tb->is_primitive)   return false;
-            if (ta->is_primitive && ta->prim != tb->prim) return false;
+            if (ta->is_primitive && (ta->prim != tb->prim || ta->bit_width != tb->bit_width)) return false;
             if (!ta->is_primitive && ta->name != tb->name) return false;
         }
         return true;

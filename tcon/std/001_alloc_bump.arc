@@ -2,7 +2,7 @@
 extern std.alloc.bump;
 
 i32 main() {
-    bump a(4096);
+    std.alloc.bump a(4096);
     if (a.base == (void*)0) { return 1; }
 
     // Allocate some bytes

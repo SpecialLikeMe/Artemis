@@ -1,10 +1,5 @@
 // std.fmt — Full I/O and formatting library.
-// All functions are at global scope after extern std.fmt; — use prefixed names:
-//   out_print / out_println / out_print_i32 / out_flush etc.
-//   err_print / err_println / err_print_i32 / err_flush
-//   fmt_i32 / fmt_i64 / fmt_u32 / fmt_u64 / fmt_f64 / fmt_hex / fmt_ptr
-//   file_open / file_close / file_read_bytes / file_write_bytes / file_read_all etc.
-//   str_len / str_eq / str_copy / str_append / str_starts_with / str_ends_with / str_find / str_to_i32 / str_to_i64
+// Access as: std.fmt.out_print(...), std.fmt.str_len(...), etc.
 
 extern i32    printf(i8* fmt, ...);
 extern i32    fprintf(void* stream, i8* fmt, ...);
@@ -29,6 +24,7 @@ extern i32    _write(i32 fd, void* buf, u32 n);
 
 // --- stdout output ---
 
+namespace std {
 namespace fmt {
 void out_print(i8* s) {
     i32 i = 0;
@@ -175,3 +171,4 @@ i64 str_to_i64(i8* s) {
 }
 
 } // namespace fmt
+} // namespace std

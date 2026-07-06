@@ -6,6 +6,7 @@ extern void  abort();
 extern void* malloc(u64 n);
 extern void  free(void* p);
 
+namespace std {
 namespace test {
 
 // ---- Test allocator ----
@@ -191,3 +192,4 @@ void expect_not_null(runner* r, void* p, i8* msg) {
 }
 
 } // namespace test
+} // namespace std

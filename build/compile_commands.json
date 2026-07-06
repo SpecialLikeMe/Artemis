@@ -1,7 +1,7 @@
 [
 {
   "directory": "C:/Users/devon/Artemis/build",
-  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/artemis.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\artemis.dir\\src\\main.cpp.obj -c C:\\Users\\devon\\Artemis\\src\\main.cpp",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -DARTEMIS_STDLIB_PATH=\\\"C:/Users/devon/Artemis/compiler/std/include\\\" -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS @CMakeFiles/artemis.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++20 -Wall -Wextra -Wpedantic -o CMakeFiles\\artemis.dir\\src\\main.cpp.obj -c C:\\Users\\devon\\Artemis\\src\\main.cpp",
   "file": "C:/Users/devon/Artemis/src/main.cpp",
   "output": "CMakeFiles/artemis.dir/src/main.cpp.obj"
 },

@@ -22,7 +22,9 @@ enum class token_type {
     sm,         // ;
     colon,      // :
     scope_res,  // ::
-    question,   // ?
+    question,          // ?
+    question_question, // ??
+    dollar,     // $  (macro fragment sigil)
 
     //operators
     eq,         // ==
@@ -93,7 +95,6 @@ enum class token_type {
     kw_const,
     kw_register,
     kw_extern,
-    kw_extern_std,
     kw_inline,
     kw_sizeof,
     kw_true,
@@ -104,10 +105,10 @@ enum class token_type {
 
     //kw types
     kw_char,
-    kw_i8, kw_i16, kw_i32, kw_i64, kw_i128, kw_i256, kw_i512,
-    kw_u8, kw_u16, kw_u32, kw_u64, kw_u128, kw_u256, kw_u512,
-    kw_f8, kw_f16, kw_f32, kw_f64, kw_f128, kw_f256, kw_f512,
-    kw_bool /*an 8 bit bool*/, kw_b1 /*a 1 bit bool, kw b1*/, kw_b8, kw_b16, kw_b32, kw_b64, kw_b128, kw_b256, kw_b512,
+    kw_arb_int,    // iN  — value = N as decimal string
+    kw_arb_uint,   // uN
+    kw_arb_float,  // fN
+    kw_arb_bool,   // bN
 
     kw_struct,
     kw_enum,
@@ -121,46 +122,31 @@ enum class token_type {
     // OOP / class keywords
     kw_istruc,      // istruc  (class)
     kw_interface,   // interface (contract declaration)
-    kw_public,      // public
-    kw_private,     // private
-    kw_protected,   // protected
-    kw_virtual,     // virtual
-    kw_override,    // override
-    kw_final,       // final
     kw_static,      // static
-    kw_mandatory,   // mandatory (for mandatory virtual)
     kw_noexcept,    // noexcept
-    kw_explicit,    // explicit
     kw_constexpr,   // constexpr
     kw_consteval,   // consteval — marks a var as manually-constructed
     kw_sta,         // sta (comptime type-erased param)
-    kw_local,       // local (friend-like)
     kw_operator,    // operator
-    kw_self,        // self
-    kw_this,        // this (type alias for enclosing class in method params)
 
     // Misc
     kw_defer,       // defer
+    kw_errdefer,    // errdefer
     kw_extern_c,    // extern "C"
     kw_namespace,   // namespace
     kw_try,         // try
     kw_except,      // except
-    kw_throw,       // throw
     arrow,          // ->
 
     // New features
     kw_auto,        // auto (type inference / trailing type placeholder)
     kw_using,       // using (contextual alias: using let = const auto;)
     kw_pragma,      // pragma (preprocessor hint: @pragma once)
-    kw_derive,      // derive (proc macro marker)
-    kw_attr,        // attr   (proc macro marker)
-    kw_macro,       // macro  (proc macro marker)
-    kw_verify,      // verify (proc macro syntax-check flag)
-    kw_quote,       // quote  (tokenstream literal block)
     kw_const_resolve, // const_resolve (fn macro definition)
     kw_res,         // res    (error-handling resource block)
     kw_error,       // error  (error literal: error.Variant)
     kw_null_t,      // null_t (internal nullable wrapper — not a source keyword)
+    kw_token_type,  // __token (proc macro custom token type)
 };
 
 struct token_t {
@@ -272,39 +258,6 @@ private:
             {"void",       token_type::kw_void},
             {"null",       token_type::kw_null},
             {"char",       token_type::kw_char},
-            {"i8",         token_type::kw_i8},
-            {"i16",        token_type::kw_i16},
-            {"i32",        token_type::kw_i32},
-            {"int",        token_type::kw_i32},
-            {"i64",        token_type::kw_i64},
-            {"i128",       token_type::kw_i128},
-            {"i256",       token_type::kw_i256},
-            {"i512",       token_type::kw_i512},
-            {"u8",         token_type::kw_u8},
-            {"u16",        token_type::kw_u16},
-            {"u32",        token_type::kw_u32},
-            {"uint",       token_type::kw_u32},
-            {"u64",        token_type::kw_u64},
-            {"u128",       token_type::kw_u128},
-            {"u256",       token_type::kw_u256},
-            {"u512",       token_type::kw_u512},
-            {"f8",         token_type::kw_f8},
-            {"f16",        token_type::kw_f16},
-            {"f32",        token_type::kw_f32},
-            {"f64",        token_type::kw_f64},
-            {"float",      token_type::kw_f64},
-            {"f128",       token_type::kw_f128},
-            {"f256",       token_type::kw_f256},
-            {"f512",       token_type::kw_f512},
-            {"bool",       token_type::kw_bool},
-            {"b1",         token_type::kw_b1},
-            {"b8",         token_type::kw_b8},
-            {"b16",        token_type::kw_b16},
-            {"b32",        token_type::kw_b32},
-            {"b64",        token_type::kw_b64},
-            {"b128",       token_type::kw_b128},
-            {"b256",       token_type::kw_b256},
-            {"b512",       token_type::kw_b512},
             {"struct",     token_type::kw_struct},
             {"enum",       token_type::kw_enum},
             {"union",      token_type::kw_union},
@@ -313,31 +266,23 @@ private:
             {"__asm__",    token_type::kw_asm},
             {"istruc",     token_type::kw_istruc},
             {"interface",  token_type::kw_interface},
-            {"public",     token_type::kw_public},
-            {"private",    token_type::kw_private},
-            {"protected",  token_type::kw_protected},
-            {"virtual",    token_type::kw_virtual},
-            {"override",   token_type::kw_override},
-            {"final",      token_type::kw_final},
             {"static",     token_type::kw_static},
-            {"mandatory",  token_type::kw_mandatory},
             {"noexcept",   token_type::kw_noexcept},
             {"constexpr",  token_type::kw_constexpr},
             {"consteval",  token_type::kw_consteval},
             {"sta",        token_type::kw_sta},
-            {"local",      token_type::kw_local},
             {"operator",   token_type::kw_operator},
-            {"self",       token_type::kw_self},
-            {"this",       token_type::kw_this},
             {"defer",      token_type::kw_defer},
+            {"errdefer",   token_type::kw_errdefer},
             {"namespace",  token_type::kw_namespace},
             {"try",            token_type::kw_try},
             {"except",         token_type::kw_except},
-            {"throw",          token_type::kw_throw},
-            {"explicit",       token_type::kw_explicit},
+            {"res",            token_type::kw_res},
+            {"error",          token_type::kw_error},
             {"auto",           token_type::kw_auto},
             {"using",          token_type::kw_using},
             {"const_resolve",  token_type::kw_const_resolve},
+            {"__token",        token_type::kw_token_type},
         };
         return m;
     }
@@ -348,13 +293,11 @@ private:
         while (!is_at_end() && (std::isalnum(peek()) || peek() == '_')) advance();
         std::string value = src.substr(start, cursor - start);
 
-        // Check for "extern std" and extern "C"
+        // Check for extern "C"
         if (value == "extern") {
             size_t save = cursor;
             int    save_line = line;
-            // skip whitespace
             while (!is_at_end() && (peek() == ' ' || peek() == '\t')) advance();
-            // Check for extern "C"
             if (!is_at_end() && peek() == '"') {
                 size_t q_save = cursor; int ql_save = line;
                 advance(); // consume opening "
@@ -365,16 +308,34 @@ private:
                         return {token_type::kw_extern_c, "extern \"C\"", tok_line};
                     }
                 }
-                cursor = q_save; line = ql_save; // roll back quote attempt
+                cursor = q_save; line = ql_save;
             }
-            size_t id_start = cursor;
-            while (!is_at_end() && (std::isalnum(peek()) || peek() == '_')) advance();
-            std::string next = src.substr(id_start, cursor - id_start);
-            if (next == "std") return {token_type::kw_extern_std, "extern std", tok_line};
-            // roll back
-            cursor = save;
-            line   = save_line;
+            cursor = save; line = save_line;
         }
+
+        // Arbitrary-width numeric types: i<N>, u<N>, f<N>, b<N>
+        if (value.size() >= 2) {
+            char pfx = value[0];
+            if (pfx == 'i' || pfx == 'u' || pfx == 'f' || pfx == 'b') {
+                bool all_digits = true;
+                for (size_t k = 1; k < value.size(); ++k)
+                    if (!std::isdigit((unsigned char)value[k])) { all_digits = false; break; }
+                if (all_digits) {
+                    std::string width = value.substr(1);
+                    token_type tt;
+                    if (pfx == 'i')      tt = token_type::kw_arb_int;
+                    else if (pfx == 'u') tt = token_type::kw_arb_uint;
+                    else if (pfx == 'f') tt = token_type::kw_arb_float;
+                    else                 tt = token_type::kw_arb_bool;
+                    return {tt, width, tok_line};
+                }
+            }
+        }
+        // Common word aliases
+        if (value == "int")   return {token_type::kw_arb_int,   "32", tok_line};
+        if (value == "uint")  return {token_type::kw_arb_uint,  "32", tok_line};
+        if (value == "float") return {token_type::kw_arb_float, "64", tok_line};
+        if (value == "bool")  return {token_type::kw_arb_bool,  "8",  tok_line};
 
         auto it = keyword_map().find(value);
         if (it != keyword_map().end()) return {it->second, value, tok_line};
@@ -486,7 +447,9 @@ private:
             case '~': return {token_type::bit_not,   "~", tok_line};
             case '^': return match_next('=') ? token_t{token_type::caret_eq,  "^=", tok_line}
                                              : token_t{token_type::bit_xor,  "^",  tok_line};
-            case '?': return {token_type::question,  "?", tok_line};
+            case '?': return match_next('?') ? token_t{token_type::question_question, "??", tok_line}
+                                             : token_t{token_type::question,          "?",  tok_line};
+            case '$': return {token_type::dollar,    "$", tok_line};
             case ':': return match_next(':') ? token_t{token_type::scope_res, "::", tok_line}
                                            : token_t{token_type::colon,     ":",  tok_line};
             case '%': return match_next('=') ? token_t{token_type::mod_eq,   "%=", tok_line}

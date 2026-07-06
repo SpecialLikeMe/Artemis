@@ -8,16 +8,16 @@
 struct expr_node;
 struct type_node;
 struct func_decl; // needed for resolved_overload in expr_node
+struct block_stmt; // needed for except_expr handler block
 
 // ---------- Type representation ----------
 
 enum class prim_type_t {
-    char_t,
-    i8, i16, i32, i64, i128, i256, i512,
-    u8, u16, u32, u64, u128, u256, u512,
-    f8, f16, f32, f64, f128, f256, f512,
-    boolean,
-    b1, b8, b16, b32, b64, b128, b256, b512,
+    char_t,     // char — i8 alias (string / character type)
+    arb_int,    // iN  — signed integer of N bits
+    arb_uint,   // uN  — unsigned integer of N bits
+    arb_float,  // fN  — floating-point of N bits
+    arb_bool,   // bN  — boolean integer of N bits
     void_t,
 };
 
@@ -61,6 +61,17 @@ struct type_node {
 
     // Nullable wrapper: ?T — the value may be null
     bool is_nullable = false;
+
+    // Marker set on the synthesized type returned by the null literal expression.
+    // Allows assignable() to accept null→pointer and null→?T while rejecting null→plain-prim.
+    bool is_null_literal = false;
+
+    // sta: this type is the comptime type-value type (Zig's `type`).
+    // Variables of sta type hold types or namespaces at comptime; no runtime representation.
+    bool is_sta = false;
+
+    // For arb_int / arb_uint / arb_float / arb_bool: the N in iN/uN/fN/bN.
+    uint32_t bit_width = 0;
 };
 
 // ---------- Expressions ----------
@@ -79,10 +90,18 @@ enum class expr_kind {
     member,     // a.b
     cast,       // (type)expr
     sizeof_e,   // sizeof(type) or sizeof(expr)
+    get_ifo_t_e,// get_ifo_t(Type) — compile-time type info
     assign,
     ternary,    // cond ? then : else
     annotation, // @identifier
     class_init, // TypeName { .field = val, ... } or .{ .field = val }
+    error_lit,  // error.Name — error tag literal (i32)
+    try_expr,   // try expr — propagate error; operand is the inner expression
+    except_expr,// expr except |name| block — catch error; object=expr, str_val=name, rhs=nil, then_e=handler_block_as_expr
+    null_lit,   // null keyword — null pointer constant; assignable to any pointer or ?T
+    null_coal,  // lhs ?? rhs — yield lhs if non-null/non-zero, else evaluate rhs or handler_block
+    import_expr,// @import("path") — module import; str_val=path, resolved to namespace at comptime
+    sta_type_expr, // sta used as a value (e.g. return i32 from a sta-returning function)
 };
 
 enum class unary_op  { neg, pos, bit_not, log_not, pre_inc, pre_dec, post_inc, post_dec, deref, addr_of };
@@ -139,4 +158,7 @@ struct expr_node {
     std::vector<type_node*>     type_args;
     // constexpr marker (for constexpr-evaluated expressions, informational)
     bool                        is_constexpr = false;
+
+    // except_expr: the catch handler block (block_stmt*)
+    block_stmt*                 handler_block = nullptr;
 };

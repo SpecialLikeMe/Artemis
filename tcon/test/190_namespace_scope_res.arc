@@ -1,4 +1,4 @@
-// Namespace: deprecated :: still works (produces deprecation warning, same result)
+// Namespace access using '.' syntax.
 // Also tests multiple namespaces and passing namespace results to functions.
 namespace Vec2 {
     i32 dot(i32 ax, i32 ay, i32 bx, i32 by) { return ax * bx + ay * by; }

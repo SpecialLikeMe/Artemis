@@ -1,4 +1,4 @@
-// std.vector — Dynamic resizable array (equivalent to C++ std::vector).
+// std.vector — Dynamic resizable array (equivalent to C++ std.vector).
 
 namespace std {
 
@@ -6,10 +6,6 @@ istruc vector<T> {
     T*  data;
     i32 length;
     i32 cap;
-
-    operator T*() const {
-        return self.data;
-    }
 
     void __construct__(vector* self) {
         self.data   = (T*)0;
@@ -23,7 +19,7 @@ istruc vector<T> {
         self.data   = (T*)a.mmap((u64)(sizeof(T) * initial_cap));
     }
 
-    private void grow(vector* self, &memstr a) {
+    void grow(vector* self, &memstr a) {
         i32 new_cap = self.cap == 0 ? 8 : self.cap * 2;
         T* new_data = (T*)a.mmap((u64)(sizeof(T) * new_cap));
         for (i32 i = 0; i < self.length; i = i + 1) new_data[i] = self.data[i];

@@ -1,22 +1,22 @@
-// private members are accessible from within class methods (self)
+// members are accessible from within class methods (self)
 istruc BankAccount {
-    private i32 balance;
-    private i32 pin;
+    i32 balance;
+    i32 pin;
 
-    public void __construct__(BankAccount* self, i32 initial, i32 p) {
+    void __construct__(BankAccount* self, i32 initial, i32 p) {
         self.balance = initial;
         self.pin     = p;
     }
 
-    public bool verify(const BankAccount* self, i32 p) {
+    bool verify(const BankAccount* self, i32 p) {
         return self.pin == p;
     }
 
-    public i32 get_balance(const BankAccount* self) {
+    i32 get_balance(const BankAccount* self) {
         return self.balance;
     }
 
-    public void deposit(BankAccount* self, i32 amount) {
+    void deposit(BankAccount* self, i32 amount) {
         self.balance = self.balance + amount;
     }
 }

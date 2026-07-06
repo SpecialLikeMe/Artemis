@@ -9,6 +9,7 @@
 #include <memory>
 #include "expr.hxx"
 #include "../lexer/main.hxx"
+#include "macros.hxx"
 
 // ============================================================
 // AST statement/declaration nodes
@@ -55,6 +56,8 @@ struct if_stmt : ast_node {
     ast_node*   then_body = nullptr;
     ast_node*   else_body = nullptr; // optional
     bool        is_constexpr = false; // constexpr if / if constexpr
+    std::optional<std::string> then_capture; // |var| after condition — binds non-null value
+    std::optional<std::string> else_capture; // |var| after else — binds else-branch value
 };
 
 struct while_stmt : ast_node {
@@ -80,6 +83,12 @@ struct extern_std : ast_node {
 
 // ---- declarations ----
 
+// ---- proc macro attribute (e.g. #[derive(Debug, Clone)] or #[my_attr]) ----
+struct proc_attr {
+    std::string              name;
+    std::vector<std::string> args; // e.g. ["Debug", "Clone"] for #[derive(Debug, Clone)]
+};
+
 struct var_decl : ast_node {
     type_node*              type  = nullptr;
     std::string             name;
@@ -89,6 +98,7 @@ struct var_decl : ast_node {
     bool                    has_ctor_parens = false; // true if () or {} present (even empty)
     bool                    is_constexpr = false;     // constexpr Type name = expr;
     bool                    is_consteval = false;     // consteval Type name; — user will call __construct__ manually
+    bool                    is_sta       = false;     // const sta X = @import(...) — comptime namespace; no runtime rep
 };
 
 struct param_decl {
@@ -111,6 +121,10 @@ struct func_decl : ast_node {
     // Error union: !T or E!T return type
     bool                     is_error_union = false; // function may return an error
     type_node*               err_type = nullptr;     // explicit error type E (null = inferred)
+    std::vector<proc_attr>   attributes;             // #[...] attributes applied to this decl
+    // Proc macro kind (set by `attr` / `derive` marker after closing paren)
+    enum class proc_macro_kind { none, attr_macro, derive_macro } pm_kind = proc_macro_kind::none;
+    bool                     pm_verify = false;      // `verify` modifier: output must be syntactically valid
 };
 
 struct struct_decl : ast_node {
@@ -126,22 +140,27 @@ struct memstr_decl : ast_node {
     func_decl*             fn_deinit  = nullptr; // .vtable.deinit
 };
 
-// ---- try/except/throw ----
-struct throw_stmt : ast_node {
-    expr_node* value = nullptr;  // expression to throw (casted to i64 in IR)
+// ---- new error system ----
+// try expr;  — propagate error from a !T call up to the current !T function
+struct try_expr_stmt : ast_node {
+    expr_node* expr = nullptr; // expression being tried (must return error union)
 };
 
-struct try_stmt : ast_node {
-    block_stmt* body      = nullptr;
-    type_node*  exc_type  = nullptr;  // type in except (type e)
-    std::string exc_name;             // variable name
-    block_stmt* handler   = nullptr;
+// res { stmts... }  — inline block that can return an error or a value
+struct res_block_stmt : ast_node {
+    block_stmt* body = nullptr;
 };
 
 // ---- defer statement ----
 struct defer_stmt : ast_node {
     expr_node*  expr = nullptr;  // defer expr;
     block_stmt* blk  = nullptr;  // defer { ... }
+};
+
+// ---- errdefer statement — runs only when the scope exits via an error ----
+struct errdefer_stmt : ast_node {
+    expr_node*  expr = nullptr;  // errdefer expr;
+    block_stmt* blk  = nullptr;  // errdefer { ... }
 };
 
 // ---- extern "C" block ----
@@ -156,7 +175,6 @@ enum class access_mod { pub, priv, prot };
 struct class_field : ast_node {
     access_mod  access    = access_mod::pub;
     bool        is_static  = false;
-    bool        is_virtual = false;
     type_node*  type       = nullptr;
     std::string name;
     std::optional<expr_node*> init;
@@ -172,11 +190,7 @@ struct init_list_entry {
 struct class_method : ast_node {
     access_mod  access              = access_mod::pub;
     bool        is_static           = false;
-    bool        is_virtual          = false;
-    bool        is_mandatory_virtual= false;
-    bool        is_override         = false;
     bool        is_const_method     = false;
-    bool        is_final            = false;
     bool        is_constructor      = false;
     bool        is_destructor       = false;
     bool        is_noexcept         = false;
@@ -201,6 +215,12 @@ struct class_method : ast_node {
     std::string mangled_name;
 };
 
+// ---- proc_macro declaration: proc_macro fn name(tokenstream input) -> tokenstream { } ----
+struct proc_macro_decl : ast_node {
+    std::string name;
+    block_stmt* body = nullptr;
+};
+
 // ---- class declaration (istruc / memstr) ----
 struct class_decl : ast_node {
     std::string                 name;
@@ -209,11 +229,11 @@ struct class_decl : ast_node {
     std::vector<class_method*>  methods;
     std::vector<func_decl*>     local_decls; // 'local' (friend-like) declarations
 
-    // Mangled name set by analyzer for this class's vtable (if any virtual methods)
-    bool has_virtual   = false;
     bool is_memstr     = false; // declared with `memstr` keyword (valid as &memstr)
     bool is_interface  = false; // declared with `interface` keyword (contract, no fields)
     std::vector<std::string> type_params;  // generic type parameters <T, U>
+    std::vector<std::string> interface_names; // interfaces this istruc implements
+    std::vector<proc_attr>   attributes;     // #[...] attributes
 };
 
 // ---- extend func_decl with overloading / mangling info ----
@@ -324,11 +344,59 @@ private:
         if (check(token_type::kw_istruc))     return parse_class_decl();
         if (check(token_type::kw_interface))  return parse_interface_decl();
         if (check(token_type::kw_extern_c))   return parse_extern_c_block();
-        if (check(token_type::kw_extern_std)) return parse_extern_std();
         if (check(token_type::kw_smem))       return parse_memstr_decl();
         if (check(token_type::kw_namespace))  return parse_namespace_decl();
         if (check(token_type::kw_using))      return parse_using_decl();
         if (check(token_type::kw_const_resolve)) return parse_const_resolve_macro();
+        // Attribute-prefixed or whole-file attribute: #[attr], #derive[name], #![attr]
+        if (check(token_type::hash)) {
+            // #![attr] — whole-file attribute (applied to entire module tokenstream)
+            if (peek_at(1).type == token_type::not_) {
+                advance(); advance(); // consume '#' '!'
+                consume(token_type::obracket, "Expected '[' after '#!'");
+                std::string attr_name = is_attr_name_token(peek().type)
+                    ? advance().value
+                    : (throw std::runtime_error("Parse Error at line " +
+                           std::to_string(peek().line) + ": Expected attribute name after '#!['"), "");
+                // Parse optional args
+                std::vector<std::string> args;
+                if (check(token_type::oparen)) {
+                    advance();
+                    while (!check(token_type::cparen) && !is_at_end()) {
+                        // collect arg tokens until ',' or ')'
+                        std::string arg;
+                        while (!check(token_type::comma) && !check(token_type::cparen) && !is_at_end())
+                            arg += advance().value;
+                        args.push_back(std::move(arg));
+                        if (!check(token_type::cparen)) advance(); // consume ','
+                    }
+                    consume(token_type::cparen, "Expected ')' in whole-file attribute");
+                }
+                consume(token_type::cbracket, "Expected ']' after whole-file attribute");
+                // Represent as a stub namespace node — whole-file attributes are stored
+                // in the program_node but we emit a placeholder for now.
+                auto* nd = alloc<namespace_decl>();
+                nd->line = 0;
+                nd->name = "__whole_file_attr_" + attr_name;
+                return nd;
+            }
+            auto attrs = parse_attributes();
+            return parse_attributed_decl(std::move(attrs));
+        }
+        // Macro invocation at top level (expands in-place and re-parses)
+        if (check(token_type::id) && macros_.count(peek().value)) {
+            macro_expand_depth_++;
+            bool ok = try_expand_macro_invocation();
+            macro_expand_depth_--;
+            if (ok) return parse_top_level();
+        }
+        // [] syntax macro at top level
+        if (check(token_type::id) && syntax_triggers_.count(peek().value)) {
+            macro_expand_depth_++;
+            bool ok = try_expand_syntax_macro();
+            macro_expand_depth_--;
+            if (ok) return parse_top_level();
+        }
         return parse_func_or_var_decl();
     }
 
@@ -352,11 +420,18 @@ private:
             return t;
         }
 
+        // __token type for proc macro custom token pattern definitions
+        if (check(token_type::kw_token_type)) {
+            advance(); // consume '__token'
+            t->is_primitive = false;
+            t->name = "__token";
+            return t;
+        }
+
         // storage class specifiers
-        while (check(token_type::kw_extern) || check(token_type::kw_extern_std) ||
-               check(token_type::kw_extern_c) || check(token_type::kw_inline) ||
-               check(token_type::kw_register)) {
-            if (match(token_type::kw_extern) || match(token_type::kw_extern_std)) t->is_extern = true;
+        while (check(token_type::kw_extern) || check(token_type::kw_extern_c) ||
+               check(token_type::kw_inline) || check(token_type::kw_register)) {
+            if (match(token_type::kw_extern))        t->is_extern = true;
             else if (match(token_type::kw_extern_c)) { t->is_extern = true; t->is_extern_c = true; }
             else if (match(token_type::kw_inline))   t->is_inline = true;
             else { advance(); t->is_register = true; }
@@ -370,44 +445,31 @@ private:
         if (match(token_type::kw_signed))   t->is_signed = true;
         if (match(token_type::kw_unsigned)) t->is_signed = false;
 
-        static const std::vector<std::pair<token_type, prim_type_t>> prim_map = {
-            {token_type::kw_char, prim_type_t::char_t},
-            {token_type::kw_i8,   prim_type_t::i8},
-            {token_type::kw_i16,  prim_type_t::i16},
-            {token_type::kw_i32,  prim_type_t::i32},
-            {token_type::kw_i64,  prim_type_t::i64},
-            {token_type::kw_i128, prim_type_t::i128},
-            {token_type::kw_i256, prim_type_t::i256},
-            {token_type::kw_i512, prim_type_t::i512},
-            {token_type::kw_u8,   prim_type_t::u8},
-            {token_type::kw_u16,  prim_type_t::u16},
-            {token_type::kw_u32,  prim_type_t::u32},
-            {token_type::kw_u64,  prim_type_t::u64},
-            {token_type::kw_u128, prim_type_t::u128},
-            {token_type::kw_u256, prim_type_t::u256},
-            {token_type::kw_u512, prim_type_t::u512},
-            {token_type::kw_f8,   prim_type_t::f8},
-            {token_type::kw_f16,  prim_type_t::f16},
-            {token_type::kw_f32,  prim_type_t::f32},
-            {token_type::kw_f64,  prim_type_t::f64},
-            {token_type::kw_f128, prim_type_t::f128},
-            {token_type::kw_f256, prim_type_t::f256},
-            {token_type::kw_f512, prim_type_t::f512},
-            {token_type::kw_bool, prim_type_t::boolean},
-            {token_type::kw_b1,   prim_type_t::b1},
-            {token_type::kw_b8,   prim_type_t::b8},
-            {token_type::kw_b16,  prim_type_t::b16},
-            {token_type::kw_b32,  prim_type_t::b32},
-            {token_type::kw_b64,  prim_type_t::b64},
-            {token_type::kw_b128, prim_type_t::b128},
-            {token_type::kw_b256, prim_type_t::b256},
-            {token_type::kw_b512, prim_type_t::b512},
-            {token_type::kw_void, prim_type_t::void_t},
-        };
-
         bool found = false;
-        for (auto& [tt, pt] : prim_map) {
-            if (match(tt)) { t->prim = pt; t->is_primitive = true; found = true; break; }
+        if (match(token_type::kw_char)) {
+            t->prim = prim_type_t::char_t; t->bit_width = 8; t->is_primitive = true; found = true;
+        } else if (match(token_type::kw_void)) {
+            t->prim = prim_type_t::void_t; t->bit_width = 0; t->is_primitive = true; found = true;
+        } else if (check(token_type::kw_arb_int)) {
+            t->bit_width = (uint32_t)std::stoul(peek().value);
+            advance(); t->prim = prim_type_t::arb_int; t->is_primitive = true; found = true;
+        } else if (check(token_type::kw_arb_uint)) {
+            t->bit_width = (uint32_t)std::stoul(peek().value);
+            advance(); t->prim = prim_type_t::arb_uint; t->is_primitive = true; found = true;
+        } else if (check(token_type::kw_arb_float)) {
+            t->bit_width = (uint32_t)std::stoul(peek().value);
+            advance(); t->prim = prim_type_t::arb_float; t->is_primitive = true; found = true;
+        } else if (check(token_type::kw_arb_bool)) {
+            t->bit_width = (uint32_t)std::stoul(peek().value);
+            advance(); t->prim = prim_type_t::arb_bool; t->is_primitive = true; found = true;
+        }
+        // 'sta' — comptime type-value type (like Zig's 'type')
+        if (!found && check(token_type::kw_sta)) {
+            advance();
+            t->is_sta = true;
+            t->is_primitive = false;
+            t->name = "sta";
+            return t;
         }
         // 'auto' as a type placeholder (trailing-type form)
         if (!found && check(token_type::kw_auto)) {
@@ -419,19 +481,13 @@ private:
             return t;
         }
 
-        // 'self' or 'this' as type keyword inside method params (alias for the enclosing class)
-        if (!found && (check(token_type::kw_self) || check(token_type::kw_this))) {
-            advance();
-            t->is_self_type = true;
-            t->name = "__self__"; // resolved later by parse_method_params or analyzer
-        }
-        if (!found && !t->is_self_type) {
+        if (!found) {
             auto tok = consume(token_type::id, "Expected type name");
             t->name  = tok.value;
-            // Handle namespace::Type qualified names (maps to ns__NS_type internally)
-            if (check(token_type::scope_res)) {
-                advance(); // consume ::
-                auto sub = consume(token_type::id, "Expected type name after '::'");
+            // Handle namespace-qualified names: ns.Type or ns1.ns2.ns3.Type
+            while (check(token_type::dot)) {
+                advance(); // consume .
+                auto sub = consume(token_type::id, "Expected type name after '.'");
                 t->name  = *t->name + "__NS_" + sub.value;
             }
             // Generic instantiation type args:  Name<T, U>
@@ -465,7 +521,7 @@ private:
                     if (!is_type_start()) { ok = false; break; }
                     type_node* pt = parse_type();
                     std::string pname;
-                    if (check(token_type::id) || check(token_type::kw_self)) pname = advance().value;
+                    if (check(token_type::id) ) pname = advance().value;
                     fp_params.push_back(pt);
                     fp_names.push_back(pname);
                 } while (ok && match(token_type::comma));
@@ -542,6 +598,7 @@ private:
         auto* vd = parse_var_body(ret, name_tok);
         vd->is_constexpr = is_cexpr;
         vd->is_consteval = is_ceval;
+        vd->is_sta       = ret->is_sta;
         return vd;
     }
 
@@ -586,7 +643,7 @@ private:
                 }
                 param_decl p;
                 p.type = parse_type();
-                if (check(token_type::id) || check(token_type::kw_self)) p.name = advance().value;
+                if (check(token_type::id) ) p.name = advance().value;
                 p.line = previous().line;
                 fd->params.push_back(p);
             } while (match(token_type::comma));
@@ -595,9 +652,14 @@ private:
 
         // Optional function qualifiers after ')': noexcept, attr/derive (proc macro markers)
         while (check(token_type::kw_noexcept)) { advance(); fd->is_noexcept = true; }
-        // Skip proc macro markers (attr/derive/macro/verify) — parsed but not yet implemented
-        while (check(token_type::id) && (peek().value == "attr" || peek().value == "derive" ||
-               peek().value == "macro" || peek().value == "verify")) advance();
+        // Proc macro kind markers: `attr`, `derive`, optionally combined with `verify`
+        while (check(token_type::id) &&
+               (peek().value == "attr" || peek().value == "derive" || peek().value == "verify")) {
+            std::string mv = advance().value;
+            if (mv == "attr")    fd->pm_kind   = func_decl::proc_macro_kind::attr_macro;
+            else if (mv == "derive") fd->pm_kind = func_decl::proc_macro_kind::derive_macro;
+            else if (mv == "verify") fd->pm_verify = true;
+        }
 
         // Trailing return type: auto foo() int { } or auto foo() !int { } or auto foo() E!T { }
         if (fd->ret_type && fd->ret_type->is_auto) {
@@ -632,26 +694,7 @@ private:
         return fd;
     }
 
-    extern_std* parse_extern_std() {
-        auto* ed = alloc<extern_std>();
-        ed->line = advance().line; // 'extern_std'
-        if (check(token_type::dot)) {
-            // Dot-path syntax: extern std.module.submodule;
-            std::string path;
-            while (match(token_type::dot)) {
-                if (!path.empty()) path += ".";
-                path += consume(token_type::id, "Expected identifier in std module path").value;
-            }
-            consume(token_type::sm, "Expected ';' after extern std declaration");
-            throw std::runtime_error(
-                "Parser Error at line " + std::to_string(ed->line) +
-                ": Standard library import 'extern std." + path +
-                ";' must be at the top of the file");
-        }
-        ed->module_name = consume(token_type::string_lit, "Expected module name string").value;
-        consume(token_type::sm, "Expected ';' after extern declaration");
-        return ed;
-    }
+
 
     var_decl* parse_var_body(type_node* t, token_t name_tok) {
         auto* vd  = alloc<var_decl>();
@@ -743,7 +786,8 @@ private:
                 ed->is_adt = true;
                 auto* cd = alloc<class_decl>();
                 cd->line = ev->line;
-                cd->name = ev->name;
+                // Qualify with enum name so x::foo resolves as a type (x__NS_foo).
+                cd->name = ed->name + "__NS_" + ev->name;
                 while (!check(token_type::cbrace) && !is_at_end()) parse_class_member(cd, cd->name);
                 consume(token_type::cbrace, "Expected '}' after istruc variant body");
                 ev->istruc_body = cd;
@@ -938,23 +982,232 @@ private:
     }
 
     // -------------------------------------------------------- const_resolve macro
-    // const_resolve name { patterns... }
+    // const_resolve name { rules... }
+    // Each rule: ( pattern ) => { expansion }  or  [ pattern ] => { expansion }
     ast_node* parse_const_resolve_macro() {
         uint64_t ln = peek().line;
         advance(); // consume 'const_resolve'
-        auto* nd = alloc<namespace_decl>(); // reuse namespace_decl as a stub container
-        nd->line = ln;
-        nd->name = "__macro_" + consume(token_type::id, "Expected macro name").value;
+        std::string macro_name = consume(token_type::id, "Expected macro name").value;
         consume(token_type::obrace, "Expected '{' after macro name");
-        // Skip the body — balance braces and consume raw tokens
+
+        // Collect all tokens inside the outer { }
+        std::vector<token_t> body;
         int depth = 1;
         while (depth > 0 && !is_at_end()) {
-            if (check(token_type::obrace)) { depth++; advance(); }
-            else if (check(token_type::cbrace)) { if (--depth == 0) break; advance(); }
-            else advance();
+            if (check(token_type::obrace))  { depth++; body.push_back(advance()); }
+            else if (check(token_type::cbrace)) {
+                if (--depth == 0) break;
+                body.push_back(advance());
+            } else {
+                body.push_back(advance());
+            }
         }
         consume(token_type::cbrace, "Expected '}' to close macro body");
+
+        macro_def def = parse_macro_def(macro_name, body);
+        macros_[macro_name] = std::move(def);
+
+        // Register [] syntax rules by their first str_match element as the trigger word.
+        const macro_def& stored_def = macros_[macro_name];
+        for (size_t ri = 0; ri < stored_def.rules.size(); ri++) {
+            const macro_rule& r = stored_def.rules[ri];
+            if (!r.is_syntax || r.pats.empty()) continue;
+            if (r.pats[0].kind == macro_pat_kind::str_match)
+                syntax_triggers_[r.pats[0].cap_name].push_back({macro_name, ri});
+        }
+
+        // Return a no-op node (macro definitions produce no IR)
+        auto* nd = alloc<namespace_decl>();
+        nd->line = ln;
+        nd->name = "__macro_" + macro_name;
         return nd;
+    }
+
+    // Accept identifiers or keyword tokens as attribute names (e.g. #[inline], #[derive]).
+    static bool is_attr_name_token(token_type t) {
+        switch (t) {
+            // These cannot be attribute names
+            case token_type::obracket: case token_type::cbracket:
+            case token_type::oparen:   case token_type::cparen:
+            case token_type::comma:    case token_type::hash:
+            case token_type::obrace:   case token_type::cbrace:
+            case token_type::sm:
+            case token_type::eof:
+                return false;
+            default: return true;
+        }
+    }
+
+    // -------------------------------------------------------- proc_macro / attributes
+    // Supports:
+    //   #[name]           — attribute macro application
+    //   #[name(arg,...)]  — attribute macro with args
+    //   #derive[name]     — derive macro application (doc syntax)
+    //   #derive[name(..)] — derive macro with args
+    std::vector<proc_attr> parse_attributes() {
+        std::vector<proc_attr> attrs;
+        while (check(token_type::hash)) {
+            advance(); // consume '#'
+
+            // #derive[...] form — explicit derive macro syntax from the spec
+            bool is_derive_form = false;
+            if (check(token_type::id) && peek().value == "derive") {
+                advance(); // consume 'derive'
+                is_derive_form = true;
+                // Falls through to parse [...] below
+            }
+
+            consume(token_type::obracket, "Expected '[' after '#' or '#derive'");
+            proc_attr a;
+            if (is_derive_form) a.name = "derive"; // implicit name for #derive[...]
+            else {
+                if (!is_attr_name_token(peek().type))
+                    throw std::runtime_error("Parse Error at line " + std::to_string(peek().line)
+                                             + ": Expected attribute name");
+                a.name = advance().value;
+            }
+
+            // Parse optional (arg, ...) inside the brackets
+            if (check(token_type::oparen)) {
+                advance(); // consume '('
+                while (!check(token_type::cparen) && !is_at_end()) {
+                    // Collect the arg as raw tokens until ',' or ')'
+                    std::string arg;
+                    while (!check(token_type::cparen) && !check(token_type::comma) && !is_at_end())
+                        arg += advance().value;
+                    a.args.push_back(std::move(arg));
+                    if (!check(token_type::cparen)) advance(); // consume ','
+                }
+                consume(token_type::cparen, "Expected ')' to close attribute args");
+            }
+            // For #derive[Name] — the name inside the brackets is the derive arg
+            else if (is_derive_form && is_attr_name_token(peek().type)) {
+                a.args.push_back(advance().value);
+            }
+
+            consume(token_type::cbracket, "Expected ']' to close attribute");
+            attrs.push_back(std::move(a));
+        }
+        return attrs;
+    }
+
+    // Dispatch after collecting attributes: attach them to the parsed decl node.
+    ast_node* parse_attributed_decl(std::vector<proc_attr> attrs) {
+        if (check(token_type::kw_istruc) || check(token_type::kw_interface)) {
+            ast_node* nd = check(token_type::kw_istruc) ? parse_class_decl() : parse_interface_decl();
+            if (auto* cd = dynamic_cast<class_decl*>(nd)) cd->attributes = std::move(attrs);
+            return nd;
+        }
+        // Default: function or var decl
+        ast_node* nd = parse_func_or_var_decl();
+        if (auto* fd = dynamic_cast<func_decl*>(nd)) fd->attributes = std::move(attrs);
+        return nd;
+    }
+
+    // -------------------------------------------------------- macro invocation
+    // Called at the start of parse_stmt() and parse_top_level() when the
+    // current token is an identifier that names a known macro.
+    // If a rule matches, splices the expansion into tokens[] and returns true.
+    bool try_expand_macro_invocation() {
+        if (macro_expand_depth_ > 64) return false; // guard against runaway recursion
+        if (!check(token_type::id)) return false;
+        std::string name = peek().value;
+        auto it = macros_.find(name);
+        if (it == macros_.end()) return false;
+
+        const macro_def& def = it->second;
+        uint64_t ln = peek().line;
+        size_t start = current;
+        advance(); // consume macro name
+
+        // Determine invocation delimiter: (), [], or {}
+        token_type open_tt, close_tt;
+        if      (check(token_type::oparen))    { open_tt = token_type::oparen;    close_tt = token_type::cparen;   }
+        else if (check(token_type::obracket))  { open_tt = token_type::obracket;  close_tt = token_type::cbracket; }
+        else if (check(token_type::obrace))    { open_tt = token_type::obrace;    close_tt = token_type::cbrace;   }
+        else { current = start; return false; }
+        advance(); // consume open delimiter
+
+        // Collect argument tokens (balanced, not including the delimiters)
+        std::vector<token_t> arg_tokens;
+        int depth = 1;
+        while (!is_at_end() && depth > 0) {
+            if (tokens[current].type == open_tt)  depth++;
+            if (tokens[current].type == close_tt) { depth--; if (depth == 0) break; }
+            if (depth > 0) arg_tokens.push_back(tokens[current]);
+            advance();
+        }
+        if (!is_at_end() && tokens[current].type == close_tt) advance(); // consume close
+
+        size_t end = current; // position after the full invocation
+
+        // Try each rule in order
+        for (const auto& rule : def.rules) {
+            size_t pos = 0;
+            capture_map caps;
+            if (match_pattern(rule.pats, arg_tokens, pos, caps) && pos == arg_tokens.size()) {
+                std::vector<token_t> expanded = expand_macro(rule.expansion, caps, ln);
+                // Splice: replace tokens[start..end] with the expansion
+                tokens.erase(tokens.begin() + (long)start,
+                             tokens.begin() + (long)end);
+                tokens.insert(tokens.begin() + (long)start,
+                              expanded.begin(), expanded.end());
+                current = start;
+                return true;
+            }
+        }
+
+        // No rule matched — restore position and fall through
+        current = start;
+        return false;
+    }
+
+    // Expand a [] syntax macro rule triggered by an identifier that matches the
+    // first str_match element of the rule. Collects statement tokens up to ';',
+    // matches against the rule pattern, and splices the expansion in-place.
+    bool try_expand_syntax_macro() {
+        if (macro_expand_depth_ > 64) return false;
+        if (!check(token_type::id)) return false;
+        std::string trigger = peek().value;
+        auto it = syntax_triggers_.find(trigger);
+        if (it == syntax_triggers_.end()) return false;
+
+        uint64_t ln = peek().line;
+        size_t start = current;
+
+        // Collect statement tokens up to (not including) ';'
+        std::vector<token_t> stmt_toks;
+        size_t scan = start;
+        int depth = 0;
+        while (scan < tokens.size()) {
+            auto tt = tokens[scan].type;
+            if (tt == token_type::oparen || tt == token_type::obracket ||
+                tt == token_type::obrace) depth++;
+            else if (tt == token_type::cparen || tt == token_type::cbracket ||
+                     tt == token_type::cbrace) depth--;
+            else if (depth == 0 && tt == token_type::sm) break;
+            stmt_toks.push_back(tokens[scan++]);
+        }
+        // end spans up to and including the ';' so it's consumed by the splice
+        size_t end = (scan < tokens.size() &&
+                      tokens[scan].type == token_type::sm) ? scan + 1 : scan;
+
+        for (auto& [mname, ridx] : it->second) {
+            const macro_rule& rule = macros_[mname].rules[ridx];
+            size_t pos = 0;
+            capture_map caps;
+            if (match_pattern(rule.pats, stmt_toks, pos, caps) &&
+                pos == stmt_toks.size()) {
+                std::vector<token_t> expanded = expand_macro(rule.expansion, caps, ln);
+                tokens.erase(tokens.begin() + (long)start,
+                             tokens.begin() + (long)end);
+                tokens.insert(tokens.begin() + (long)start,
+                              expanded.begin(), expanded.end());
+                current = start;
+                return true;
+            }
+        }
+        return false;
     }
 
     // -------------------------------------------------------- interface
@@ -968,29 +1221,47 @@ private:
         cd->name     = consume(token_type::id, "Expected interface name").value;
         consume(token_type::obrace, "Expected '{' after interface name");
         while (!check(token_type::cbrace) && !is_at_end()) {
-            // Interface body: only method signatures (no body)
             uint64_t mln = peek().line;
-            type_node* ret  = parse_type();
-            auto mname_tok  = consume(token_type::id, "Expected method name in interface");
-            consume(token_type::oparen, "Expected '(' after method name");
-            // consume params
-            auto* meth = alloc<class_method>();
-            meth->line = mln;
-            meth->name = mname_tok.value;
-            meth->ret_type = ret;
-            if (!check(token_type::cparen)) {
-                do {
-                    if (!is_type_start()) break;
-                    param_decl p;
-                    p.type = parse_type();
-                    if (check(token_type::id) || check(token_type::kw_self)) p.name = advance().value;
-                    p.line = previous().line;
-                    meth->params.push_back(p);
-                } while (match(token_type::comma));
+            type_node* ty = parse_type();
+            auto name_tok = consume(token_type::id, "Expected name in interface body");
+
+            if (check(token_type::oparen)) {
+                // Method stub or default method: rettype name(params) [{ body }] ;
+                advance(); // consume '('
+                auto* meth = alloc<class_method>();
+                meth->line     = mln;
+                meth->name     = name_tok.value;
+                meth->ret_type = ty;
+                if (!check(token_type::cparen)) {
+                    do {
+                        if (!is_type_start()) break;
+                        param_decl p;
+                        p.type = parse_type();
+                        if (check(token_type::id)) p.name = advance().value;
+                        p.line = previous().line;
+                        meth->params.push_back(p);
+                    } while (match(token_type::comma));
+                }
+                consume(token_type::cparen, "Expected ')' after interface method params");
+                if (check(token_type::obrace)) {
+                    // Default implementation — parse the body
+                    meth->body = parse_block();
+                } else {
+                    consume(token_type::sm, "Expected ';' after interface method signature");
+                }
+                cd->methods.push_back(meth);
+            } else {
+                // Field stub or default field: type name [= expr] ;
+                auto* cf  = alloc<class_field>();
+                cf->line  = mln;
+                cf->type  = ty;
+                cf->name  = name_tok.value;
+                if (match(token_type::assign)) {
+                    cf->init = parse_expr();  // default value
+                }
+                consume(token_type::sm, "Expected ';' after interface field");
+                cd->fields.push_back(cf);
             }
-            consume(token_type::cparen, "Expected ')' after interface method params");
-            consume(token_type::sm, "Expected ';' after interface method signature");
-            cd->methods.push_back(meth);
         }
         consume(token_type::cbrace, "Expected '}' after interface body");
         match(token_type::sm);
@@ -1008,9 +1279,15 @@ private:
         // optional generic type parameters: ClassName<T, U>
         cd->type_params = try_parse_type_params();
 
-        // optional interface implementation: ClassName : InterfaceName
+        // optional interface implementation: ClassName : IFace1, IFace2, ...
         if (match(token_type::colon)) {
-            cd->base_name = consume(token_type::id, "Expected interface name").value;
+            cd->interface_names.push_back(
+                consume(token_type::id, "Expected interface name").value);
+            while (match(token_type::comma))
+                cd->interface_names.push_back(
+                    consume(token_type::id, "Expected interface name").value);
+            // Back-compat: keep base_name as first interface name
+            cd->base_name = cd->interface_names[0];
         }
 
         consume(token_type::obrace, "Expected '{' after class name");
@@ -1027,56 +1304,17 @@ private:
     void parse_class_member(class_decl* cd, const std::string& class_name = "") {
         uint64_t ln = peek().line;
 
-        // 'local' declarations (friend-like)
-        if (check(token_type::kw_local)) {
-            advance();
-            type_node* ret = parse_type();
-            auto name_tok  = consume(token_type::id, "Expected declaration name");
-            if (match(token_type::oparen)) {
-                cd->local_decls.push_back(parse_func_body(ret, name_tok));
-            } else {
-                // local variable declaration — just consume it as a var decl
-                auto* vd = parse_var_body(ret, name_tok);
-                (void)vd;
-            }
-            return;
-        }
-
-        // Parse access modifier (optional, default pub)
-        access_mod acc = access_mod::pub;
-        if (check(token_type::kw_public))    { advance(); acc = access_mod::pub;  }
-        else if (check(token_type::kw_private))   { advance(); acc = access_mod::priv; }
-        else if (check(token_type::kw_protected)) { advance(); acc = access_mod::prot; }
-
         // Parse method/field modifiers (stackable, any order).
-        // virtual/mandatory/static/explicit may precede the return type;
-        // noexcept/const/override/final may appear here too (also accepted after ')').
-        bool is_virtual   = false;
-        bool is_mandatory = false;
+        access_mod acc    = access_mod::pub;
         bool is_static    = false;
         bool is_explicit  = false;
         bool is_noexcept  = false;
         bool pre_const    = false;
-        bool pre_override = false;
-        bool pre_final    = false;
 
         while (true) {
-            if (check(token_type::kw_virtual))
-                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
-                    ": 'virtual' is not supported; use interfaces instead");
-            else if (check(token_type::kw_mandatory))
-                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
-                    ": 'mandatory' is not supported; use interfaces instead");
-            else if (check(token_type::kw_override))
-                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
-                    ": 'override' is not supported; use interfaces instead");
-            else if (check(token_type::kw_static))   { advance(); is_static = true; }
-            else if (check(token_type::kw_explicit)) { advance(); is_explicit = true; }
+            if (check(token_type::kw_static))        { advance(); is_static = true; }
             else if (check(token_type::kw_noexcept)) { advance(); is_noexcept = true; }
             else if (check(token_type::kw_const))    { advance(); pre_const = true; }
-            else if (check(token_type::kw_final))
-                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
-                    ": 'final' is not supported; use interfaces instead");
             else break;
         }
 
@@ -1086,10 +1324,9 @@ private:
             // The next token(s) form a type (conversion target)
             auto* meth = alloc<class_method>();
             meth->line = ln; meth->access = acc;
-            meth->is_virtual = is_virtual; meth->is_static = is_static;
+            meth->is_static = is_static;
             meth->is_explicit = is_explicit; meth->is_noexcept = is_noexcept;
-            meth->is_const_method = pre_const; meth->is_override = pre_override; meth->is_final = pre_final;
-            if (pre_override) meth->is_virtual = true;
+            meth->is_const_method = pre_const;
             meth->is_conversion_op = true;
             meth->conv_target_type = parse_type();
             meth->ret_type = meth->conv_target_type;
@@ -1110,10 +1347,9 @@ private:
             advance(); // consume 'operator'
             auto* meth = alloc<class_method>();
             meth->line = ln; meth->access = acc;
-            meth->is_virtual = is_virtual; meth->is_static = is_static;
+            meth->is_static = is_static;
             meth->is_explicit = is_explicit; meth->is_noexcept = is_noexcept;
-            meth->is_const_method = pre_const; meth->is_override = pre_override; meth->is_final = pre_final;
-            if (pre_override) meth->is_virtual = true;
+            meth->is_const_method = pre_const;
             meth->is_operator_overload = true;
             meth->ret_type = ret;
             meth->operator_str = parse_operator_str();
@@ -1133,12 +1369,9 @@ private:
             advance(); // consume '('
             auto* meth = alloc<class_method>();
             meth->line = ln; meth->access = acc;
-            meth->is_virtual = is_virtual;
-            meth->is_mandatory_virtual = is_mandatory;
             meth->is_static = is_static;
             meth->is_explicit = is_explicit; meth->is_noexcept = is_noexcept;
-            meth->is_const_method = pre_const; meth->is_override = pre_override; meth->is_final = pre_final;
-            if (pre_override) meth->is_virtual = true;
+            meth->is_const_method = pre_const;
             meth->ret_type  = ret;
             meth->name      = name_tok.value;
             meth->is_constructor = (name_tok.value == "__construct__");
@@ -1159,7 +1392,6 @@ private:
             parse_method_qualifiers(meth);
             parse_method_body(meth);
             cd->methods.push_back(meth);
-            if (is_virtual || is_mandatory) cd->has_virtual = true;
             return;
         }
 
@@ -1168,7 +1400,6 @@ private:
         cf->line     = ln;
         cf->access   = acc;
         cf->is_static = is_static;
-        cf->is_virtual = is_virtual;
         cf->type     = ret;
         cf->name     = name_tok.value;
         // C-style array field: name[N]
@@ -1240,7 +1471,7 @@ private:
             if (pt->is_self_type && !class_name.empty()) pt->name = class_name;
             param_decl p;
             p.type = pt;
-            if (check(token_type::id) || check(token_type::kw_self) || check(token_type::kw_this))
+            if (check(token_type::id))
                 p.name = advance().value;
             p.line = previous().line;
             meth->params.push_back(p);
@@ -1267,12 +1498,6 @@ private:
             else if (check(token_type::kw_const))
                 throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
                     ": 'const' method suffix not supported; use a const pointer param instead");
-            else if (check(token_type::kw_override))
-                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
-                    ": 'override' is not supported; use interfaces instead");
-            else if (check(token_type::kw_final))
-                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) +
-                    ": 'final' is not supported; use interfaces instead");
             else break;
         }
     }
@@ -1329,6 +1554,26 @@ private:
     }
 
     ast_node* parse_stmt() {
+        // Empty statement — bare ';' (valid in C; also handles double-; after macro expansion)
+        if (check(token_type::sm)) {
+            auto* n = alloc<block_stmt>();
+            n->line = advance().line;
+            return n;
+        }
+        // Macro invocation — expand in-place and re-parse as a statement
+        if (check(token_type::id) && macros_.count(peek().value)) {
+            macro_expand_depth_++;
+            bool ok = try_expand_macro_invocation();
+            macro_expand_depth_--;
+            if (ok) return parse_stmt();
+        }
+        // [] syntax macro — triggered by the first keyword of the pattern
+        if (check(token_type::id) && syntax_triggers_.count(peek().value)) {
+            macro_expand_depth_++;
+            bool ok = try_expand_syntax_macro();
+            macro_expand_depth_--;
+            if (ok) return parse_stmt();
+        }
         if (check(token_type::obrace))     return parse_block();
         if (check(token_type::kw_if))      return parse_if();
         if (check(token_type::kw_while))   return parse_while();
@@ -1338,9 +1583,10 @@ private:
         if (check(token_type::kw_asm))     return parse_asm_stmt();
         if (check(token_type::kw_break))   { auto* n = alloc<break_stmt>();    n->line = advance().line; consume(token_type::sm, "Expected ';'"); return n; }
         if (check(token_type::kw_continue)){ auto* n = alloc<continue_stmt>(); n->line = advance().line; consume(token_type::sm, "Expected ';'"); return n; }
-        if (check(token_type::kw_defer))   return parse_defer_stmt();
-        if (check(token_type::kw_try))     return parse_try();
-        if (check(token_type::kw_throw))   return parse_throw();
+        if (check(token_type::kw_defer))    return parse_defer_stmt();
+        if (check(token_type::kw_errdefer)) return parse_errdefer_stmt();
+        if (check(token_type::kw_try))     return parse_try_stmt();
+        if (check(token_type::kw_res))     return parse_res_block();
 
         // constexpr statements
         if (check(token_type::kw_constexpr)) {
@@ -1376,36 +1622,28 @@ private:
         auto* es  = alloc<expr_stmt>();
         es->line  = peek().line;
         es->expr  = parse_expr();
-        consume(token_type::sm, "Expected ';' after expression");
+        // except_expr ends with '}' so ';' is optional (like an if/while body)
+        if (es->expr->kind == expr_kind::except_expr)
+            match(token_type::sm);
+        else
+            consume(token_type::sm, "Expected ';' after expression");
         return es;
     }
 
-    throw_stmt* parse_throw() {
-        auto* n = alloc<throw_stmt>();
-        n->line = advance().line; // consume 'throw'
-        if (!check(token_type::sm))
-            n->value = parse_expr();
-        consume(token_type::sm, "Expected ';' after throw");
+    // try expr;  — propagates error from a !T call up through the current !T function
+    ast_node* parse_try_stmt() {
+        auto* n = alloc<try_expr_stmt>();
+        n->line = advance().line; // consume 'try'
+        n->expr = parse_expr();
+        consume(token_type::sm, "Expected ';' after try expression");
         return n;
     }
 
-    try_stmt* parse_try() {
-        auto* n  = alloc<try_stmt>();
-        n->line  = advance().line; // consume 'try'
-        n->body  = parse_block();
-        consume(token_type::kw_except, "Expected 'except' after try block");
-        consume(token_type::oparen,    "Expected '(' after except");
-        // Check for catch-all: except (...)
-        if (check(token_type::dot) && peek_at(1).type == token_type::dot && peek_at(2).type == token_type::dot) {
-            advance(); advance(); advance(); // consume '...'
-            n->exc_type = nullptr;
-            n->exc_name = "";
-        } else {
-            n->exc_type = parse_type();
-            n->exc_name = consume(token_type::id, "Expected exception variable name").value;
-        }
-        consume(token_type::cparen,    "Expected ')'");
-        n->handler = parse_block();
+    // res { stmts... }  — inline block that can return an error or a value
+    ast_node* parse_res_block() {
+        auto* n = alloc<res_block_stmt>();
+        n->line = advance().line; // consume 'res'
+        n->body = parse_block();
         return n;
     }
 
@@ -1421,13 +1659,30 @@ private:
         return n;
     }
 
+    errdefer_stmt* parse_errdefer_stmt() {
+        auto* n = alloc<errdefer_stmt>();
+        n->line = advance().line; // consume 'errdefer'
+        if (check(token_type::obrace)) {
+            n->blk = parse_block();
+        } else {
+            n->expr = parse_expr();
+            consume(token_type::sm, "Expected ';' after errdefer expression");
+        }
+        return n;
+    }
+
     // Like is_type_start() but also accepts id*) patterns used in cast expressions, e.g. (T*)0.
     bool is_cast_start() const {
         if (is_type_start()) return true;
-        // Generic/user type pointer cast: id followed by * then ) e.g. (T*) or (Foo*)
+        // Generic/user type pointer cast: id (possibly namespace-qualified) followed by * then )
+        // e.g. (T*), (Foo*), (ns.Type*), (ns1.ns2.Type*)
         token_type tt = peek().type;
         if (tt == token_type::id) {
             size_t k = 1;
+            // Skip namespace qualifiers: ns1.ns2....
+            while (peek_at(k).type == token_type::dot
+                   && peek_at(k + 1).type == token_type::id)
+                k += 2;
             while (peek_at(k).type == token_type::ast) ++k;
             if (k > 1 && peek_at(k).type == token_type::cparen) return true;
         }
@@ -1437,23 +1692,18 @@ private:
     bool is_type_start() const {
         // '?' prefix means nullable type
         if (peek().type == token_type::question) return true;
+        // &memstr — local allocator reference type
+        if (peek().type == token_type::addr && peek_at(1).type == token_type::kw_smem) return true;
+        // 'sta' — comptime type-value type (like Zig's 'type')
+        if (peek().type == token_type::kw_sta) return true;
         static const std::vector<token_type> type_tokens = {
             token_type::kw_const, token_type::kw_volatile,
             token_type::kw_signed, token_type::kw_unsigned,
-            token_type::kw_extern, token_type::kw_extern_std,
-            token_type::kw_inline, token_type::kw_register,
-            token_type::kw_auto,   // auto placeholder
-            token_type::kw_char,
-            token_type::kw_i8,   token_type::kw_i16,  token_type::kw_i32,
-            token_type::kw_i64,  token_type::kw_i128, token_type::kw_i256, token_type::kw_i512,
-            token_type::kw_u8,   token_type::kw_u16,  token_type::kw_u32,
-            token_type::kw_u64,  token_type::kw_u128, token_type::kw_u256, token_type::kw_u512,
-            token_type::kw_f8,   token_type::kw_f16,  token_type::kw_f32,
-            token_type::kw_f64,  token_type::kw_f128, token_type::kw_f256, token_type::kw_f512,
-            token_type::kw_bool,
-            token_type::kw_b1,   token_type::kw_b8,   token_type::kw_b16,  token_type::kw_b32,
-            token_type::kw_b64,  token_type::kw_b128, token_type::kw_b256, token_type::kw_b512,
-            token_type::kw_void,
+            token_type::kw_extern, token_type::kw_inline, token_type::kw_register,
+            token_type::kw_auto,
+            token_type::kw_char, token_type::kw_void,
+            token_type::kw_arb_int, token_type::kw_arb_uint,
+            token_type::kw_arb_float, token_type::kw_arb_bool,
             token_type::kw_struct, token_type::kw_enum, token_type::kw_union,
             token_type::kw_smem,
         };
@@ -1461,10 +1711,14 @@ private:
         for (auto t : type_tokens) if (t == tt) return true;
         // identifier followed by identifier = user-defined type
         if (tt == token_type::id && peek_at(1).type == token_type::id) return true;
-        // namespace::Type qualified type — only when followed by identifier or * (not '(' which is a call)
-        if (tt == token_type::id && peek_at(1).type == token_type::scope_res
+        // namespace.Type qualified type — only when followed by identifier or * (not '(' which is a call)
+        if (tt == token_type::id && peek_at(1).type == token_type::dot
             && peek_at(2).type == token_type::id) {
             size_t k = 3;
+            // Skip additional namespace levels: ns1.ns2.ns3.Type
+            while (peek_at(k).type == token_type::dot
+                   && peek_at(k + 1).type == token_type::id)
+                k += 2;
             // Skip generic type args: ns::Type<T, U>
             if (peek_at(k).type == token_type::lt) {
                 int depth = 0; size_t j = k;
@@ -1484,7 +1738,7 @@ private:
             size_t k = 1;
             while (peek_at(k).type == token_type::ast) ++k;
             auto after_stars = peek_at(k).type;
-            if (k > 1 && (after_stars == token_type::id || after_stars == token_type::kw_self)) return true;
+            if (k > 1 && after_stars == token_type::id) return true;
         }
         // generic type instantiation:  Name< ... > name  (balanced angle scan)
         if (tt == token_type::id && peek_at(1).type == token_type::lt) {
@@ -1507,7 +1761,7 @@ private:
 
     var_decl* parse_local_var_decl() {
         type_node* t   = parse_type();
-        if (!check(token_type::id) && !check(token_type::kw_self))
+        if (!check(token_type::id))
             throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) + ": Expected variable name");
         auto name_tok  = advance();
         // Trailing type: auto name: type = ...
@@ -1519,6 +1773,7 @@ private:
         vd->line       = name_tok.line;
         vd->type       = t;
         vd->name       = name_tok.value;
+        vd->is_sta     = t->is_sta;
         // Array size comes after the name: int a[10]
         if (match(token_type::obracket)) {
             if (!check(token_type::cbracket))
@@ -1552,34 +1807,45 @@ private:
         n->line = advance().line; // 'if'
         // 'if constexpr (...)' — compile-time conditional
         if (check(token_type::kw_constexpr)) { advance(); n->is_constexpr = true; }
-        consume(token_type::oparen, "Expected '(' after 'if'");
+        bool has_parens = match(token_type::oparen);
         n->cond = parse_expr();
-        consume(token_type::cparen, "Expected ')' after condition");
+        if (has_parens) consume(token_type::cparen, "Expected ')' after condition");
+        // Optional |capture| after condition: if (cond) |var| {}
+        if (match(token_type::bit_or)) {
+            n->then_capture = consume(token_type::id, "Expected identifier in if-capture").value;
+            consume(token_type::bit_or, "Expected closing '|' after capture name");
+        }
         n->then_body = parse_stmt();
-        if (match(token_type::kw_else)) n->else_body = parse_stmt();
+        if (match(token_type::kw_else)) {
+            // Optional |capture| after else: else |var| {}
+            if (match(token_type::bit_or)) {
+                n->else_capture = consume(token_type::id, "Expected identifier in else-capture").value;
+                consume(token_type::bit_or, "Expected closing '|' after capture name");
+            }
+            n->else_body = parse_stmt();
+        }
         return n;
     }
 
     while_stmt* parse_while() {
         auto* n = alloc<while_stmt>();
         n->line = advance().line;
-        consume(token_type::oparen, "Expected '(' after 'while'");
+        bool has_parens = match(token_type::oparen);
         n->cond = parse_expr();
-        consume(token_type::cparen, "Expected ')' after condition");
+        if (has_parens) consume(token_type::cparen, "Expected ')' after condition");
         n->body = parse_stmt();
         return n;
     }
 
     ast_node* parse_for() {
         uint64_t ln = advance().line; // consume 'for'
-        consume(token_type::oparen, "Expected '(' after 'for'");
+        bool has_parens = match(token_type::oparen);
 
         // Range-based for: for (T name : expr) — detect by lookahead for ':' before ';'
         // Heuristic: if a type is followed by identifier and then ':', it's range-for.
         {
             size_t saved = current;
             if (is_type_start()) {
-                size_t k = 0;
                 // Skip over the type tokens (rough heuristic: scan for id followed by ':')
                 // We try to parse type + id and see if ':' follows.
                 try {
@@ -1598,7 +1864,7 @@ private:
                                 fr->var_type = elem_t;
                                 fr->var_name = vname;
                                 fr->range = parse_expr();
-                                consume(token_type::cparen, "Expected ')' after range-for");
+                                if (has_parens) consume(token_type::cparen, "Expected ')' after range-for");
                                 fr->body = parse_stmt();
                                 return fr;
                             }
@@ -1610,7 +1876,7 @@ private:
                             fr->var_type = elem_t;
                             fr->var_name = vname;
                             fr->range = parse_expr();
-                            consume(token_type::cparen, "Expected ')' after range-for");
+                            if (has_parens) consume(token_type::cparen, "Expected ')' after range-for");
                             fr->body = parse_stmt();
                             return fr;
                         }
@@ -1628,8 +1894,8 @@ private:
         } else advance();
         if (!check(token_type::sm)) n->cond = parse_expr();
         consume(token_type::sm, "Expected ';' in for");
-        if (!check(token_type::cparen)) n->step = parse_expr();
-        consume(token_type::cparen, "Expected ')' after for clauses");
+        if (has_parens ? !check(token_type::cparen) : !check(token_type::obrace)) n->step = parse_expr();
+        if (has_parens) consume(token_type::cparen, "Expected ')' after for clauses");
         n->body = parse_stmt();
         return n;
     }
@@ -1637,9 +1903,9 @@ private:
     switch_stmt* parse_switch() {
         auto* n = alloc<switch_stmt>();
         n->line = advance().line;
-        consume(token_type::oparen, "Expected '(' after 'switch'");
+        bool has_parens_sw = match(token_type::oparen);
         n->subject = parse_expr();
-        consume(token_type::cparen, "Expected ')'");
+        if (has_parens_sw) consume(token_type::cparen, "Expected ')'");
         consume(token_type::obrace, "Expected '{'");
         while (!check(token_type::cbrace) && !is_at_end()) {
             std::optional<expr_node*> label;
@@ -1777,8 +2043,26 @@ private:
     // -------------------------------------------------------- expressions (Pratt)
     expr_node* parse_expr() { return parse_assignment(); }
 
-    expr_node* parse_assignment() {
+    expr_node* parse_null_coal() {
         expr_node* lhs = parse_ternary();
+        while (check(token_type::question_question)) {
+            advance(); // consume '??'
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::null_coal;
+            n->line = previous().line;
+            n->lhs  = lhs;
+            if (check(token_type::obrace)) {
+                n->handler_block = parse_block(); // block RHS: foo() ?? { panic(); }
+            } else {
+                n->rhs = parse_ternary(); // expression RHS: left-associative
+            }
+            lhs = n;
+        }
+        return lhs;
+    }
+
+    expr_node* parse_assignment() {
+        expr_node* lhs = parse_null_coal();
 
         static const std::vector<std::pair<token_type, binary_op>> assign_ops = {
             {token_type::assign,    binary_op::assign},
@@ -1916,6 +2200,14 @@ private:
             n->uop = unary_op::pre_dec; n->operand = parse_unary(); return n;
         }
         if (check(token_type::kw_sizeof)) return parse_sizeof();
+        // try expr — propagate error from !T call; usable as expression prefix
+        if (check(token_type::kw_try)) {
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::try_expr;
+            n->line = advance().line; // consume 'try'
+            n->operand = parse_unary();
+            return n;
+        }
         // noexcept(expr) operator: evaluates to a bool literal (informational -> always true)
         if (check(token_type::kw_noexcept) && peek_at(1).type == token_type::oparen) {
             uint64_t ln = advance().line; // 'noexcept'
@@ -1953,8 +2245,9 @@ private:
         if (tt == token_type::id) return true;
         if (tt == token_type::kw_const || tt == token_type::kw_unsigned ||
             tt == token_type::kw_signed || tt == token_type::kw_void) return true;
-        // primitive numeric/bool type keywords are contiguous: kw_char .. kw_b512
-        return tt >= token_type::kw_char && tt <= token_type::kw_b512;
+        return tt == token_type::kw_char || tt == token_type::kw_arb_int ||
+               tt == token_type::kw_arb_uint || tt == token_type::kw_arb_float ||
+               tt == token_type::kw_arb_bool;
     }
 
     expr_node* parse_sizeof() {
@@ -2018,8 +2311,19 @@ private:
                 base = n;
                 continue;
             }
+            // ADT named-struct variant init: expr { .field = val, ... }
+            // (used as EnumName.VariantName { .field = val } after member access)
+            if (check(token_type::obrace) && peek_at(1).type == token_type::dot) {
+                auto* ci      = alloc<expr_node>();
+                ci->kind      = expr_kind::class_init;
+                ci->line      = peek().line;
+                ci->init_type = nullptr;
+                ci->object    = base;
+                parse_class_init_fields(ci);
+                base = ci;
+                continue;
+            }
             // ADT istruc-variant init: expr .{ .field = val, ... }
-            // (used for terminal_error .{ .msg = "bad" } after EnumName::VariantName)
             if (check(token_type::dot) && peek_at(1).type == token_type::obrace) {
                 advance(); // consume '.'
                 auto* ci      = alloc<expr_node>();
@@ -2069,31 +2373,31 @@ private:
                 n->line = advance().line; n->uop = unary_op::post_dec; n->operand = base;
                 base = n; continue;
             }
-            // Name::member — scope resolution, deprecated in favour of '.'; produces a member expr
-            // that the analyzer resolves as a class static method or namespace function.
-            if (match(token_type::scope_res)) {
-                uint64_t res_line = previous().line;
-                auto* n        = alloc<expr_node>();
-                n->kind        = expr_kind::member;
-                n->line        = res_line;
-                n->object      = base;
-                n->member_name = consume(token_type::id, "Expected name after '::'").value;
-                base = n;
-                // After EnumName::VariantName, check for { .field = val } (named-struct variant init)
-                if (check(token_type::obrace) && peek_at(1).type == token_type::dot) {
-                    auto* ci = alloc<expr_node>();
-                    ci->kind = expr_kind::class_init;
-                    ci->line = res_line;
-                    ci->init_type = nullptr; // type inferred from context (ADT enum variant)
-                    // Store the member expr (EnumName::VariantName) as the callee
-                    // so visit_class_init can detect this is an ADT enum variant init.
-                    ci->object = base; // base is the member expr we just built
-                    parse_class_init_fields(ci);
-                    base = ci;
-                }
-                continue;
-            }
+            // '::' is not valid syntax — namespace access uses '.'
+            if (check(token_type::scope_res))
+                throw std::runtime_error("Parser Error at line " + std::to_string(peek().line) + ": Use '.' instead of '::' for namespace access");
             break;
+        }
+        // expr except |name| { block }  or  expr except |name, override| { block }
+        // 'override' is a bool binding: true when the error came from an injected UB check
+        if (check(token_type::kw_except)) {
+            advance(); // consume 'except'
+            consume(token_type::bit_or, "Expected '|' after 'except'");
+            std::string err_name = consume(token_type::id, "Expected error variable name").value;
+            std::string override_name;
+            if (check(token_type::comma)) {
+                advance(); // consume ','
+                override_name = consume(token_type::id, "Expected override variable name").value;
+            }
+            consume(token_type::bit_or, "Expected '|' after error variable name(s)");
+            auto* ex = alloc<expr_node>();
+            ex->kind = expr_kind::except_expr;
+            ex->line = previous().line;
+            ex->object = base;           // the expression being tried
+            ex->str_val = err_name;      // name bound to the error tag
+            ex->member_name = override_name; // optional: bool binding for UB-origin check
+            ex->handler_block = parse_block();
+            return ex;
         }
         return base;
     }
@@ -2176,9 +2480,8 @@ private:
         if (check(token_type::kw_null)) {
             auto tok = advance();
             auto* n  = alloc<expr_node>();
-            n->kind  = expr_kind::int_lit;
+            n->kind  = expr_kind::null_lit;
             n->line  = tok.line;
-            n->int_val = 0;
             return n;
         }
         // Context-inferred class init:  .{ .field = val, ... }
@@ -2191,7 +2494,90 @@ private:
             parse_class_init_fields(n);
             return n;
         }
-        if (check(token_type::id) || check(token_type::kw_self)) {
+        // error.Name or error.ns.Name — error tag literal (multi-level dot supported)
+        if (check(token_type::kw_error)) {
+            uint64_t ln = advance().line; // consume 'error'
+            consume(token_type::dot, "Expected '.' after 'error'");
+            // Read the first component
+            std::string err_name;
+            if (check(token_type::id)) err_name = advance().value;
+            else if (check(token_type::int_lit)) err_name = advance().value;
+            else err_name = consume(token_type::id, "Expected error variant name after 'error.'").value;
+            // Consume additional dot-separated components: error.mm.out_of_bounds
+            while (check(token_type::dot) && peek_at(1).type == token_type::id) {
+                advance(); // consume '.'
+                err_name += "." + advance().value;
+            }
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::error_lit;
+            n->line = ln;
+            n->str_val = err_name;
+            // error.Name(expr) — optional associated payload value
+            if (check(token_type::oparen)) {
+                advance(); // consume '('
+                if (!check(token_type::cparen))
+                    n->operand = parse_expr();
+                consume(token_type::cparen, "Expected ')' after error payload");
+            }
+            return n;
+        }
+        // Macro invocation used as a primary expression
+        if (check(token_type::id) && macros_.count(peek().value)) {
+            macro_expand_depth_++;
+            bool ok = try_expand_macro_invocation();
+            macro_expand_depth_--;
+            if (ok) return parse_primary();
+        }
+        // quote{...} — proc macro tokenstream literal (collects enclosed tokens)
+        if (check(token_type::id) && peek().value == "quote" && peek_at(1).type == token_type::obrace) {
+            uint64_t ln = advance().line; // consume 'quote'
+            advance(); // consume '{'
+            // Collect tokens until matching '}'
+            std::vector<token_t> toks;
+            int depth = 1;
+            while (depth > 0 && !is_at_end()) {
+                if      (check(token_type::obrace)) { depth++; toks.push_back(advance()); }
+                else if (check(token_type::cbrace)) { if (--depth == 0) break; toks.push_back(advance()); }
+                else                                { toks.push_back(advance()); }
+            }
+            consume(token_type::cbrace, "Expected '}' to close quote{}");
+            // Represent as a string literal whose value is the reconstructed token text.
+            // This is a compile-time tokenstream; actual expansion happens in proc macro invocations.
+            std::string reconstructed;
+            for (auto& t : toks) { if (!reconstructed.empty()) reconstructed += ' '; reconstructed += t.value; }
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::string_lit;
+            n->line = ln;
+            n->str_val = reconstructed;
+            return n;
+        }
+        // ast(expr) / tks(expr) — proc macro intrinsics (no-op at IR level, return tokenstream handle)
+        if (check(token_type::id) && (peek().value == "ast" || peek().value == "tks") &&
+            peek_at(1).type == token_type::oparen) {
+            uint64_t ln = advance().line; // consume 'ast' or 'tks'
+            advance(); // consume '('
+            expr_node* inner = parse_expr();
+            consume(token_type::cparen, "Expected ')' after ast()/tks() argument");
+            // Pass through the inner expression unchanged; semantics are provided at proc macro runtime.
+            (void)inner;
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::int_lit;
+            n->line = ln;
+            n->int_val = 0; // placeholder
+            return n;
+        }
+        // get_ifo_t(Type) — compile-time type info intrinsic
+        if (check(token_type::id) && peek().value == "get_ifo_t" && peek_at(1).type == token_type::oparen) {
+            uint64_t ln = advance().line; // consume 'get_ifo_t'
+            advance(); // consume '('
+            auto* n = alloc<expr_node>();
+            n->kind = expr_kind::get_ifo_t_e;
+            n->line = ln;
+            n->cast_type = parse_type();
+            consume(token_type::cparen, "Expected ')' after get_ifo_t type");
+            return n;
+        }
+        if (check(token_type::id)) {
             auto tok = advance();
             // Named-field class init:  TypeName { .field = val, ... }
             if (tok.type == token_type::id && check(token_type::obrace)
@@ -2208,11 +2594,24 @@ private:
             auto* n  = alloc<expr_node>();
             n->kind  = expr_kind::identifier;
             n->line  = tok.line;
-            n->str_val = (tok.type == token_type::kw_self) ? "self" : tok.value;
+            n->str_val = tok.value;
             return n;
         }
         if (check(token_type::at)) {
             uint64_t ln = advance().line;
+            // @import("path") — module import; resolved to namespace at comptime
+            if (check(token_type::id) && peek().value == "import") {
+                advance(); // consume 'import'
+                consume(token_type::oparen, "Expected '(' after '@import'");
+                std::string path = consume(token_type::string_lit,
+                    "Expected string path in @import").value;
+                consume(token_type::cparen, "Expected ')' after @import path");
+                auto* n  = alloc<expr_node>();
+                n->kind  = expr_kind::import_expr;
+                n->line  = ln;
+                n->str_val = path; // relative path to imported file or directory
+                return n;
+            }
             auto* n    = alloc<expr_node>();
             n->kind    = expr_kind::annotation;
             n->line    = ln;
@@ -2255,9 +2654,9 @@ private:
                 case token_type::kw_istruc:      case token_type::kw_extern_c:
                 case token_type::kw_if:          case token_type::kw_while:
                 case token_type::kw_for:         case token_type::kw_return:
-                case token_type::kw_try:         case token_type::kw_throw:
+                case token_type::kw_try:
                 case token_type::kw_namespace:   case token_type::kw_defer:
-                case token_type::kw_extern_std:
+                case token_type::kw_errdefer:
                     return;
                 default: break;
             }
@@ -2279,8 +2678,12 @@ private:
     template<typename T>
     void push_owned(std::unique_ptr<T> p) { owned_stmts.push_back(std::move(p)); }
 
-    std::vector<token_t>                    tokens;
-    size_t                                  current;
+    std::vector<token_t>                          tokens;
+    size_t                                        current;
+    std::unordered_map<std::string, macro_def>    macros_;
+    int                                           macro_expand_depth_ = 0;
+    // Maps trigger word → list of (macro_name, rule_index) for [] syntax rules.
+    std::unordered_map<std::string, std::vector<std::pair<std::string, size_t>>> syntax_triggers_;
     std::vector<std::unique_ptr<ast_node>>  owned_stmts;
     std::vector<std::unique_ptr<expr_node>> owned_exprs;
     std::vector<std::unique_ptr<type_node>> owned_types;

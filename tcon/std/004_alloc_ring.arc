@@ -2,7 +2,7 @@
 extern std.alloc.ring;
 
 i32 main() {
-    ring r(256);
+    std.alloc.ring r(256);
     if (r.base == (void*)0) { return 1; }
 
     // Alloc a chunk

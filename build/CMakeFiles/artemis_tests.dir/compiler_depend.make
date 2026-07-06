@@ -17,6 +17,7 @@ CMakeFiles/artemis_tests.dir/test/runner.cpp.obj: C:/Users/devon/Artemis/test/ru
   C:/Users/devon/Artemis/compiler/ir/types.hxx \
   C:/Users/devon/Artemis/compiler/lexer/main.hxx \
   C:/Users/devon/Artemis/compiler/parser/expr.hxx \
+  C:/Users/devon/Artemis/compiler/parser/macros.hxx \
   C:/Users/devon/Artemis/compiler/parser/main.hxx \
   C:/msys64/mingw64/include/_mingw.h \
   C:/msys64/mingw64/include/_mingw_mac.h \
@@ -105,6 +106,7 @@ CMakeFiles/artemis_tests.dir/test/runner.cpp.obj: C:/Users/devon/Artemis/test/ru
   C:/msys64/mingw64/include/c++/15.2.0/bits/stl_iterator_base_types.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/stl_pair.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/stl_raw_storage_iter.h \
+  C:/msys64/mingw64/include/c++/15.2.0/bits/stl_relops.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/stl_tempbuf.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/stl_uninitialized.h \
   C:/msys64/mingw64/include/c++/15.2.0/bits/stl_vector.h \
@@ -169,6 +171,7 @@ CMakeFiles/artemis_tests.dir/test/runner.cpp.obj: C:/Users/devon/Artemis/test/ru
   C:/msys64/mingw64/include/c++/15.2.0/typeinfo \
   C:/msys64/mingw64/include/c++/15.2.0/unordered_map \
   C:/msys64/mingw64/include/c++/15.2.0/unordered_set \
+  C:/msys64/mingw64/include/c++/15.2.0/utility \
   C:/msys64/mingw64/include/c++/15.2.0/variant \
   C:/msys64/mingw64/include/c++/15.2.0/vector \
   C:/msys64/mingw64/include/c++/15.2.0/x86_64-w64-mingw32/bits/atomic_word.h \
@@ -265,6 +268,8 @@ C:/msys64/mingw64/include/malloc.h:
 C:/msys64/mingw64/include/c++/15.2.0/variant:
 
 C:/msys64/mingw64/include/c++/15.2.0/array:
+
+C:/Users/devon/Artemis/compiler/parser/macros.hxx:
 
 C:/msys64/mingw64/include/c++/15.2.0/ios:
 
@@ -382,8 +387,6 @@ C:/msys64/mingw64/include/c++/15.2.0/bits/alloc_traits.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/allocated_ptr.h:
 
-C:/msys64/mingw64/include/c++/15.2.0/bits/locale_facets.tcc:
-
 C:/Users/devon/Artemis/test/test_analyzer.hxx:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/string_view.tcc:
@@ -425,6 +428,8 @@ C:/msys64/mingw64/include/c++/15.2.0/bits/exception.h:
 C:/msys64/mingw64/include/c++/15.2.0/bits/istream.tcc:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/locale_classes.h:
+
+C:/msys64/mingw64/include/c++/15.2.0/bits/locale_facets.tcc:
 
 C:/msys64/mingw64/include/time.h:
 
@@ -471,6 +476,8 @@ C:/msys64/mingw64/include/c++/15.2.0/bits/ranges_algobase.h:
 C:/msys64/mingw64/include/c++/15.2.0/bits/ranges_base.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/ranges_cmp.h:
+
+C:/msys64/mingw64/include/c++/15.2.0/bits/stl_relops.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/bits/ranges_util.h:
 
@@ -621,6 +628,8 @@ C:/msys64/mingw64/include/c++/15.2.0/pstl/glue_memory_defs.h:
 C:/msys64/mingw64/include/c++/15.2.0/pstl/pstl_config.h:
 
 C:/msys64/mingw64/include/c++/15.2.0/sstream:
+
+C:/msys64/mingw64/include/c++/15.2.0/utility:
 
 C:/msys64/mingw64/include/c++/15.2.0/stdexcept:
 

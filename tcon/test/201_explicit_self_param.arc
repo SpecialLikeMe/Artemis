@@ -1,17 +1,15 @@
-// Test: explicit self parameter — any name, any pointer-to-class type accepted
+// Test: explicit self parameter — any name works, just pass pointer-to-class type
 istruc Counter {
     i32 value;
 
     void __construct__(Counter* self) { self.value = 0; }
 
-    // 'self' is just the conventional name; any name works
     void increment(Counter* me) { me.value = me.value + 1; }
     void add(Counter* c, i32 n)  { c.value = c.value + n; }
 
     i32 get(const Counter* reader) { return reader.value; }
 
-    // 'this' keyword as type alias for enclosing class
-    void reset(this* self) { self.value = 0; }
+    void reset(Counter* self) { self.value = 0; }
 }
 
 istruc Pair {

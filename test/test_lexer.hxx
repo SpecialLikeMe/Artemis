@@ -64,47 +64,48 @@ TEST(Lexer, Keywords) {
     ASSERT_EQ(static_cast<int>(toks[4].type), static_cast<int>(token_type::kw_return));
 }
 
-TEST(Lexer, IntTypeKeywords) {
-    auto toks = lex("i8 i16 i32 i64 i128 i256 i512");
-    ASSERT_EQ(static_cast<int>(toks[0].type), static_cast<int>(token_type::kw_i8));
-    ASSERT_EQ(static_cast<int>(toks[1].type), static_cast<int>(token_type::kw_i16));
-    ASSERT_EQ(static_cast<int>(toks[2].type), static_cast<int>(token_type::kw_i32));
-    ASSERT_EQ(static_cast<int>(toks[3].type), static_cast<int>(token_type::kw_i64));
-    ASSERT_EQ(static_cast<int>(toks[4].type), static_cast<int>(token_type::kw_i128));
-    ASSERT_EQ(static_cast<int>(toks[5].type), static_cast<int>(token_type::kw_i256));
-    ASSERT_EQ(static_cast<int>(toks[6].type), static_cast<int>(token_type::kw_i512));
+TEST(Lexer, ArbIntTypeKeywords) {
+    auto toks = lex("i8 i16 i32 i64 i128 i9982 i1");
+    for (int j = 0; j < 7; ++j)
+        ASSERT_EQ(static_cast<int>(toks[j].type), static_cast<int>(token_type::kw_arb_int));
+    ASSERT_EQ(toks[0].value, "8");
+    ASSERT_EQ(toks[2].value, "32");
+    ASSERT_EQ(toks[5].value, "9982");
 }
 
-TEST(Lexer, UintTypeKeywords) {
-    auto toks = lex("u8 u16 u32 u64 u128 u256 u512");
-    ASSERT_EQ(static_cast<int>(toks[0].type), static_cast<int>(token_type::kw_u8));
-    ASSERT_EQ(static_cast<int>(toks[1].type), static_cast<int>(token_type::kw_u16));
-    ASSERT_EQ(static_cast<int>(toks[2].type), static_cast<int>(token_type::kw_u32));
-    ASSERT_EQ(static_cast<int>(toks[3].type), static_cast<int>(token_type::kw_u64));
-    ASSERT_EQ(static_cast<int>(toks[4].type), static_cast<int>(token_type::kw_u128));
-    ASSERT_EQ(static_cast<int>(toks[5].type), static_cast<int>(token_type::kw_u256));
-    ASSERT_EQ(static_cast<int>(toks[6].type), static_cast<int>(token_type::kw_u512));
+TEST(Lexer, ArbUintTypeKeywords) {
+    auto toks = lex("u8 u16 u32 u64 u512");
+    for (int j = 0; j < 5; ++j)
+        ASSERT_EQ(static_cast<int>(toks[j].type), static_cast<int>(token_type::kw_arb_uint));
+    ASSERT_EQ(toks[2].value, "32");
 }
 
-TEST(Lexer, FloatTypeKeywords) {
-    auto toks = lex("f32 f64 f128 f256 f512");
-    ASSERT_EQ(static_cast<int>(toks[0].type), static_cast<int>(token_type::kw_f32));
-    ASSERT_EQ(static_cast<int>(toks[1].type), static_cast<int>(token_type::kw_f64));
-    ASSERT_EQ(static_cast<int>(toks[2].type), static_cast<int>(token_type::kw_f128));
-    ASSERT_EQ(static_cast<int>(toks[3].type), static_cast<int>(token_type::kw_f256));
-    ASSERT_EQ(static_cast<int>(toks[4].type), static_cast<int>(token_type::kw_f512));
+TEST(Lexer, ArbFloatTypeKeywords) {
+    auto toks = lex("f32 f64 f128 f187");
+    for (int j = 0; j < 4; ++j)
+        ASSERT_EQ(static_cast<int>(toks[j].type), static_cast<int>(token_type::kw_arb_float));
+    ASSERT_EQ(toks[1].value, "64");
+    ASSERT_EQ(toks[3].value, "187");
 }
 
-TEST(Lexer, BoolTypeKeywords) {
-    auto toks = lex("b1 b8 b16 b32 b64 b128 b256 b512");
-    ASSERT_EQ(static_cast<int>(toks[0].type), static_cast<int>(token_type::kw_b1));
-    ASSERT_EQ(static_cast<int>(toks[1].type), static_cast<int>(token_type::kw_b8));
-    ASSERT_EQ(static_cast<int>(toks[2].type), static_cast<int>(token_type::kw_b16));
-    ASSERT_EQ(static_cast<int>(toks[3].type), static_cast<int>(token_type::kw_b32));
-    ASSERT_EQ(static_cast<int>(toks[4].type), static_cast<int>(token_type::kw_b64));
-    ASSERT_EQ(static_cast<int>(toks[5].type), static_cast<int>(token_type::kw_b128));
-    ASSERT_EQ(static_cast<int>(toks[6].type), static_cast<int>(token_type::kw_b256));
-    ASSERT_EQ(static_cast<int>(toks[7].type), static_cast<int>(token_type::kw_b512));
+TEST(Lexer, ArbBoolTypeKeywords) {
+    auto toks = lex("b1 b8 b32 b64 b128");
+    for (int j = 0; j < 5; ++j)
+        ASSERT_EQ(static_cast<int>(toks[j].type), static_cast<int>(token_type::kw_arb_bool));
+    ASSERT_EQ(toks[0].value, "1");
+    ASSERT_EQ(toks[2].value, "32");
+}
+
+TEST(Lexer, TypeWordAliases) {
+    auto toks = lex("int uint float bool");
+    ASSERT_EQ(static_cast<int>(toks[0].type), static_cast<int>(token_type::kw_arb_int));
+    ASSERT_EQ(toks[0].value, "32");
+    ASSERT_EQ(static_cast<int>(toks[1].type), static_cast<int>(token_type::kw_arb_uint));
+    ASSERT_EQ(toks[1].value, "32");
+    ASSERT_EQ(static_cast<int>(toks[2].type), static_cast<int>(token_type::kw_arb_float));
+    ASSERT_EQ(toks[2].value, "64");
+    ASSERT_EQ(static_cast<int>(toks[3].type), static_cast<int>(token_type::kw_arb_bool));
+    ASSERT_EQ(toks[3].value, "8");
 }
 
 TEST(Lexer, ArithmeticOperators) {
