@@ -4,11 +4,11 @@
 namespace std {
 namespace atomic {
 
-constexpr i32 RELAXED = 0;
-constexpr i32 ACQUIRE = 1;
-constexpr i32 RELEASE = 2;
-constexpr i32 ACQ_REL = 3;
-constexpr i32 SEQ_CST = 4;
+comptime i32 RELAXED = 0;
+comptime i32 ACQUIRE = 1;
+comptime i32 RELEASE = 2;
+comptime i32 ACQ_REL = 3;
+comptime i32 SEQ_CST = 4;
 
 void fence_acquire() { }
 void fence_release() { }

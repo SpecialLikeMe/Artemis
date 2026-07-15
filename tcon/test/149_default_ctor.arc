@@ -4,7 +4,7 @@ istruc Counter {
     i32 get(const Counter* self) { return self.n; }
 }
 i32 main() {
-    Counter c;
+    Counter c();
     if (c.get() != 100) { return 1; }
     return 0;
 }

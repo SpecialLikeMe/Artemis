@@ -1,3 +1,152 @@
+# 7/13/2026 — Feature completion pass: generics, comptime, range-for, proc macros, MIR/LIR, docs
+
+## Generics — istruc, enum, union (§18)
+- Generic istrucs (`istruc Foo<T>`) now fully monomorphize at use sites: `ir_get_or_monomorphize_generic_class` walks the namespace_decl wrapper, substitutes type parameters, and emits a specialized LLVM struct `Foo__mono_T`.
+- Generic enums (`enum Status<T>`) parse with `<T>` type params and are wrapped in a `namespace_decl`. The monomorphizer calls `visit_enum_decl` on a renamed clone to register `Status__mono_i32` etc. Bare variant names (`ok`, `fail`) are registered by the semantic analyzer during its generic-namespace early-return path.
+- Generic unions (`union Either<T>`) monomorphize to a byte-array LLVM struct of max-field size, identical to plain unions.
+- Enum member access `EnumName.variant` works via a new `EnumName__NS_variant` alias registered by `visit_enum_decl`.
+
+## `comptime type` — First-Class Type Aliases (§20)
+- `comptime type T = TypeExpr;` at top-level scope declares a compile-time type alias, parsed as `typedef_decl`. Works for primitive types, struct types, and generic instantiations.
+
+## New Primitive Types (§21)
+- Added `nN` (natural/unsigned alias), `zN` (integer alias), `chN` (char alias), `cN` (complex struct: `.re`, `.im`), `qN` (rational struct: `.num`, `.den`) to the lexer and IR type system.
+
+## Proc Macros (§22)
+- `attr` and `derive` function modifiers parsed; `#[name]` and `#derive[name]` application sites parsed and stored on declaration nodes.
+- Pass-through behavior: macros return the input token stream unmodified; decorated declarations compile normally.
+- `attr verify` modifier parses and validates token stream before macro receipt.
+
+## `@typeinfo` and `type_info` (§23)
+- `@typeinfo(T)` is a compiler builtin returning `type_info*` with no stdlib import required.
+- `type_info`, `type_info_field`, `type_info_method` are pre-registered as compiler-builtin struct types in `ir_context` initialization.
+- `compiler/std/include/typeinfo.arc` removed (was providing constants and helpers; tests updated to use numeric constants directly).
+
+## Range-for (§19)
+- `for (T x : array)` emits a counter loop over statically-sized arrays.
+- `for (T x : istruc_with_begin_end)` emits an iterator loop using `begin()`/`end()` methods.
+- `auto` element type infers from `*begin()`.
+
+## `comptime` Variables and `comptime if` (§17)
+- `comptime T x = expr;` emits LLVM constant (`LLVMConstInt`) instead of alloca+store.
+- `comptime if (cond) { ... }` evaluates at compile time and emits only the taken branch.
+
+## MIR / LIR Pipeline (§24, `--use-mir`)
+- `compiler/mir/main.arc` and `compiler/lir/main.arc`: scaffolded data structures (instruction/value/block/function/module types).
+- `compiler/mir/lower.arc` and `compiler/lir/lower.arc`: stub lowering passes.
+- `compiler/main.arc` includes MIR/LIR and exposes `--use-mir` flag; when supplied the pipeline runs `mir.lower_program` → `lir.lower_mir` before LLVM IR generation. Currently no-op (full lowering is future work).
+
+## `std.regex` ECMAScript features (§25)
+- `tcon/std/021_regex_ecma.arc`: tests `\d`, `\w`, `\s`, negated class `[^...]`, optional `?`, alternation `|`, grouping `(...)`, and `REGEX_CASELESS` flag.
+
+## Interface Generics (§16)
+- `interface Foo<T>` with type parameters; istruc implementing `Foo<ConcreteType>` correctly.
+
+## Static locals and static istruc members (§12)
+- `static T x;` inside a function: variable persists across calls (emitted as module-level global with internal linkage).
+- `static T field;` inside an istruc: emitted as `TYPENAME__static_FIELDNAME` module global.
+
+## Unions — Full Implementation (§13)
+- Non-generic: size = max(field sizes), LLVM body is `[N x i8]`.
+- Generic: monomorphized like generic istrucs.
+- Field access via bitcast-equivalent load/store through byte array.
+
+## Semantic Analyzer
+- 1 189-line analyzer covers name resolution, duplicate-declaration detection, type-aware expression walking, function body analysis, and undefined-identifier soft errors.
+- Generic namespaces are handled with an early-return that registers variant names from enum children.
+
+## Docs
+- `docs/spec.md`: added §18 (Generics), §19 (Range-for), §20 (comptime type), §21 (New Primitive Types), §22 (Proc Macros), §23 (@typeinfo), §24 (MIR/LIR), §25 (std.regex) — all new since 6/30.
+- Removed references to `extern std.typeinfo` from tests; confirmed `type_info` is a compiler builtin.
+
+## Tests
+- 254 compiler tests pass (tcon/test/), 23 stdlib tests pass (tcon/std/), 8 SMT tests pass (tcon/smt/).
+- New tests: 243_arb_types, 258_typeinfo_istruc, 021_regex_ecma.
+
+---
+
+# 7/13/2026 — Fix catch handler body not emitted in IR (visit_block_stmt forward decl)
+
+## Bug Fix — `catch |e| { body }` handler body silently dropped in codegen
+
+**Root cause**: `compiler/ir/exprs.arc` is included before `compiler/ir/stmts.arc` in
+`compiler/main.arc`. Each `namespace ir {}` block is processed as a separate
+`namespace_decl` by `visit_namespace_decl`, which runs its own Pass 1 (prototype
+registration) + Pass 2 (body emission) sequentially. When `exprs.arc`'s Pass 2 emitted
+the body of `visit_except_handler`, `visit_block_stmt` (defined in `stmts.arc`) hadn't
+been registered yet → `find_func` returned null → `visit_call` silently returned null
+(lines 2166-2168 of `exprs.arc`) → call dropped from IR entirely.
+
+**Fix**: Added forward declaration `void visit_block_stmt(parser.block_stmt* blk, ir_context* ctx);`
+to the forward-declaration section of `compiler/ir/exprs.arc`. This registers the
+prototype during `exprs.arc`'s Pass 1 so the call resolves in Pass 2. When `stmts.arc`
+is processed later, `visit_func_decl_prototype` finds the existing LLVM function and
+reuses it; `visit_func_decl` then emits the body normally.
+
+The same fix also restored lambda body emission (`visit_block_stmt` called from
+`ek_lambda` handling in `exprs.arc`) which was silently broken for the same reason.
+
+## Tests
+
+- **`196_try_throw_basic`**, **`197_try_no_throw`**, **`198_try_nested`**: All now pass — handler body runs correctly.
+- **`201_error_union_try`**, **`221_error_payload`**: Also fixed as a side effect.
+- **`153_generic_func`**, **`154_generic_infer`**, **`173_generic_explicit`**: Passing (were failing via `artemis.exe`; now fixed).
+- **Test count**: 240/240 pass (main), 22/22 (std).
+
+# 7/11/2026 — Constructor semantics, semantic analysis, static members, interface params
+
+## Language — Constructor Semantics
+
+- **Bare declarations do NOT call constructors**: `Counter c;` zero-initializes the struct without calling `__construct__`. Only explicit `Counter c()` or `Counter c(args)` invokes the constructor. This aligns with the TODO spec ("Only `()` should invoke the constructor").
+- **stdlib updated**: `sha256_hash_bytes` now uses `sha256_ctx c();` for explicit construction. `tcon/std/013_atomic_basic.arc` updated similarly.
+
+## Language — Static istruc Members
+
+- **`static` field members on `istruc`**: `istruc Counter { int count; static int total; }` emits `Counter__static_total` as a module-level global. Static fields are NOT included in the struct layout. Accessed by name (`Counter__static_total`) from any scope.
+
+## Language — Interface as Parameter Type
+
+- **`interface NAME` accepted as a parameter/variable type**: `void fn(interface Foo* p)` and `interface Bar* q = ...` now parse and emit as `void*` (opaque pointer). Enables fat-pointer dispatch patterns without full vtable wiring.
+- **`is_type_start()` updated**: `kw_interface` added so local variable declarations like `interface Animal* p = ...` are recognized as type starts.
+
+## Semantic Analysis
+
+- **Errors now cause compilation failure**: `analyze()` returns `i32` error count; `main.arc` exits with code 1 when `ana_errs > 0`.
+- **Break/continue outside loop detection**: `'break' used outside a loop` and `'continue' used outside a loop` errors added.
+- **Duplicate variable in same scope**: Uses `lookup_at_depth` to correctly reject re-declarations in the same scope without false-positives from outer scopes.
+- **Duplicate function definition detection**: Two `has_body` functions with the same name → error. Forward declaration followed by definition is allowed (tracked via `type_ptr == (i8*)1` marker).
+- **Duplicate istruc/namespace declaration**: Re-declaring the same namespace name emits an error.
+
+## Tests
+
+- **`239_ctor_bare_vs_parens`**: Verifies bare `Counter b;` does NOT call constructor; `Counter c();` DOES.
+- **`240_static_member`**: Tests `static int total` on an istruc — shared across all instances.
+- **`241_interface_param`**: Tests `interface Animal*` as parameter and variable type.
+- **Test count**: 230/230 pass (main), 21/21 (std), 8/8 (SMT).
+- **Fail-test suite**: 49/120 expected-reject tests now correctly rejected (up from 38).
+
+---
+
+# 7/8/2026 — Self-hosting bootstrap complete: boot compiler swapped in as primary
+
+## Bootstrapping
+
+- **Compiler swap**: `build/artemis.exe` is now the self-hosting boot compiler (formerly `artemis_boot.exe`). The C++ reference compiler source (`src/main.cpp`) has been moved to `boot/cxx/main.cpp` as the bootstrap fallback.
+- **Self-hosting fixpoint**: gen3 == gen4 (bit-for-bit identical IR output confirmed).
+- **Boot compiler passes 215/219 tests** — 14 more than the C++ reference compiler (201/219), as the boot compiler has accumulated fixes the reference never received.
+
+## Boot Compiler Features Added
+
+- **Regex `@define` with captures**: Preprocessor now supports function-like `@define <NAME\(([^,]+),([^)]+)\)> <replacement>` patterns with `%1`/`%2` capture substitution. `pp_extract_angle_smart` correctly handles `>` used as a comparison operator inside replacement angle brackets.
+- **`extern std.NAME;` expansion**: Preprocessor resolves `extern std.NAME;` by reading `stdlib_path/NAME.arc` when an `-I` path is provided. Boot compiler `parse_args` now saves the first `-I` argument as `opts.stdlib_path` and passes it to `preproc.preprocess`.
+- **Range-based `for` loops**: Parser detects `for (T name : expr)` by speculatively parsing the type and checking for `:`, falling back to C-style for on failure. IR codegen (`visit_for_range_stmt`) uses 4 basic blocks (range_cond/body/step/exit), infers count from the struct's `length`/`size` field, and GEPs into the data pointer.
+
+## Build System
+
+- `CMakeLists.txt`: `artemis` target now builds from `boot/cxx/main.cpp` (moved from `src/main.cpp`).
+
+---
+
 # 7/3/2026 — Multi-level namespace types, stdlib fixes, test reorganization
 
 ## Language — Parser

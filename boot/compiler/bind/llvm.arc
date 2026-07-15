@@ -148,6 +148,9 @@ i8* LLVMBuildUnreachable(i8* b);
 // ---- Call builders ----
 i8* LLVMBuildCall2(i8* b, i8* fn_ty, i8* fn, i8** args, u32 nargs, i8* name);
 
+// ---- Inline assembly ----
+i8* LLVMGetInlineAsm(i8* ty, i8* asm_string, u64 asm_len, i8* constraints, u64 con_len, i32 has_side_effects, i32 is_align_stack, i32 dialect, i32 can_throw);
+
 // ---- Cast builders ----
 i8* LLVMBuildTrunc(i8* b, i8* val, i8* dest_ty, i8* name);
 i8* LLVMBuildZExt(i8* b, i8* val, i8* dest_ty, i8* name);

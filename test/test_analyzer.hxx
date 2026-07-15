@@ -1,8 +1,8 @@
 #pragma once
 #include "framework.hxx"
-#include "../compiler/lexer/main.hxx"
-#include "../compiler/parser/main.hxx"
-#include "../compiler/analysis/main.hxx"
+#include "../boot/compiler/lexer/main.hxx"
+#include "../boot/compiler/parser/main.hxx"
+#include "../boot/compiler/analysis/main.hxx"
 #include <stdexcept>
 #include <string>
 

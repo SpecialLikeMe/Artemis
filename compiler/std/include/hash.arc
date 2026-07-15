@@ -5,10 +5,10 @@
 
 namespace std {
 namespace hash {
-constexpr u64 WYHASH_SECRET0 = 0xa0761d6478bd642fu;
-constexpr u64 WYHASH_SECRET1 = 0xe7037ed1a0b428dbu;
-constexpr u64 WYHASH_SECRET2 = 0x8ebc6af09c88c6e3u;
-constexpr u64 WYHASH_SECRET3 = 0x589965cc75374cc3u;
+comptime u64 WYHASH_SECRET0 = 0xa0761d6478bd642fu;
+comptime u64 WYHASH_SECRET1 = 0xe7037ed1a0b428dbu;
+comptime u64 WYHASH_SECRET2 = 0x8ebc6af09c88c6e3u;
+comptime u64 WYHASH_SECRET3 = 0x589965cc75374cc3u;
 
 u64 wyhash_wymix(u64 a, u64 b) {
     u64 lo; u64 hi;
@@ -68,8 +68,8 @@ u64 wyhash_hash_f64(f64 v, u64 seed) { return wyhash_hash_bytes((u8*)&v, (u64)8,
 
 // --- FNV-1a ---
 
-constexpr u64 FNV_OFFSET = 14695981039346656037u;
-constexpr u64 FNV_PRIME  = 1099511628211u;
+comptime u64 FNV_OFFSET = 14695981039346656037u;
+comptime u64 FNV_PRIME  = 1099511628211u;
 
 u64 fnv_hash_bytes(u8* data, u64 len) {
     u64 h = FNV_OFFSET;
@@ -186,7 +186,7 @@ istruc sha256_ctx {
 }
 
 sha256_digest sha256_hash_bytes(u8* data, u64 len) {
-    sha256_ctx c;
+    sha256_ctx c();
     c.update(data, len);
     return c.finalize();
 }

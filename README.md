@@ -1,210 +1,367 @@
-# CHANGELOG MAY BE INNACURRATE - SEE docs/
-
 # Artemis
 
-Artemis is a compiled, statically-typed, C-like language that targets LLVM IR. It is designed to be simple, explicit, and fast. The compiler is written in C++17 and uses the LLVM C API for code generation.
-
---- 
-
-## Language Features
-
-- **Character type:** `char` (alias for `i8`); `char*` is the canonical string pointer type
-- **Rich integer types:** `i8`, `i16`, `i32`/`int`, `i64`, `i128`, `i256`, `i512` and unsigned equivalents `u8` … `u512`; implicit integer conversion between all integer widths
-- **Floating-point types:** `f32`, `f64`, `f128`, `f256`, `f512`
-- **Boolean types:** `bool`, `b1` (1-bit), `b8`, `b16`, `b32`, `b64`, `b128`, `b256`, `b512`
-- **Derived types:** pointers (`*`), fixed-size arrays (`[N]`), structs, unions, enums, typedefs
-- **Nullable types:** `?T` — any type prefixed with `?` accepts `null`; assignment of `null` to a plain non-pointer type is a compile-time error
-- **Error unions:** `!T` — functions declared `auto foo() !T {}` may return `error.Name`; callers use `try` to propagate or `except |e| {}` to handle
-- **`noexcept` enforcement:** functions marked `noexcept` cannot use `try`, `res {}`, or be declared `!T`; violations are compile-time errors
-- **Type reflection:** `get_ifo_t(T)` returns a `const ifo::ifo_t*` with name, size, align, kind, bits, and signedness of `T` at compile time
-- **Control flow:** `if`/`else`, `while`, `for`, `switch`/`case`/`default`, `break`, `continue`, `return`
-- **Functions:** first-class declarations, forward declarations (prototypes), variadic functions (`...`); overloading is **not** supported (each function name must be unique)
-- **Storage class specifiers:** `extern`, `extern std`, `inline`, `register`, `const`
-- **Operators:** full set of arithmetic, bitwise, logical, comparison, assignment, and compound-assignment operators; prefix/postfix increment/decrement; `sizeof`; ternary `?:`; address-of `&`; dereference `*`
-- **Annotations:** `@identifier` syntax for attaching metadata to expressions
-- **C interoperability:** `extern` linkage lets you call any C function
+Artemis is a compiled, statically-typed systems language that targets LLVM IR. The compiler is **self-hosting** — it is written in Arc (the Artemis language) and compiles itself.
 
 ---
 
-## Prerequisites
+## Status
 
-| Dependency | Minimum version |
-|------------|----------------|
-| LLVM       | 17              |
-| clang / g++ | C++17 support  |
-| CMake      | 3.20            |
+| Test suite | Passing |
+|------------|---------|
+| Compiler tests (`tcon/test/`) | 254 |
+| Standard library tests (`tcon/std/`) | 23 |
+| SMT safety tests (`tcon/smt/`) | 8 |
+| Compile-error tests (`tcon/fail/`) | 120 |
+| **Total** | **405** |
 
-On Ubuntu:
+---
 
-```bash
-sudo apt-get install llvm-18-dev clang-18 cmake
+## Language Overview
+
+### Types
+
+**Primitives:**
+
+| Kind | Examples | Notes |
+|------|----------|-------|
+| Signed integers | `i8`, `i16`, `i32`, `i64`, `i128` | `int` = `i32` alias |
+| Unsigned integers | `u8`, `u16`, `u32`, `u64`, `u128` | `uint` = `u32` alias |
+| Floats | `f32`, `f64`, `f128` | `float` = `f64` alias |
+| Booleans | `bool`, `b8`, `b32` | |
+| Natural numbers | `n8` … `nN` | distinct unsigned semantic type |
+| Integer ring | `z8` … `zN` | distinct signed semantic type |
+| Real numbers | `r32`, `r64` … | distinct float semantic type |
+| Algebraic | `a32` … | always `f64` at runtime |
+| Characters | `ch8`, `ch16`, `ch32` | N-bit character |
+| Strings | `str8`, `str16` | pointer to `chN` |
+| Rationals | `q32`, `q64` | `{ iN num; iN den; }` layout |
+| Complex | `c64`, `c128` | `{ fN re; fN im; }` layout |
+| Arbitrary-width | `i[_]`, `u[_]`, `f[_]` | maps to `i128` / `f128` |
+| Void | `void` | |
+| Character | `char` = `i8` | |
+
+**Derived types:** pointers (`T*`), arrays (`T[N]`), function pointers.
+
+**Nullable types:** `?T` accepts `null`. Assigning `null` to a plain non-pointer type is a compile-time error.
+
+**Error unions:** `!T` — functions may return `error.Name`; callers use `try` to propagate or `except |e| {}` to handle.
+
+### Structs and Interfaces
+
+```arc
+struct Vec2 { f32 x; f32 y; }
+
+istruc Counter {
+    i32 count;
+    void __construct__(Counter* self) { self.count = 0; }
+    void inc(Counter* self) { self.count = self.count + 1; }
+    i32  get(Counter* self) { return self.count; }
+}
+
+interface Printable {
+    void print();
+}
+istruc MyType : Printable {
+    i32 val;
+    void print(MyType* self) { /* ... */ }
+}
 ```
 
-On macOS (Homebrew):
+- `istruc X : Interface` implements an interface (vtable dispatch)
+- Class inheritance (`istruc A : B` where B is an istruc) is not supported
+- Method overloading is not supported — each method name must be unique
 
-```bash
-brew install llvm cmake
+### Generics
+
+```arc
+istruc Box<T> {
+    T val;
+    void set(Box<T>* self, T v) { self.val = v; }
+    T    get(Box<T>* self)      { return self.val; }
+}
+Box<i32> b;
+b.set(42);
 ```
+
+Generic functions, istrucs, enums, and unions are all supported. Monomorphization is performed at instantiation.
+
+### Comptime
+
+```arc
+comptime i32 N = 10;
+comptime type MyInt = i32;
+
+comptime if (N > 5) {
+    // emitted; else-branch is dropped
+}
+```
+
+`comptime` variables are LLVM constants. `comptime type T = U` creates a type alias.
+
+### First-Class Types
+
+```arc
+comptime type T = i32;
+T x = 42;
+```
+
+### Range-For
+
+```arc
+i32 arr[5] = {1, 2, 3, 4, 5};
+for (i32 v : arr) { /* ... */ }
+
+// For istrucs with begin()/end() methods:
+for (auto item : my_vec) { /* ... */ }
+```
+
+### Lambda
+
+```arc
+auto add = [](i32 a, i32 b) i32 { return a + b; };
+i32 r = add(3, 4);
+
+// Capture by value:
+i32 x = 10;
+auto fn = [x](i32 y) i32 { return x + y; };
+```
+
+### Error Handling
+
+```arc
+auto divide(i32 a, i32 b) !i32 {
+    if (b == 0) { return error.DivideByZero; }
+    return a / b;
+}
+
+i32 result = try divide(10, 2);
+
+auto result2 = divide(10, 0);
+except |e| { /* handle error */ }
+```
+
+### Proc Macros
+
+```arc
+tokenstream* log_calls(&memstr alloc, tokenstream* input) attr {
+    return input;  // pass-through
+}
+
+#[log_calls]
+i32 my_func(i32 x) { return x * 2; }
+```
+
+Proc macros are compiler-native. `attr` macros can modify the token stream; `derive` macros append to it.
+
+### Reflection
+
+```arc
+type_info* ti = @typeinfo(i32);
+// ti.kind == 0 (primitive), ti.bits == 32, ti.size == 4
+
+type_info* ts = @typeinfo(MyStruct);
+// ts.kind == 2 (struct), ts.field_count, ts.fields, ts.field_names
+```
+
+`@typeinfo(T)` is a compiler builtin — no `extern` needed.
+
+### Ref Operator
+
+```arc
+i32 x = 42;
+i32* p = ref x;    // depth 1
+i32** pp = ref x;  // depth 2 — all levels heap-allocated
+```
+
+### Copy and Move
+
+```arc
+y = x;           // shallow copy (default)
+y = @shcopy(x);  // explicit shallow copy
+y = @decopy(x);  // deep copy (recurses into pointer fields)
+@move(x, &y);    // transfer ownership (x zeroed after)
+```
+
+---
+
+## Standard Library
+
+Import with `extern std.NAME`:
+
+| Module | What it provides |
+|--------|-----------------|
+| `std.vector` | Dynamic array `Vector<T>` |
+| `std.hash` | FNV-1a, wyhash, SHA-256 |
+| `std.map` | Red-black tree map |
+| `std.unordered_map` | Hash map |
+| `std.set` / `std.unordered_set` | Set containers |
+| `std.regex` | In-house NFA/DFA regex engine |
+| `std.json` | JSON parser |
+| `std.toml` | TOML parser |
+| `std.fs` | File system operations |
+| `std.net` | TCP/UDP networking |
+| `std.atomic` | Atomic operations |
+| `std.thread` | Threads |
+| `std.fmt` | String formatting |
+| `std.math` | Math functions |
+| `std.test` | Test framework |
+| `std.soa` | Struct-of-arrays helpers |
+| `std.encode` | UTF-8 encoding |
+| `std.debug` | Poison / debug tools |
 
 ---
 
 ## Building
 
+### Prerequisites
+
+| Dependency | Notes |
+|------------|-------|
+| LLVM 22 | `lLLVM-22` must be linkable |
+| `llc` | LLVM static compiler (part of LLVM) |
+| `g++` | C++17 for the bootstrap |
+
+### Bootstrap and rebuild the self-hosting compiler
+
 ```bash
-# 1. Clone
-git clone https://github.com/your-org/artemis.git
-cd artemis
+# Step 1: Compile compiler/main.arc → LLVM IR
+build/artemis_bootstrap_cxx.exe compiler/main.arc --unsafe \
+    -S -I compiler/std/include -o build/artemis_boot.ll
 
-# 2. Configure (Debug)
-cmake -B build -DCMAKE_BUILD_TYPE=Debug \
-  -DLLVM_DIR=$(llvm-config --cmakedir)
+# Step 2: Assemble to object file
+llc -O2 -filetype=obj -o build/artemis_boot.o build/artemis_boot.ll
 
-# 3. Build
-cmake --build build --parallel
-
-# 4. Run tests
-ctest --test-dir build --output-on-failure
+# Step 3: Link
+g++ -O2 build/artemis_boot.o build/llvm_init.o \
+    -o build/artemis.exe -lLLVM-22 -lstdc++ -lm
 ```
 
-For a Release build with optimisations:
+The resulting `build/artemis.exe` is the self-hosting compiler.
+
+### Run tests
 
 ```bash
-cmake -B build_rel -DCMAKE_BUILD_TYPE=Release \
-  -DLLVM_DIR=$(llvm-config --cmakedir)
-cmake --build build_rel --parallel
-```
+# Compiler correctness tests
+build/run_tcon.exe
 
-To enable AddressSanitizer + UBSan:
+# Standard library tests
+build/run_std.exe
 
-```bash
-cmake -B build_asan -DENABLE_ASAN=ON \
-  -DLLVM_DIR=$(llvm-config --cmakedir)
-cmake --build build_asan --parallel
+# SMT safety proofs
+build/run_tcon.exe tcon/smt
+
+# Compile-error (rejection) tests
+build/run_tcon.exe tcon/fail
 ```
 
 ---
 
 ## Usage
 
-### Compile to executable
-
 ```bash
-artemis hello.art -o hello
-./hello
+# Compile to executable
+build/artemis.exe hello.arc -o hello.exe
+
+# Emit LLVM IR only
+build/artemis.exe hello.arc -S -o hello.ll
+
+# Emit object file
+build/artemis.exe hello.arc -c -o hello.o
+
+# With stdlib
+build/artemis.exe hello.arc -I compiler/std/include -o hello.exe
 ```
 
-### Compile with atc (automatic target)
+### Flags
 
-```bash
-atc hello.art -o hello          # host target
-atc hello.art -l hello_linux    # Linux x86-64
-atc hello.art -w hello.exe      # Windows x86-64
-atc hello.art -m hello_mac      # macOS x86-64
-atc run hello.art               # compile and run immediately
-```
-
-### Compile and run immediately
-
-```bash
-atx run hello.art
-```
-
-### Emit LLVM IR
-
-```bash
-artemis hello.art -S -o hello.ll
-```
-
-### Emit object file
-
-```bash
-artemis hello.art -c -o hello.o
-```
-
-### Dump AST
-
-```bash
-artemis hello.art --emit-ast
-```
-
-### Flags reference
-
-| Flag                  | Description                                                  |
-|-----------------------|--------------------------------------------------------------|
-| `-o <file>`           | Output file (default: `a.out`)                               |
-| `-S`                  | Emit LLVM IR (`.ll`) only                                    |
-| `-c`                  | Emit object file (`.o`) only                                 |
-| `--emit-ast`          | Print AST to stdout and exit (parse stage only)              |
-| `--analyze-only`      | Parse and analyze only; no codegen, no output file           |
-| `-O0` / `-O1` / `-O2` / `-O3` | Optimisation level (default: `-O0`)               |
-| `--target <triple>`   | LLVM target triple (default: host)                           |
-| `-D <name>`           | Predefine preprocessor symbol                                |
-| `-I <path>`           | Add directory to `@include` search path                      |
-| `-v` / `--verbose`    | Verbose output                                               |
-| `--version`           | Print version and exit                                       |
-| `-h` / `--help`       | Print usage and exit                                         |
+| Flag | Description |
+|------|-------------|
+| `-o <file>` | Output file |
+| `-S` | Emit LLVM IR (`.ll`) |
+| `-c` | Emit object file (`.o`) |
+| `--unsafe` | Disable safety checks (needed for compiler self-compilation) |
+| `--use-mir` | Enable experimental MIR/LIR pipeline |
+| `-I <path>` | Add directory to include search path |
+| `-O0` / `-O2` | Optimization level |
+| `-D <name>` | Define preprocessor symbol |
 
 ---
 
 ## Hello World
 
-Save as `hello.art`:
+```arc
+extern i32 puts(i8* s);
 
-```c
-extern int puts(const char* s);
-
-int main() {
+i32 main() {
     puts("Hello, Artemis!");
     return 0;
 }
 ```
 
-Compile and run:
-
 ```bash
-artemis hello.art -o hello && ./hello
+build/artemis.exe hello.arc -o hello.exe && ./hello.exe
 # Hello, Artemis!
 ```
 
 ---
 
-## A Larger Example
+## Larger Example
 
-```c
-// Fibonacci — recursive
-int fib(int n) {
-    if (n <= 1) { return n; }
-    return fib(n - 1) + fib(n - 2);
+```arc
+extern i32 printf(i8* fmt, ...);
+extern void* malloc(u64 n);
+extern void  free(void* p);
+
+// Generic stack
+istruc Stack<T> {
+    T*  data;
+    i32 len;
+    i32 cap;
+
+    void __construct__(Stack<T>* self) {
+        self.data = (T*)0;
+        self.len  = 0;
+        self.cap  = 0;
+    }
+
+    void push(Stack<T>* self, T val, &memstr a) {
+        if (self.len >= self.cap) {
+            i32 nc = self.cap == 0 ? 8 : self.cap * 2;
+            self.data = (T*)realloc((i8*)self.data, (u64)(nc * (i32)sizeof(T)));
+            self.cap  = nc;
+        }
+        self.data[self.len] = val;
+        self.len = self.len + 1;
+    }
+
+    T pop(Stack<T>* self) {
+        self.len = self.len - 1;
+        return self.data[self.len];
+    }
 }
 
-// Generic max via ternary
-int max_int(int a, int b) { return a > b ? a : b; }
-
-// Struct and member access
-struct Vec2 {
-    f32 x;
-    f32 y;
+// Error union
+auto safe_div(i32 a, i32 b) !i32 {
+    if (b == 0) { return error.DivByZero; }
+    return a / b;
 }
 
-f32 dot(Vec2 a, Vec2 b) {
-    return a.x * b.x + a.y * b.y;
-}
+i32 main() {
+    // Generic istruc
+    Stack<i32> s;
+    s.push(10);
+    s.push(20);
+    printf("popped: %d\n", s.pop());  // 20
 
-// Enum
-enum Direction { North, South, East, West }
+    // Error handling
+    auto r = safe_div(10, 2);
+    except |e| { printf("error\n"); return 1; }
+    printf("10/2 = %d\n", r);
 
-// Typedef
-typedef int Score;
+    // Reflection
+    type_info* ti = @typeinfo(i32);
+    printf("i32: size=%d bits=%d\n", ti.size, ti.bits);
 
-extern void printf(const char* fmt, ...);
-
-int main() {
-    Score s = fib(10);
-    printf("fib(10) = %d\n", s);
-
-    Vec2 v1; v1.x = 1.0; v1.y = 0.0;
-    Vec2 v2; v2.x = 0.0; v2.y = 1.0;
-    printf("dot = %f\n", dot(v1, v2));
     return 0;
 }
 ```
@@ -213,11 +370,11 @@ int main() {
 
 ## Known Limitations
 
-- `&&` and `||` currently use eager evaluation — short-circuit semantics are planned.
-- No first-class string type; use `i8*` + C stdlib
-- No generics or templates
-- No modules/import system
-- `f256` and `f512` map to LLVM's `fp128` (nearest available hardware type, usage of these two is not recommended until the issue can be resolved)
+- `&&` and `||` use eager evaluation — short-circuit semantics are planned
+- No first-class string type; use `i8*` with C stdlib
+- MIR/LIR pipeline is experimental (`--use-mir`)
+- SMT data-race and iterator-invalidation detection is work in progress
+- The `@cstype` builtin (construct-type-from-typeinfo) is not yet implemented
 
 ---
 

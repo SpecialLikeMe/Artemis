@@ -10,13 +10,13 @@ i32 main() {
     i32 err_fired = 0;
 
     // This call fails: handler should fire
-    maybe_divide(10, 0) except |e| {
+    maybe_divide(10, 0) catch |e| {
         err_fired = 1;
     }
     if (err_fired != 1) { return 1; }
 
     // This call succeeds: handler should NOT fire
-    maybe_divide(10, 2) except |e| {
+    maybe_divide(10, 2) catch |e| {
         err_fired = 99;
     }
     if (err_fired != 1) { return 2; }

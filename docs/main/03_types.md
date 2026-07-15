@@ -260,17 +260,71 @@ See [Chapter 19](19_function_pointers.md) for details.
 
 ---
 
-## Type Aliases
+## Extended Primitive Types
 
-`typedef OldType NewName;` creates a transparent alias:
+Beyond the core `iN`/`uN`/`fN`/`bN` families, Artemis provides several specialised prefix types.
+
+| Prefix | Meaning | Backing storage |
+|--------|---------|-----------------|
+| `nN` | Natural number (≥ 0) | `uN` — unsigned integer of N bits |
+| `zN` | Integer | `iN` — signed integer of N bits |
+| `chN` | N-bit character | `uN` — unsigned, character semantics |
+| `cN` | Complex number | `struct { fN re; fN im; }` |
+| `qN` | Rational number | `struct { iN num; iN den; }` |
 
 ```arc
-typedef i32   ErrorCode;
-typedef i8*   CStr;
-typedef i32*  IntPtr;
+n8   a = 200u;          // 8-bit natural (unsigned byte)
+z32  b = -42;           // 32-bit integer, same as i32
+ch8  c = 'A';           // 8-bit character, same as u8
+
+c64  z;                 // complex double
+z.re = 1.0;
+z.im = 2.5;
+
+q32  r;                 // rational: 3/4
+r.num = 3;
+r.den = 4;
 ```
 
-See [Chapter 28](28_typedef_auto.md) for `typedef`, `using`, and `auto` inference.
+Complex and rational types produce struct types in the generated code — field access uses the normal `.re`, `.im`, `.num`, `.den` names.
+
+---
+
+## `comptime type` — First-Class Type Aliases
+
+`comptime type` declares a compile-time type alias. The alias name can be used anywhere its underlying type would be valid:
+
+```arc
+comptime type MyInt   = i32;
+comptime type MyFloat = f64;
+
+MyInt   a = 100;
+MyFloat f = 3.14;
+```
+
+This is distinct from `using` (which is a non-`comptime` alias). `comptime type` aliases can alias generic instantiations:
+
+```arc
+comptime type IntPair = Pair<i32>;
+
+IntPair p(1, 2);
+```
+
+See [Chapter 18](18_comptime.md) for the full `comptime` feature set.
+
+---
+
+## Type Aliases
+
+`using OldType NewName;` creates a transparent alias:
+
+```arc
+using i32   ErrorCode;
+using i8*   CStr;
+using i32*  IntPtr;
+```
+
+See [Chapter 28](28_typedef_auto.md) for `using` and `auto` inference.
 
 ---
 

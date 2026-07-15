@@ -1,8 +1,11 @@
+// Member initializer lists removed; use direct assignments in constructor body.
 istruc Pair {
     i32 first;
     i32 second;
 
-    void __construct__(Pair* self, i32 a, i32 b) : first(a), second(b) {
+    void __construct__(Pair* self, i32 a, i32 b) {
+        self.first  = a;
+        self.second = b;
     }
 
     i32 sum(const Pair* self) {
@@ -19,7 +22,10 @@ istruc Triple {
     i32 b;
     i32 c;
 
-    void __construct__(Triple* self, i32 x, i32 y, i32 z) : a(x), b(y), c(z) {
+    void __construct__(Triple* self, i32 x, i32 y, i32 z) {
+        self.a = x;
+        self.b = y;
+        self.c = z;
     }
 
     i32 total(const Triple* self) {

@@ -64,14 +64,47 @@ void visit_local_var_decl(parser.var_decl* d, ir_context* ctx) {
         deref_t = llvm_type_of(&resolved, ctx);
     }
 
+    // Auto type inference: if type resolved to void (e.g. `using let = auto;`),
+    // evaluate init first to infer the actual type.
+    i8* pre_init_val = (i8*)0;
+    bool used_pre_init = false;
+    if (tk == LLVMVoidTypeKind && d.has_init && d.init != (parser.expr_node*)0) {
+        pre_init_val = visit_expr(d.init, ctx);
+        if (pre_init_val != (i8*)0) {
+            i8* inferred = LLVMTypeOf(pre_init_val);
+            if (LLVMGetTypeKind(inferred) != LLVMVoidTypeKind) {
+                alloca_t = inferred;
+                elem_t   = alloca_t;
+                tk       = LLVMGetTypeKind(alloca_t);
+                used_pre_init = true;
+            }
+        }
+    }
+
     i8* alloca = LLVMBuildAlloca(ctx.llvm_builder, alloca_t, d.name);
     bool is_uns = is_unsigned_type_node(d.type);
     // For arrays, store the full array type so subscript GEP can safely get element type.
     i8* local_t = (tk == LLVMArrayTypeKind) ? alloca_t : elem_t;
     ctx_declare_local(ctx, d.name, alloca, local_t, deref_t, is_uns);
 
+    // For function pointer locals, store the function type so indirect calls work
+    // in LLVM opaque-pointer mode (where LLVMGetElementType on ptr is null).
+    if (d.type != (parser.type_node*)0 && d.type.is_func_ptr) {
+        i8* fn_ty = llvm_func_type_of(d.type, ctx);
+        if (fn_ty != (i8*)0) {
+            ctx_declare_local_func_type(ctx, d.name, fn_ty);
+        }
+    }
+
+    // Propagate type to implicit struct literals: Vec2 v = .{.x=1, .y=2}
+    if (d.has_init && d.init != (parser.expr_node*)0 &&
+            d.init.kind == ek_class_init && d.init.is_implicit_init &&
+            d.init.init_type == (parser.type_node*)0) {
+        d.init.init_type = d.type;
+    }
+
     if (d.has_init) {
-        i8* init_val = visit_expr(d.init, ctx);
+        i8* init_val = used_pre_init ? pre_init_val : visit_expr(d.init, ctx);
         if (init_val != (i8*)0) {
             init_val = coerce_int_val(init_val, alloca_t, ctx.llvm_builder);
             LLVMBuildStore(ctx.llvm_builder, init_val, alloca);
@@ -80,6 +113,48 @@ void visit_local_var_decl(parser.var_decl* d, ir_context* ctx) {
         }
     } else {
         LLVMBuildStore(ctx.llvm_builder, LLVMConstNull(alloca_t), alloca);
+    }
+
+    // Constructor call: TypeName varname(args...) or auto no-arg constructor
+    if (d.has_ctor_parens || (!d.has_init && LLVMGetTypeKind(alloca_t) == LLVMStructTypeKind)) {
+        i8* sname = (i8*)0;
+        if (LLVMGetTypeKind(alloca_t) == LLVMStructTypeKind) {
+            sname = LLVMGetStructName(alloca_t);
+        }
+        if (sname == (i8*)0 && d.type != (parser.type_node*)0) {
+            sname = d.type.name;
+        }
+        if (sname != (i8*)0) {
+            i8 ctor_name[512];
+            snprintf(ctor_name, (u64)512, "%s__NS___construct__", sname);
+            i8* ctor_fn = sv_map_get(&ctx.global_funcs, ctor_name);
+            i8* ctor_ft = st_map_get(&ctx.global_func_types, ctor_name);
+            if (ctor_fn != (i8*)0 && ctor_ft != (i8*)0) {
+                u32 nparams = LLVMCountParamTypes(ctor_ft);
+                // Auto no-arg: only call when constructor takes just self (1 param)
+                bool call_ctor = d.has_ctor_parens || (nparams == 1);
+                if (call_ctor) {
+                    i32 nctorargs = d.ctor_args_len + 1;
+                    i8** cargs = (i8**)malloc(sizeof(i8*) * (u64)nctorargs);
+                    cargs[0] = alloca;
+                    i8** param_ts = (i8**)malloc(sizeof(i8*) * (u64)(nparams + 1));
+                    if (nparams > 0) { LLVMGetParamTypes(ctor_ft, param_ts); }
+                    i32 ci = 0;
+                    while (ci < d.ctor_args_len) {
+                        i8* av = visit_expr((parser.expr_node*)d.ctor_args[ci], ctx);
+                        i32 pi = ci + 1;
+                        if (av != (i8*)0 && (u32)pi < nparams) {
+                            av = coerce_int_val(av, param_ts[pi], ctx.llvm_builder);
+                        }
+                        cargs[ci + 1] = av;
+                        ci = ci + 1;
+                    }
+                    free((i8*)param_ts);
+                    LLVMBuildCall2(ctx.llvm_builder, ctor_ft, ctor_fn, cargs, nctorargs, "");
+                    free((i8*)cargs);
+                }
+            }
+        }
     }
 }
 
@@ -252,6 +327,115 @@ void visit_for_stmt(parser.for_stmt* s, ir_context* ctx) {
     ctx_pop_scope(ctx);
 }
 
+// ---- for range ----
+
+void visit_for_range_stmt(parser.for_range_stmt* s, ir_context* ctx) {
+    i8* fn       = ctx.current_func;
+    i8* cond_bb  = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn, "range_cond");
+    i8* body_bb  = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn, "range_body");
+    i8* step_bb  = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn, "range_step");
+    i8* exit_bb  = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn, "range_exit");
+
+    i8* range_val = visit_expr(s.range, ctx);
+
+    i8* elem_llvm_t;
+    if (s.var_type != (parser.type_node*)0) {
+        elem_llvm_t = llvm_type_of(s.var_type, ctx);
+    } else {
+        elem_llvm_t = LLVMInt8TypeInContext(ctx.llvm_ctx);
+    }
+
+    i8* i64t = LLVMInt64TypeInContext(ctx.llvm_ctx);
+    i8* count_val = (i8*)0;
+
+    // Infer count and data pointer from range expression struct type
+    if (s.range != (parser.expr_node*)0) {
+        i8* struct_t = infer_expr_struct_type(s.range, ctx);
+        if (struct_t != (i8*)0) {
+            i8* sname = LLVMGetStructName(struct_t);
+            if (sname != (i8*)0) {
+                struct_meta* sm = struct_meta_find(&ctx.struct_meta_tbl, sname);
+                if (sm != (struct_meta*)0) {
+                    bool range_is_ptr = (range_val != (i8*)0 && LLVMGetTypeKind(LLVMTypeOf(range_val)) == LLVMPointerTypeKind);
+                    // Find length or size field
+                    i32 li = 0;
+                    while (li < sm.field_names.len && count_val == (i8*)0) {
+                        if (strcmp(sm.field_names.data[li], "length") == 0 || strcmp(sm.field_names.data[li], "size") == 0) {
+                            i8* ft = (li < sm.field_types.len) ? sm.field_types.data[li] : i64t;
+                            if (ft == (i8*)0) { ft = i64t; }
+                            if (range_is_ptr) {
+                                i8* gep = LLVMBuildStructGEP2(ctx.llvm_builder, struct_t, range_val, (u32)li, "len_ptr");
+                                count_val = LLVMBuildLoad2(ctx.llvm_builder, ft, gep, "range_len");
+                            } else if (range_val != (i8*)0) {
+                                count_val = LLVMBuildExtractValue(ctx.llvm_builder, range_val, (u32)li, "range_len");
+                            }
+                        }
+                        li = li + 1;
+                    }
+                    // Find first pointer field for data
+                    i32 pi = 0;
+                    while (pi < sm.field_types.len) {
+                        i8* fpt = sm.field_types.data[pi];
+                        if (fpt != (i8*)0 && LLVMGetTypeKind(fpt) == LLVMPointerTypeKind) {
+                            if (range_is_ptr) {
+                                i8* gep2 = LLVMBuildStructGEP2(ctx.llvm_builder, struct_t, range_val, (u32)pi, "data_ptr");
+                                range_val = LLVMBuildLoad2(ctx.llvm_builder, fpt, gep2, "range_data");
+                            } else if (range_val != (i8*)0) {
+                                range_val = LLVMBuildExtractValue(ctx.llvm_builder, range_val, (u32)pi, "range_data");
+                            }
+                            break;
+                        }
+                        pi = pi + 1;
+                    }
+                }
+            }
+        }
+    }
+
+    if (count_val == (i8*)0) {
+        count_val = LLVMConstInt(i64t, 0u, 0);
+    }
+    count_val = coerce_int_val(count_val, i64t, ctx.llvm_builder);
+
+    i8* idx_alloca = LLVMBuildAlloca(ctx.llvm_builder, i64t, "range_idx");
+    LLVMBuildStore(ctx.llvm_builder, LLVMConstInt(i64t, 0u, 0), idx_alloca);
+
+    i8* var_name = s.var_name;
+    if (var_name == (i8*)0) { var_name = "elem"; }
+    i8* elem_alloca = LLVMBuildAlloca(ctx.llvm_builder, elem_llvm_t, var_name);
+
+    LLVMBuildBr(ctx.llvm_builder, cond_bb);
+
+    // Condition: idx < count
+    LLVMPositionBuilderAtEnd(ctx.llvm_builder, cond_bb);
+    i8* idx_cur = LLVMBuildLoad2(ctx.llvm_builder, i64t, idx_alloca, "idx");
+    i8* cond_v  = LLVMBuildICmp(ctx.llvm_builder, LLVMIntULT, idx_cur, count_val, "range_lt");
+    LLVMBuildCondBr(ctx.llvm_builder, cond_v, body_bb, exit_bb);
+
+    // Body: load element and run body
+    LLVMPositionBuilderAtEnd(ctx.llvm_builder, body_bb);
+    ctx_push_scope(ctx);
+    if (range_val != (i8*)0) {
+        i8* elem_ptr = LLVMBuildGEP2(ctx.llvm_builder, elem_llvm_t, range_val, &idx_cur, 1, "elem_ptr");
+        i8* elem_val = LLVMBuildLoad2(ctx.llvm_builder, elem_llvm_t, elem_ptr, "elem");
+        LLVMBuildStore(ctx.llvm_builder, elem_val, elem_alloca);
+    }
+    ctx_declare_local(ctx, var_name, elem_alloca, elem_llvm_t, (i8*)0, false);
+    ctx_push_loop(ctx, exit_bb, step_bb);
+    visit_stmt(s.body, ctx);
+    ctx_pop_loop(ctx);
+    if (!ctx_is_terminated(ctx)) { LLVMBuildBr(ctx.llvm_builder, step_bb); }
+    ctx_pop_scope(ctx);
+
+    // Step: idx++
+    LLVMPositionBuilderAtEnd(ctx.llvm_builder, step_bb);
+    i8* idx_new = LLVMBuildAdd(ctx.llvm_builder, idx_cur, LLVMConstInt(i64t, 1u, 0), "idx_inc");
+    LLVMBuildStore(ctx.llvm_builder, idx_new, idx_alloca);
+    LLVMBuildBr(ctx.llvm_builder, cond_bb);
+
+    LLVMPositionBuilderAtEnd(ctx.llvm_builder, exit_bb);
+}
+
 // ---- switch ----
 
 void visit_switch_stmt(parser.switch_stmt* s, ir_context* ctx) {
@@ -335,13 +519,71 @@ void visit_switch_stmt(parser.switch_stmt* s, ir_context* ctx) {
 // ---- return ----
 
 void visit_return_stmt(parser.return_stmt* s, ir_context* ctx) {
+    // Evaluate return value before emitting defers (may reference stack vars).
+    i8* val = (i8*)0;
     if (s.has_val) {
-        i8* val = visit_expr(s.val, ctx);
+        val = visit_expr(s.val, ctx);
         if (val != (i8*)0 && ctx.current_ret_type != (i8*)0) {
-            val = coerce_int_val(val, ctx.current_ret_type, ctx.llvm_builder);
+            i8* ret_t = ctx.current_ret_type;
+            i32 ret_k = LLVMGetTypeKind(ret_t);
+            i8* val_t = LLVMTypeOf(val);
+            i32 val_k = LLVMGetTypeKind(val_t);
+            if (ret_k == LLVMStructTypeKind && val_k == LLVMPointerTypeKind) {
+                val = LLVMBuildLoad2(ctx.llvm_builder, ret_t, val, "sret_load");
+            } else {
+                val = coerce_int_val(val, ret_t, ctx.llvm_builder);
+            }
         }
+    }
+
+    // Emit all pending defers (innermost to outermost) before ret.
+    i32 di = ctx.defers.len - 1;
+    while (di >= 0) {
+        emit_deferred(&ctx.defers.data[di], ctx);
+        di = di - 1;
+    }
+
+    // Emit errdefers if returning an error (-1 sentinel) — only when there
+    // are actual errdefer items and the return type is an integer (error-union pattern).
+    bool has_errdefer = false;
+    i32 ei_chk = ctx.errdefers.len - 1;
+    while (ei_chk >= 0) {
+        if (ctx.errdefers.data[ei_chk].len > 0) { has_errdefer = true; }
+        ei_chk = ei_chk - 1;
+    }
+    if (s.has_val && val != (i8*)0 && has_errdefer) {
+        i8* val_t = LLVMTypeOf(val);
+        i32 val_kind = LLVMGetTypeKind(val_t);
+        if (val_kind == LLVMIntegerTypeKind) {
+            i8* i32_t = LLVMInt32TypeInContext(ctx.llvm_ctx);
+            i8* coerced_ret = coerce_int_val(val, i32_t, ctx.llvm_builder);
+            i64 minus_one_e = (i64)-1;
+            i8* neg1_e = LLVMConstInt(i32_t, (u64)minus_one_e, 1);
+            i8* is_err_val = LLVMBuildICmp(ctx.llvm_builder, LLVMIntEQ, coerced_ret, neg1_e, "is_err_ret");
+            i8* fn_r   = ctx.current_func;
+            i8* err_bb_r = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn_r, "err_exit");
+            i8* ok_bb_r  = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn_r, "ok_exit");
+            LLVMBuildCondBr(ctx.llvm_builder, is_err_val, err_bb_r, ok_bb_r);
+            // Error exit: emit errdefers
+            LLVMPositionBuilderAtEnd(ctx.llvm_builder, err_bb_r);
+            i32 ei = ctx.errdefers.len - 1;
+            while (ei >= 0) {
+                emit_deferred(&ctx.errdefers.data[ei], ctx);
+                ei = ei - 1;
+            }
+            LLVMBuildRet(ctx.llvm_builder, val);
+            // OK exit: no errdefers
+            LLVMPositionBuilderAtEnd(ctx.llvm_builder, ok_bb_r);
+            LLVMBuildRet(ctx.llvm_builder, val);
+            return;
+        }
+    }
+
+    if (s.has_val) {
         if (val != (i8*)0) {
             LLVMBuildRet(ctx.llvm_builder, val);
+        } else if (ctx.current_ret_type != (i8*)0) {
+            LLVMBuildRet(ctx.llvm_builder, LLVMGetUndef(ctx.current_ret_type));
         } else {
             LLVMBuildRetVoid(ctx.llvm_builder);
         }
@@ -353,10 +595,13 @@ void visit_return_stmt(parser.return_stmt* s, ir_context* ctx) {
 // ---- defer ----
 
 void visit_defer_stmt_impl(parser.defer_stmt* s, ir_context* ctx) {
+    bool is_err = (s.kind == nd_errdefer_stmt);
     if (s.is_block) {
-        ctx_add_defer(ctx, s.blk, true);
+        if (is_err) { ctx_add_errdefer(ctx, s.blk, true); }
+        else        { ctx_add_defer(ctx, s.blk, true); }
     } else if (s.expr != (parser.expr_node*)0) {
-        ctx_add_defer(ctx, (i8*)s.expr, false);
+        if (is_err) { ctx_add_errdefer(ctx, (i8*)s.expr, false); }
+        else        { ctx_add_defer(ctx, (i8*)s.expr, false); }
     }
 }
 
@@ -409,6 +654,10 @@ void visit_stmt(parser.ast_node* node, ir_context* ctx) {
         visit_for_stmt((parser.for_stmt*)node, ctx);
         return;
     }
+    if (kind == nd_for_range_stmt) {
+        visit_for_range_stmt((parser.for_range_stmt*)node, ctx);
+        return;
+    }
     if (kind == nd_switch_stmt) {
         visit_switch_stmt((parser.switch_stmt*)node, ctx);
         return;
@@ -418,13 +667,235 @@ void visit_stmt(parser.ast_node* node, ir_context* ctx) {
         return;
     }
     if (kind == nd_asm_stmt) {
-        // Inline ASM: emit as a call to inline asm string
-        // (simplified: just no-op for bootstrap)
+        parser.asm_stmt* as = (parser.asm_stmt*)node;
+        i8* raw = as.raw_instructions;
+        if (raw == (i8*)0) { return; }
+        i64 raw_len = (i64)strlen(raw);
+
+        // Allocate flat buffers for each part (instructions, sec1, sec2, sec3)
+        i8* part0 = (i8*)malloc((u64)1536);
+        i8* part1 = (i8*)malloc((u64)512);
+        i8* part2 = (i8*)malloc((u64)512);
+        i8* part3 = (i8*)malloc((u64)512);
+        part0[0] = 0; part1[0] = 0; part2[0] = 0; part3[0] = 0;
+        i32 nparts = 0;
+        i32 poff = 0;
+        bool in_q = false;
+        i64 ri = 0;
+        while (ri < raw_len && nparts < 4) {
+            i8 c = raw[ri];
+            if (c == '"') { in_q = !in_q; }
+            if (c == ':' && !in_q) {
+                i8* cur_part = (nparts == 0 ? part0 : (nparts == 1 ? part1 : (nparts == 2 ? part2 : part3)));
+                cur_part[poff] = 0;
+                nparts = nparts + 1; poff = 0;
+                i8* np = (nparts == 0 ? part0 : (nparts == 1 ? part1 : (nparts == 2 ? part2 : part3)));
+                np[0] = 0;
+            } else {
+                i8* cur_part = (nparts == 0 ? part0 : (nparts == 1 ? part1 : (nparts == 2 ? part2 : part3)));
+                i32 lim = (nparts == 0 ? 1535 : 511);
+                if (poff < lim) { cur_part[poff] = c; poff = poff + 1; }
+            }
+            ri = ri + 1;
+        }
+        {
+            i8* cur_part = (nparts == 0 ? part0 : (nparts == 1 ? part1 : (nparts == 2 ? part2 : part3)));
+            cur_part[poff] = 0; nparts = nparts + 1;
+        }
+        if (nparts < 2) {
+            free(part0); free(part1); free(part2); free(part3); return;
+        }
+
+        // Flat storage for constraints/varnames: 4 entries each, 64 bytes per entry
+        i8* in_cstr_buf  = (i8*)malloc((u64)256); // 4*64
+        i8* in_var_buf   = (i8*)malloc((u64)256);
+        i8* out_cstr_buf = (i8*)malloc((u64)256);
+        i8* out_var_buf  = (i8*)malloc((u64)256);
+        i8* clob_buf     = (i8*)malloc((u64)256);
+        i32 in_cnt = 0; i32 out_cnt = 0; i32 clob_cnt = 0;
+
+        // Helper macros inline: get pointer to entry i in a flat 64-byte-stride buffer
+        // in_cstr(i) = in_cstr_buf + i*64
+        // Parse sections: sec1→part1, sec2→part2, sec3→part3
+        i32 sec = 1;
+        while (sec < nparts && sec <= 3) {
+            i8* sp = (sec == 1 ? part1 : (sec == 2 ? part2 : part3));
+            i64 sp_len = (i64)strlen(sp);
+            i64 si = 0;
+            while (si < sp_len) {
+                while (si < sp_len && (sp[si] == ' ' || sp[si] == '\t' || sp[si] == '\n' || sp[si] == '\r' || sp[si] == ',')) { si = si + 1; }
+                if (si >= sp_len) { break; }
+                if (sp[si] == '"') {
+                    si = si + 1;
+                    i8 cstr[64]; i32 ci = 0; bool is_out = false;
+                    if (si < sp_len && sp[si] == '=') { is_out = true; si = si + 1; }
+                    while (si < sp_len && sp[si] != '"' && ci < 63) { cstr[ci] = sp[si]; ci = ci + 1; si = si + 1; }
+                    cstr[ci] = 0;
+                    if (si < sp_len && sp[si] == '"') { si = si + 1; }
+                    while (si < sp_len && (sp[si] == ' ' || sp[si] == '\t')) { si = si + 1; }
+                    if (si < sp_len && sp[si] == '(') {
+                        si = si + 1;
+                        i8 vname[64]; i32 vi = 0;
+                        while (si < sp_len && sp[si] != ')' && vi < 63) { vname[vi] = sp[si]; vi = vi + 1; si = si + 1; }
+                        vname[vi] = 0;
+                        if (si < sp_len && sp[si] == ')') { si = si + 1; }
+                        if (is_out || sec == 2) {
+                            if (out_cnt < 4) {
+                                snprintf(out_cstr_buf + out_cnt * 64, (u64)64, "%s", cstr);
+                                snprintf(out_var_buf  + out_cnt * 64, (u64)64, "%s", vname);
+                                out_cnt = out_cnt + 1;
+                            }
+                        } else {
+                            if (in_cnt < 4) {
+                                snprintf(in_cstr_buf + in_cnt * 64, (u64)64, "%s", cstr);
+                                snprintf(in_var_buf  + in_cnt * 64, (u64)64, "%s", vname);
+                                in_cnt = in_cnt + 1;
+                            }
+                        }
+                    } else {
+                        if (clob_cnt < 4) { snprintf(clob_buf + clob_cnt * 64, (u64)64, "%s", cstr); clob_cnt = clob_cnt + 1; }
+                    }
+                } else if (sp[si] != 0) {
+                    i8 tok[64]; i32 ti = 0;
+                    while (si < sp_len && sp[si] != ' ' && sp[si] != '\t' && sp[si] != ',' && sp[si] != '\n' && ti < 63) { tok[ti] = sp[si]; ti = ti + 1; si = si + 1; }
+                    tok[ti] = 0;
+                    if (ti > 0 && clob_cnt < 4) { snprintf(clob_buf + clob_cnt * 64, (u64)64, "%s", tok); clob_cnt = clob_cnt + 1; }
+                } else { si = si + 1; }
+            }
+            sec = sec + 1;
+        }
+
+        // Build substituted instruction string from part0
+        i8* instr_subst = (i8*)malloc((u64)2048);
+        i32 is_off = 0;
+        i8* ip = part0;
+        i64 ip_len = (i64)strlen(ip);
+        i64 ii = 0;
+        while (ii < ip_len && is_off < 2045) {
+            if (ip[ii] == '%') {
+                ii = ii + 1;
+                i8 vn[64]; i32 vni = 0;
+                while (ii < ip_len && (isalpha((i32)ip[ii]) || isdigit((i32)ip[ii]) || ip[ii] == '_') && vni < 63) { vn[vni] = ip[ii]; vni = vni + 1; ii = ii + 1; }
+                vn[vni] = 0;
+                i32 idx = -1;
+                i32 ki = 0;
+                while (ki < out_cnt && idx < 0) { if (strcmp(out_var_buf + ki*64, vn) == 0) { idx = ki; } ki = ki + 1; }
+                ki = 0;
+                while (ki < in_cnt && idx < 0) { if (strcmp(in_var_buf + ki*64, vn) == 0) { idx = out_cnt + ki; } ki = ki + 1; }
+                if (idx >= 0) {
+                    i8 repl[16]; snprintf(repl, (u64)16, "$%d", idx);
+                    i64 rl = (i64)strlen(repl); i64 ri2 = 0;
+                    while (ri2 < rl && is_off < 2045) { instr_subst[is_off] = repl[ri2]; is_off = is_off + 1; ri2 = ri2 + 1; }
+                } else {
+                    instr_subst[is_off] = '%'; is_off = is_off + 1;
+                    i64 vni2 = 0;
+                    while (vni2 < (i64)vni && is_off < 2045) { instr_subst[is_off] = vn[vni2]; is_off = is_off + 1; vni2 = vni2 + 1; }
+                }
+            } else if (ip[ii] == '$') {
+                if (is_off + 1 < 2045) { instr_subst[is_off] = '$'; instr_subst[is_off+1] = '$'; is_off = is_off + 2; }
+                ii = ii + 1;
+            } else if (ip[ii] == '\n') {
+                // Pass actual newline byte — LLVMGetInlineAsm expects raw bytes
+                if (is_off < 2045) { instr_subst[is_off] = '\n'; is_off = is_off + 1; }
+                ii = ii + 1;
+            } else { instr_subst[is_off] = ip[ii]; is_off = is_off + 1; ii = ii + 1; }
+        }
+        instr_subst[is_off] = 0;
+
+        // Build constraint string
+        i8* con_str = (i8*)malloc((u64)512);
+        con_str[0] = 0; i32 co = 0;
+        i32 oci = 0;
+        while (oci < out_cnt) {
+            if (co > 0) { con_str[co] = ','; co = co + 1; }
+            con_str[co] = '='; co = co + 1;
+            i8* ocs = out_cstr_buf + oci*64;
+            i64 ocl = (i64)strlen(ocs); i64 j = 0;
+            while (j < ocl && co < 510) { con_str[co] = ocs[j]; co = co + 1; j = j + 1; }
+            oci = oci + 1;
+        }
+        i32 ici = 0;
+        while (ici < in_cnt) {
+            if (co > 0) { con_str[co] = ','; co = co + 1; }
+            i8* ics = in_cstr_buf + ici*64;
+            i64 icl = (i64)strlen(ics); i64 j = 0;
+            while (j < icl && co < 510) { con_str[co] = ics[j]; co = co + 1; j = j + 1; }
+            ici = ici + 1;
+        }
+        i32 cli = 0;
+        while (cli < clob_cnt) {
+            if (co > 0) { con_str[co] = ','; co = co + 1; }
+            if (co + 3 < 510) { con_str[co] = '~'; con_str[co+1] = '{'; co = co + 2; }
+            i8* cs = clob_buf + cli*64;
+            i64 cl = (i64)strlen(cs); i64 j = 0;
+            while (j < cl && co < 508) { con_str[co] = cs[j]; co = co + 1; j = j + 1; }
+            if (co < 510) { con_str[co] = '}'; co = co + 1; }
+            cli = cli + 1;
+        }
+        con_str[co] = 0;
+
+        // Collect input LLVM values and types
+        i8** in_vals  = (i8**)malloc(sizeof(i8*) * (u64)(in_cnt > 0 ? in_cnt : 1));
+        i8** in_types_a = (i8**)malloc(sizeof(i8*) * (u64)(in_cnt > 0 ? in_cnt : 1));
+        i32 ivi = 0;
+        while (ivi < in_cnt) {
+            i8* ivn = in_var_buf + ivi*64;
+            i8* iv  = ctx_lookup_local(ctx, ivn);
+            i8* it  = ctx_lookup_local_type(ctx, ivn);
+            if (iv != (i8*)0 && it != (i8*)0) {
+                in_vals[ivi]    = LLVMBuildLoad2(ctx.llvm_builder, it, iv, ivn);
+                in_types_a[ivi] = it;
+            } else { in_vals[ivi] = (i8*)0; in_types_a[ivi] = LLVMInt32TypeInContext(ctx.llvm_ctx); }
+            ivi = ivi + 1;
+        }
+        i8* ret_t = (out_cnt == 1) ? (i8*)0 : LLVMVoidTypeInContext(ctx.llvm_ctx);
+        if (out_cnt == 1) {
+            i8* ovt = ctx_lookup_local_type(ctx, out_var_buf);
+            ret_t = (ovt != (i8*)0) ? ovt : LLVMInt32TypeInContext(ctx.llvm_ctx);
+        }
+        i8* fn_ty = LLVMFunctionType(ret_t, in_types_a, in_cnt, 0);
+        i64 istr_len = (i64)strlen(instr_subst);
+        i64 cstr_len = (i64)strlen(con_str);
+        i8* asm_val = LLVMGetInlineAsm(fn_ty, instr_subst, (u64)istr_len, con_str, (u64)cstr_len, 1, 0, 1, 0);
+        i8* call_res = LLVMBuildCall2(ctx.llvm_builder, fn_ty, asm_val, in_vals, in_cnt, out_cnt > 0 ? "asm_out" : "");
+        if (out_cnt == 1 && call_res != (i8*)0) {
+            i8* ov = ctx_lookup_local(ctx, out_var_buf);
+            if (ov != (i8*)0) { LLVMBuildStore(ctx.llvm_builder, call_res, ov); }
+        }
+        free(part0); free(part1); free(part2); free(part3);
+        free(in_cstr_buf); free(in_var_buf); free(out_cstr_buf); free(out_var_buf); free(clob_buf);
+        free(instr_subst); free(con_str); free(in_vals); free(in_types_a);
         return;
     }
     if (kind == nd_try_expr_stmt) {
         parser.try_expr_stmt* ts = (parser.try_expr_stmt*)node;
-        visit_expr(ts.expr, ctx);
+        i8* tv = visit_expr(ts.expr, ctx);
+        if (tv == (i8*)0) { return; }
+        i8* tv_t = LLVMTypeOf(tv);
+        if (LLVMGetTypeKind(tv_t) != LLVMIntegerTypeKind) { return; }
+        i8* i32_t_s = LLVMInt32TypeInContext(ctx.llvm_ctx);
+        i8* coerced_s = coerce_int_val(tv, i32_t_s, ctx.llvm_builder);
+        i64 minus1_s = (i64)-1;
+        i8* neg1_s = LLVMConstInt(i32_t_s, (u64)minus1_s, 1);
+        i8* is_err_s = LLVMBuildICmp(ctx.llvm_builder, LLVMIntEQ, coerced_s, neg1_s, "ts_is_err");
+        i8* fn_s   = ctx.current_func;
+        i8* err_bb_s = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn_s, "ts_err");
+        i8* ok_bb_s  = LLVMAppendBasicBlockInContext(ctx.llvm_ctx, fn_s, "ts_ok");
+        LLVMBuildCondBr(ctx.llvm_builder, is_err_s, err_bb_s, ok_bb_s);
+        LLVMPositionBuilderAtEnd(ctx.llvm_builder, err_bb_s);
+        i32 ts_di = ctx.defers.len - 1;
+        while (ts_di >= 0) {
+            emit_deferred(&ctx.defers.data[ts_di], ctx);
+            ts_di = ts_di - 1;
+        }
+        i32 ts_ei = ctx.errdefers.len - 1;
+        while (ts_ei >= 0) {
+            emit_deferred(&ctx.errdefers.data[ts_ei], ctx);
+            ts_ei = ts_ei - 1;
+        }
+        i8* ts_ret = ctx.current_ret_type != (i8*)0 ? ctx.current_ret_type : i32_t_s;
+        LLVMBuildRet(ctx.llvm_builder, coerce_int_val(neg1_s, ts_ret, ctx.llvm_builder));
+        LLVMPositionBuilderAtEnd(ctx.llvm_builder, ok_bb_s);
         return;
     }
     // Other statement kinds (declarations) handled by decls.arc

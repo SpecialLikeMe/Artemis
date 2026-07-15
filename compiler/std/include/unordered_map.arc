@@ -2,9 +2,9 @@
 
 namespace std {
 
-constexpr u64 UMAP_EMPTY   = 0xFFFFFFFFFFFFFFFFu;
-constexpr u64 UMAP_DELETED = 0xFFFFFFFFFFFFFFFEu;
-constexpr f64 UMAP_MAX_LOAD = 0.75;
+comptime u64 UMAP_EMPTY   = 0xFFFFFFFFFFFFFFFFu;
+comptime u64 UMAP_DELETED = 0xFFFFFFFFFFFFFFFEu;
+comptime f64 UMAP_MAX_LOAD = 0.75;
 
 istruc umap_slot<K, V> {
     u64 hash;

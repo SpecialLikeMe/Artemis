@@ -198,6 +198,9 @@ struct var_decl {
     bool       is_constexpr;
     bool       is_consteval;
     bool       is_sta;
+    bool       has_ctor_parens;
+    i8**       ctor_args;
+    i32        ctor_args_len;
 }
 
 struct func_decl {
@@ -229,6 +232,7 @@ struct struct_decl {
     var_decl**  fields;
     i32         fields_len;
     i32         fields_cap;
+    bool        is_union;
 }
 
 struct enum_variant {
@@ -250,6 +254,16 @@ struct enum_decl {
     i32           variants_len;
     i32           variants_cap;
     bool          is_adt;
+    // ADT variant payloads: flat arrays, stride=8 per variant
+    // variant_kinds[i]: 0=plain, 1=tuple, 2=named_struct, 3=istruc_dot
+    // variant_field_names_flat[i*8 + j], variant_field_type_flat[i*8 + j]
+    i32*          variant_kinds;
+    i32*          variant_field_counts;     // number of fields for each variant
+    i8**          variant_field_names_flat; // flat: [vi*8+fi] = field name (i8*)
+    i8**          variant_field_type_flat;  // flat: [vi*8+fi] = parser.type_node* as i8*
+    // ADT variant methods: flat arrays, stride=8 per variant
+    i8**          variant_method_flat;      // flat: [vi*8+mi] = func_decl* as i8*
+    i32*          variant_method_counts;    // number of methods per variant
 }
 
 struct typedef_decl {
@@ -306,6 +320,16 @@ void block_stmt_push(block_stmt* blk, ast_node* s) {
     blk.stmts_len = blk.stmts_len + 1;
 }
 
+// ---- Macro definition (const_resolve) ----
+
+istruc macro_def_t {
+    i8*  name;
+    i8** param_names;
+    i32  param_count;
+    i8*  template_toks;   // lexer.token_t* stored as i8*
+    i32  template_len;
+}
+
 // ---- Parser istruc ----
 
 istruc parser_t {
@@ -313,12 +337,18 @@ istruc parser_t {
     i32             tokens_len;
     i32             current;
     bool            had_parse_error;
+    macro_def_t**  macros;
+    i32             macros_len;
+    i32             macros_cap;
 
     void init(parser_t* self, lexer.token_t* toks, i32 len) {
         self.tokens          = toks;
         self.tokens_len      = len;
         self.current         = 0;
         self.had_parse_error = false;
+        self.macros_cap      = 8;
+        self.macros_len      = 0;
+        self.macros          = (macro_def_t**)malloc(sizeof(i8*) * (u64)8);
     }
 
     // ---- Token access helpers ----
@@ -456,6 +486,133 @@ istruc parser_t {
         }
     }
 
+    // ---- Macro helpers ----
+
+    macro_def_t* find_macro(parser_t* self, i8* name) {
+        i32 mi = 0;
+        while (mi < self.macros_len) {
+            macro_def_t* m = (macro_def_t*)self.macros[mi];
+            if (strcmp(m.name, name) == 0) {
+                return m;
+            }
+            mi = mi + 1;
+        }
+        return (macro_def_t*)0;
+    }
+
+    // Expand a macro call: consumes '(' args ')' from self, returns expanded expr
+    expr_node* expand_macro_call(parser_t* self, macro_def_t* mdef) {
+        // Collect argument tokens per arg
+        i32 arg_buf_cap = 128;
+        lexer.token_t* arg_buf = (lexer.token_t*)malloc(sizeof(lexer__NS_token_t) * (u64)arg_buf_cap);
+        i32 arg_buf_len = 0;
+        i32* arg_starts = (i32*)malloc(sizeof(i32) * (u64)16);
+        i32* arg_lens   = (i32*)malloc(sizeof(i32) * (u64)16);
+        i32 arg_count = 0;
+        i32 cur_arg_start = 0;
+
+        self.consume_tok(oparen, "Expected '(' for macro call");
+        i32 depth_m = 0;
+        while ((!self.check_tok(cparen) || depth_m > 0) && !self.is_at_end_p()) {
+            lexer.token_t at = self.peek_tok();
+            if (at.type == oparen) { depth_m = depth_m + 1; }
+            else if (at.type == cparen) { depth_m = depth_m - 1; }
+            else if (at.type == comma && depth_m == 0) {
+                arg_starts[arg_count] = cur_arg_start;
+                arg_lens[arg_count]   = arg_buf_len - cur_arg_start;
+                arg_count = arg_count + 1;
+                cur_arg_start = arg_buf_len;
+                self.advance_tok();
+                continue;
+            }
+            if (arg_buf_len >= arg_buf_cap) {
+                arg_buf_cap = arg_buf_cap * 2;
+                arg_buf = (lexer.token_t*)realloc((i8*)arg_buf, sizeof(lexer__NS_token_t) * (u64)arg_buf_cap);
+            }
+            arg_buf[arg_buf_len] = at;
+            arg_buf_len = arg_buf_len + 1;
+            self.advance_tok();
+        }
+        // last argument
+        arg_starts[arg_count] = cur_arg_start;
+        arg_lens[arg_count]   = arg_buf_len - cur_arg_start;
+        if (arg_buf_len > cur_arg_start) { arg_count = arg_count + 1; }
+        self.consume_tok(cparen, "Expected ')' after macro args");
+
+        // Build expanded token list by substituting $param_name with arg tokens
+        i32 exp_cap = 256;
+        lexer.token_t* exp = (lexer.token_t*)malloc(sizeof(lexer__NS_token_t) * (u64)exp_cap);
+        i32 exp_len = 0;
+        lexer.token_t* tmpl = (lexer.token_t*)mdef.template_toks;
+
+        i32 ti = 0;
+        while (ti < mdef.template_len) {
+            lexer.token_t tt = tmpl[ti];
+            if (tt.type == dollar && ti + 1 < mdef.template_len) {
+                lexer.token_t nt = tmpl[ti + 1];
+                if (nt.type == id) {
+                    i32 param_idx = -1;
+                    i32 pi = 0;
+                    while (pi < mdef.param_count) {
+                        if (strcmp(mdef.param_names[pi], nt.value) == 0) {
+                            param_idx = pi;
+                            pi = mdef.param_count; // break
+                        }
+                        pi = pi + 1;
+                    }
+                    if (param_idx >= 0 && param_idx < arg_count) {
+                        i32 em_s = arg_starts[param_idx];
+                        i32 em_l = arg_lens[param_idx];
+                        i32 ai = 0;
+                        while (ai < em_l) {
+                            if (exp_len >= exp_cap) {
+                                exp_cap = exp_cap * 2;
+                                exp = (lexer.token_t*)realloc((i8*)exp, sizeof(lexer__NS_token_t) * (u64)exp_cap);
+                            }
+                            exp[exp_len] = arg_buf[em_s + ai];
+                            exp_len = exp_len + 1;
+                            ai = ai + 1;
+                        }
+                    }
+                    ti = ti + 2;
+                    continue;
+                }
+            }
+            if (exp_len >= exp_cap) {
+                exp_cap = exp_cap * 2;
+                exp = (lexer.token_t*)realloc((i8*)exp, sizeof(lexer__NS_token_t) * (u64)exp_cap);
+            }
+            exp[exp_len] = tt;
+            exp_len = exp_len + 1;
+            ti = ti + 1;
+        }
+        // append EOF
+        if (exp_len >= exp_cap) {
+            exp_cap = exp_cap + 1;
+            exp = (lexer.token_t*)realloc((i8*)exp, sizeof(lexer__NS_token_t) * (u64)exp_cap);
+        }
+        lexer.token_t eoft;
+        eoft.type  = eof_t;
+        eoft.value = (i8*)0;
+        eoft.line  = 0;
+        exp[exp_len] = eoft;
+        exp_len = exp_len + 1;
+
+        // Parse expanded tokens with a sub-parser
+        parser_t sub;
+        sub.init(exp, exp_len);
+        sub.macros     = self.macros;
+        sub.macros_len = self.macros_len;
+        sub.macros_cap = self.macros_cap;
+        expr_node* result = sub.parse_expr();
+
+        free((i8*)exp);
+        free((i8*)arg_buf);
+        free((i8*)arg_starts);
+        free((i8*)arg_lens);
+        return result;
+    }
+
     // ---- Type start detection ----
 
     bool is_type_start(parser_t* self) {
@@ -508,6 +665,36 @@ istruc parser_t {
             while (self.peek_at_type(k) == ast) { k = k + 1; }
             if (k > 1 && self.peek_at_type(k) == id) { return true; }
         }
+        // Generic type: id<...> id — scan past balanced <> to check for trailing id
+        if (tt == id && self.peek_at_type(1) == lt) {
+            i32 k2 = 2;
+            i32 depth2 = 1;
+            while (depth2 > 0 && self.peek_at_type(k2) != eof_t) {
+                i32 t2 = self.peek_at_type(k2);
+                if (t2 == lt)  { depth2 = depth2 + 1; }
+                else if (t2 == gt)  { depth2 = depth2 - 1; }
+                else if (t2 == right) { depth2 = depth2 - 2; }
+                k2 = k2 + 1;
+            }
+            // After >, skip optional pointer stars
+            while (self.peek_at_type(k2) == ast) { k2 = k2 + 1; }
+            if (self.peek_at_type(k2) == id) { return true; }
+        }
+        return false;
+    }
+
+    // Like is_type_start() but also accepts id**) patterns for cast expressions, e.g. (T**)0
+    bool is_cast_start(parser_t* self) {
+        if (self.is_type_start()) { return true; }
+        i32 tt = self.peek_type();
+        if (tt == id) {
+            i32 k = 1;
+            // skip namespace qualifiers: ns.Type
+            while (self.peek_at_type(k) == dot && self.peek_at_type(k + 1) == id) { k = k + 2; }
+            // skip pointer stars
+            while (self.peek_at_type(k) == ast) { k = k + 1; }
+            if (k > 1 && self.peek_at_type(k) == cparen) { return true; }
+        }
         return false;
     }
 
@@ -521,6 +708,15 @@ istruc parser_t {
             self.advance_tok();
             type_node* inner = self.parse_type();
             inner.is_nullable = true;
+            free((i8*)t);
+            return inner;
+        }
+
+        // C++ reference: &T — treat as T* for bootstrap
+        if (self.check_tok(addr)) {
+            self.advance_tok();
+            type_node* inner = self.parse_type();
+            inner.pointer_depth = inner.pointer_depth + 1;
             free((i8*)t);
             return inner;
         }
@@ -589,6 +785,12 @@ istruc parser_t {
             t.prim = arb_bool; t.is_primitive = true; t.has_prim = true; found = true;
         }
 
+        if (!found && self.check_tok(kw_smem)) {
+            self.advance_tok();
+            t.name = lexer.str_dup("memstr");
+            found = true;
+        }
+
         if (!found) {
             lexer.token_t name_tok = self.consume_tok(id, "Expected type name");
             t.name = lexer.str_dup(name_tok.value);
@@ -608,6 +810,19 @@ istruc parser_t {
                     t.name = lexer.str_dup(newname);
                 } else {
                     ns_loop = false;
+                }
+            }
+
+            // Generic type parameters: Type<A, B> — skip parameters, use base name
+            if (self.check_tok(lt)) {
+                i32 depth_g = 1;
+                self.advance_tok(); // consume '<'
+                while (depth_g > 0 && !self.is_at_end_p()) {
+                    i32 tg = self.peek_type();
+                    if (tg == lt)  { depth_g = depth_g + 1; self.advance_tok(); }
+                    else if (tg == gt)  { depth_g = depth_g - 1; self.advance_tok(); }
+                    else if (tg == right) { depth_g = depth_g - 2; self.advance_tok(); }
+                    else { self.advance_tok(); }
                 }
             }
         }
@@ -707,7 +922,45 @@ istruc parser_t {
             }
             self.consume_tok(cbracket, "Expected ']' after array size");
         }
-        if (self.match_tok(assign)) {
+        // Constructor call: TypeName varname(args...)
+        if (self.match_tok(oparen)) {
+            vd.has_ctor_parens = true;
+            i32 ctor_cap = 4;
+            vd.ctor_args = (i8**)malloc(sizeof(i8*) * (u64)ctor_cap);
+            vd.ctor_args_len = 0;
+            if (!self.check_tok(cparen)) {
+                bool p_ctor = true;
+                while (p_ctor) {
+                    if (vd.ctor_args_len >= ctor_cap) {
+                        ctor_cap = ctor_cap * 2;
+                        vd.ctor_args = (i8**)realloc((i8*)vd.ctor_args, sizeof(i8*) * (u64)ctor_cap);
+                    }
+                    vd.ctor_args[vd.ctor_args_len] = (i8*)self.parse_assignment();
+                    vd.ctor_args_len = vd.ctor_args_len + 1;
+                    if (!self.match_tok(comma)) { p_ctor = false; }
+                }
+            }
+            self.consume_tok(cparen, "Expected ')' after constructor args");
+        } else if (self.match_tok(obrace)) {
+            // Brace constructor: TypeName varname{args...}
+            vd.has_ctor_parens = true;
+            i32 ctor_capB = 4;
+            vd.ctor_args = (i8**)malloc(sizeof(i8*) * (u64)ctor_capB);
+            vd.ctor_args_len = 0;
+            if (!self.check_tok(cbrace)) {
+                bool p_ctorB = true;
+                while (p_ctorB) {
+                    if (vd.ctor_args_len >= ctor_capB) {
+                        ctor_capB = ctor_capB * 2;
+                        vd.ctor_args = (i8**)realloc((i8*)vd.ctor_args, sizeof(i8*) * (u64)ctor_capB);
+                    }
+                    vd.ctor_args[vd.ctor_args_len] = (i8*)self.parse_assignment();
+                    vd.ctor_args_len = vd.ctor_args_len + 1;
+                    if (!self.match_tok(comma)) { p_ctorB = false; }
+                }
+            }
+            self.consume_tok(cbrace, "Expected '}' after constructor args");
+        } else if (self.match_tok(assign)) {
             vd.init     = self.parse_expr();
             vd.has_init = true;
         }
@@ -773,6 +1026,27 @@ istruc parser_t {
             self.advance_tok();
             fd.is_noexcept = true;
         }
+        // Skip proc-macro / attribute markers: attr, derive, verify, etc.
+        // If any are present, skip the entire body (bodies use quote{} which we don't parse)
+        bool pm_skipped = false;
+        while (self.check_tok(id)) {
+            self.advance_tok();
+            pm_skipped = true;
+        }
+        if (pm_skipped) {
+            if (self.check_tok(obrace)) {
+                i32 pm_depth = 1;
+                self.advance_tok();
+                while (pm_depth > 0 && !self.is_at_end_p()) {
+                    if (self.check_tok(obrace)) { pm_depth = pm_depth + 1; }
+                    else if (self.check_tok(cbrace)) { pm_depth = pm_depth - 1; }
+                    self.advance_tok();
+                }
+            } else if (self.check_tok(sm)) { self.advance_tok(); }
+            fd.body     = (i8*)0;
+            fd.has_body = false;
+            return fd;
+        }
 
         // Trailing return type for auto
         if (ret != (type_node*)0 && ret.is_auto) {
@@ -786,13 +1060,86 @@ istruc parser_t {
             }
         }
 
+        // Parse optional C++ initializer list: : field(expr), field(expr)
+        i8* init_self_name = (i8*)0;
+        if (fd.params_len > 0 && fd.params[0].name != (i8*)0) {
+            init_self_name = fd.params[0].name;
+        } else {
+            init_self_name = lexer.str_dup("self");
+        }
+        i32 init_cap  = 8;
+        i8** init_fnames = (i8**)malloc(sizeof(i8*) * (u64)init_cap);
+        i8** init_fexprs = (i8**)malloc(sizeof(i8*) * (u64)init_cap);
+        i32 init_len  = 0;
+
+        if (self.check_tok(colon)) {
+            self.advance_tok(); // consume ':'
+            bool p_init = true;
+            while (p_init && !self.is_at_end_p() && self.check_tok(id)) {
+                i8* fname = lexer.str_dup(self.advance_value_get());
+                self.consume_tok(oparen, "Expected '(' in init list");
+                expr_node* fval = self.parse_assignment();
+                self.consume_tok(cparen, "Expected ')' in init list");
+                if (init_len >= init_cap) {
+                    init_cap = init_cap * 2;
+                    init_fnames = (i8**)realloc((i8*)init_fnames, sizeof(i8*) * (u64)init_cap);
+                    init_fexprs = (i8**)realloc((i8*)init_fexprs, sizeof(i8*) * (u64)init_cap);
+                }
+                init_fnames[init_len] = fname;
+                init_fexprs[init_len] = (i8*)fval;
+                init_len = init_len + 1;
+                if (!self.match_tok(comma)) { p_init = false; }
+            }
+        }
+
         if (self.match_tok(sm)) {
             fd.body     = (i8*)0;
             fd.has_body = false;
         } else {
-            fd.body     = (i8*)self.parse_block();
+            block_stmt* blk_nd = self.parse_block();
+            // Prepend init list as assignments: self.field = expr
+            if (blk_nd != (block_stmt*)0 && init_len > 0) {
+                i32 new_len = blk_nd.stmts_len + init_len;
+                ast_node** new_stmts = (ast_node**)malloc(sizeof(i8*) * (u64)(new_len + 1));
+                i32 ii = 0;
+                while (ii < init_len) {
+                    expr_node* self_id = (expr_node*)malloc(sizeof(parser__NS_expr_node));
+                    memset((i8*)self_id, 0, sizeof(parser__NS_expr_node));
+                    self_id.kind    = ek_identifier;
+                    self_id.str_val = init_self_name;
+
+                    expr_node* mem_e = (expr_node*)malloc(sizeof(parser__NS_expr_node));
+                    memset((i8*)mem_e, 0, sizeof(parser__NS_expr_node));
+                    mem_e.kind        = ek_member;
+                    mem_e.object      = self_id;
+                    mem_e.member_name = init_fnames[ii];
+
+                    expr_node* asgn = (expr_node*)malloc(sizeof(parser__NS_expr_node));
+                    memset((i8*)asgn, 0, sizeof(parser__NS_expr_node));
+                    asgn.kind = ek_assign;
+                    asgn.lhs  = mem_e;
+                    asgn.rhs  = (expr_node*)init_fexprs[ii];
+
+                    expr_stmt* es = (expr_stmt*)malloc(sizeof(parser__NS_expr_stmt));
+                    memset((i8*)es, 0, sizeof(parser__NS_expr_stmt));
+                    es.kind = nd_expr_stmt;
+                    es.expr = asgn;
+                    new_stmts[ii] = (ast_node*)es;
+                    ii = ii + 1;
+                }
+                i32 si = 0;
+                while (si < blk_nd.stmts_len) {
+                    new_stmts[init_len + si] = blk_nd.stmts[si];
+                    si = si + 1;
+                }
+                blk_nd.stmts     = new_stmts;
+                blk_nd.stmts_len = new_len;
+            }
+            fd.body     = (i8*)blk_nd;
             fd.has_body = true;
         }
+        free((i8*)init_fnames);
+        free((i8*)init_fexprs);
         return fd;
     }
 
@@ -816,13 +1163,80 @@ istruc parser_t {
             ret = self.parse_type();
         }
 
+        // Handle operator overloads: "RetType operator+(...)
+        if (self.check_tok(kw_operator)) {
+            self.advance_tok(); // consume 'operator'
+            // Build operator name from the symbol that follows
+            i8 op_name[64];
+            i32 tt2 = self.peek_type();
+            // Consume the operator symbol(s)
+            lexer.token_t op_tok = self.advance_tok();
+            // Handle two-character operators (==, !=, <=, >=, +=, etc.)
+            i32 tt3 = self.peek_type();
+            if ((tt2 == assign || tt2 == lt || tt2 == gt || tt2 == not_ || tt2 == plus || tt2 == minus || tt2 == ast || tt2 == slash) &&
+                    (tt3 == assign)) {
+                self.advance_tok();
+                snprintf(op_name, (u64)64, "operator%s=", op_tok.value);
+            } else if (tt2 == kw_arb_int) {
+                snprintf(op_name, (u64)64, "operator_i%s", op_tok.value);
+            } else if (tt2 == kw_arb_uint) {
+                snprintf(op_name, (u64)64, "operator_u%s", op_tok.value);
+            } else if (tt2 == kw_arb_float) {
+                snprintf(op_name, (u64)64, "operator_f%s", op_tok.value);
+            } else {
+                snprintf(op_name, (u64)64, "operator%s", op_tok.value);
+            }
+            lexer.token_t name_tok2;
+            name_tok2.type  = id;
+            name_tok2.value = lexer.str_dup(op_name);
+            name_tok2.line  = op_tok.line;
+            self.consume_tok(oparen, "Expected '(' after operator name");
+            func_decl* fd2 = self.parse_func_body(ret, name_tok2, false);
+            if (is_err_union) { fd2.is_error_union = true; fd2.err_type = err_type; }
+            return (ast_node*)fd2;
+        }
+
         lexer.token_t name_tok = self.consume_tok(id, "Expected declaration name");
+
+        // Parse generic type params: funcname<T, U>(...)
+        i8** gtp_buf = (i8**)0;
+        i32  gtp_len = 0;
+        if (self.check_tok(lt)) {
+            i32 gtp_cap = 4;
+            gtp_buf = (i8**)malloc(sizeof(i8*) * (u64)gtp_cap);
+            self.advance_tok(); // consume '<'
+            i32 depth_gf = 1;
+            while (depth_gf > 0 && !self.is_at_end_p()) {
+                i32 tgf = self.peek_type();
+                if (tgf == gt && depth_gf == 1) {
+                    depth_gf = 0; self.advance_tok();
+                } else if (tgf == lt) { depth_gf = depth_gf + 1; self.advance_tok(); }
+                else if (tgf == gt)   { depth_gf = depth_gf - 1; self.advance_tok(); }
+                else if (tgf == right && depth_gf <= 2) { depth_gf = 0; self.advance_tok(); }
+                else if (tgf == id) {
+                    lexer.token_t tp_tok = self.advance_tok();
+                    if (gtp_len >= gtp_cap) {
+                        gtp_cap = gtp_cap * 2;
+                        gtp_buf = (i8**)realloc((i8*)gtp_buf, sizeof(i8*) * (u64)gtp_cap);
+                    }
+                    gtp_buf[gtp_len] = lexer.str_dup(tp_tok.value);
+                    gtp_len = gtp_len + 1;
+                } else { self.advance_tok(); }
+            }
+        }
 
         if (self.match_tok(oparen)) {
             func_decl* fd = self.parse_func_body(ret, name_tok, false);
+            if (gtp_len > 0) {
+                fd.type_params     = gtp_buf;
+                fd.type_params_len = gtp_len;
+            } else if (gtp_buf != (i8**)0) {
+                free((i8*)gtp_buf);
+            }
             if (is_err_union) { fd.is_error_union = true; fd.err_type = err_type; }
             return (ast_node*)fd;
         }
+        if (gtp_buf != (i8**)0) { free((i8*)gtp_buf); }
 
         // Trailing type: auto name: type = expr;
         if (ret.is_auto && self.check_tok(colon)) {
@@ -897,9 +1311,15 @@ istruc parser_t {
         ed.line = ln;
         ed.name = lexer.str_dup(self.consume_id_value("Expected enum name"));
         ed.variants_cap = 16;
-        ed.variant_names   = (i8**)malloc(sizeof(i8*) * (u64)ed.variants_cap);
-        ed.variant_vals    = (i64*)malloc(sizeof(i64) * (u64)ed.variants_cap);
-        ed.variant_has_val = (bool*)malloc(sizeof(bool) * (u64)ed.variants_cap);
+        ed.variant_names        = (i8**)malloc(sizeof(i8*) * (u64)ed.variants_cap);
+        ed.variant_vals         = (i64*)malloc(sizeof(i64) * (u64)ed.variants_cap);
+        ed.variant_has_val      = (bool*)malloc(sizeof(bool) * (u64)ed.variants_cap);
+        ed.variant_kinds        = (i32*)malloc(sizeof(i32) * (u64)ed.variants_cap);
+        ed.variant_field_counts = (i32*)malloc(sizeof(i32) * (u64)ed.variants_cap);
+        ed.variant_field_names_flat = (i8**)malloc(sizeof(i8*) * (u64)(ed.variants_cap * 8));
+        ed.variant_field_type_flat  = (i8**)malloc(sizeof(i8*) * (u64)(ed.variants_cap * 8));
+        ed.variant_method_flat      = (i8**)malloc(sizeof(i8*) * (u64)(ed.variants_cap * 8));
+        ed.variant_method_counts    = (i32*)malloc(sizeof(i32) * (u64)ed.variants_cap);
         self.consume_tok(obrace, "Expected '{' after enum name");
 
         i64 next_val = 0;
@@ -909,24 +1329,127 @@ istruc parser_t {
             // Grow if needed
             if (ed.variants_len >= ed.variants_cap) {
                 ed.variants_cap = ed.variants_cap * 2;
-                ed.variant_names   = (i8**)realloc((i8*)ed.variant_names,   sizeof(i8*) * (u64)ed.variants_cap);
-                ed.variant_vals    = (i64*)realloc((i8*)ed.variant_vals,    sizeof(i64) * (u64)ed.variants_cap);
-                ed.variant_has_val = (bool*)realloc((i8*)ed.variant_has_val, sizeof(bool) * (u64)ed.variants_cap);
+                ed.variant_names        = (i8**)realloc((i8*)ed.variant_names,        sizeof(i8*) * (u64)ed.variants_cap);
+                ed.variant_vals         = (i64*)realloc((i8*)ed.variant_vals,         sizeof(i64) * (u64)ed.variants_cap);
+                ed.variant_has_val      = (bool*)realloc((i8*)ed.variant_has_val,      sizeof(bool) * (u64)ed.variants_cap);
+                ed.variant_kinds        = (i32*)realloc((i8*)ed.variant_kinds,        sizeof(i32) * (u64)ed.variants_cap);
+                ed.variant_field_counts = (i32*)realloc((i8*)ed.variant_field_counts, sizeof(i32) * (u64)ed.variants_cap);
+                ed.variant_field_names_flat = (i8**)realloc((i8*)ed.variant_field_names_flat, sizeof(i8*) * (u64)(ed.variants_cap * 8));
+                ed.variant_field_type_flat  = (i8**)realloc((i8*)ed.variant_field_type_flat,  sizeof(i8*) * (u64)(ed.variants_cap * 8));
+                ed.variant_method_flat      = (i8**)realloc((i8*)ed.variant_method_flat,      sizeof(i8*) * (u64)(ed.variants_cap * 8));
+                ed.variant_method_counts    = (i32*)realloc((i8*)ed.variant_method_counts,    sizeof(i32) * (u64)ed.variants_cap);
             }
 
-            ed.variant_names[ed.variants_len] = lexer.str_dup(var_name.value);
-            if (self.match_tok(assign)) {
-                // Plain value assignment
-                expr_node* val_expr = self.parse_expr();
-                // Try to extract integer constant
-                if (val_expr.kind == ek_int_lit) {
-                    next_val = val_expr.int_val;
+            i32 vi = ed.variants_len;
+            ed.variant_names[vi]          = lexer.str_dup(var_name.value);
+            ed.variant_kinds[vi]          = 0; // plain by default
+            ed.variant_field_counts[vi]   = 0;
+            ed.variant_method_counts[vi]  = 0;
+            // Init flat slots for this variant (stride 8)
+            {
+                i32 si = 0;
+                while (si < 8) {
+                    ed.variant_field_names_flat[vi * 8 + si] = (i8*)0;
+                    ed.variant_field_type_flat[vi * 8 + si]  = (i8*)0;
+                    ed.variant_method_flat[vi * 8 + si]      = (i8*)0;
+                    si = si + 1;
                 }
-                ed.variant_vals[ed.variants_len]    = next_val;
-                ed.variant_has_val[ed.variants_len] = true;
+            }
+
+            // ADT tuple variant: Variant(type1, type2, ...)
+            if (self.check_tok(oparen)) {
+                self.advance_tok(); // consume '('
+                ed.variant_kinds[vi] = 1; // tuple
+                ed.is_adt = true;
+                i32 fc = 0;
+                while (!self.check_tok(cparen) && !self.is_at_end_p() && fc < 8) {
+                    type_node* ft = self.parse_type();
+                    ed.variant_field_type_flat[vi * 8 + fc]  = (i8*)ft;
+                    ed.variant_field_names_flat[vi * 8 + fc] = (i8*)0;
+                    fc = fc + 1;
+                    self.match_tok(comma);
+                }
+                self.consume_tok(cparen, "Expected ')' in tuple variant");
+                ed.variant_field_counts[vi] = fc;
+            }
+
+            // ADT named struct / istruc variant: Variant { ... } or Variant .{ ... }
+            bool has_dot_brace = self.check_tok(dot);
+            if (has_dot_brace) { self.advance_tok(); } // consume optional '.'
+            if (self.check_tok(obrace)) {
+                self.advance_tok(); // consume '{'
+                ed.is_adt = true;
+                ed.variant_kinds[vi] = has_dot_brace ? 3 : 2; // 3=istruc_dot, 2=named_struct
+                i32 fc = 0;
+                i32 depth_vs = 1;
+                while (depth_vs > 0 && !self.is_at_end_p()) {
+                    if (self.check_tok(obrace)) {
+                        depth_vs = depth_vs + 1; self.advance_tok();
+                    } else if (self.check_tok(cbrace)) {
+                        depth_vs = depth_vs - 1;
+                        if (depth_vs > 0) { self.advance_tok(); } else { break; }
+                    } else if (depth_vs == 1 && self.is_type_start() && !self.check_tok(kw_const)) {
+                        i32 saved_pos = self.current;
+                        type_node* ft = self.parse_type();
+                        if (self.check_tok(id)) {
+                            lexer.token_t fname = self.consume_tok(id, "field name");
+                            if (self.check_tok(sm)) {
+                                self.advance_tok();
+                                if (fc < 8) {
+                                    ed.variant_field_names_flat[vi * 8 + fc] = lexer.str_dup(fname.value);
+                                    ed.variant_field_type_flat[vi * 8 + fc]  = (i8*)ft;
+                                    fc = fc + 1;
+                                }
+                            } else if (self.check_tok(oparen)) {
+                                self.advance_tok(); // consume '('
+                                func_decl* mfd = self.parse_func_body(ft, fname, false);
+                                if (mfd != (func_decl*)0) {
+                                    i32 mc = ed.variant_method_counts[vi];
+                                    if (mc < 8) {
+                                        ed.variant_method_flat[vi * 8 + mc] = (i8*)mfd;
+                                        ed.variant_method_counts[vi] = mc + 1;
+                                    }
+                                }
+                            } else { self.current = saved_pos; self.advance_tok(); }
+                        } else { self.current = saved_pos; self.advance_tok(); }
+                    } else if (depth_vs == 1 && self.check_tok(kw_const) && self.peek_at_type(1) != kw_const) {
+                        i32 saved_pos = self.current;
+                        type_node* ft = self.parse_type();
+                        if (self.check_tok(id)) {
+                            lexer.token_t fname = self.consume_tok(id, "field name");
+                            if (self.check_tok(sm)) {
+                                self.advance_tok();
+                                if (fc < 8) {
+                                    ed.variant_field_names_flat[vi * 8 + fc] = lexer.str_dup(fname.value);
+                                    ed.variant_field_type_flat[vi * 8 + fc]  = (i8*)ft;
+                                    fc = fc + 1;
+                                }
+                            } else if (self.check_tok(oparen)) {
+                                self.advance_tok(); // consume '('
+                                func_decl* mfd = self.parse_func_body(ft, fname, false);
+                                if (mfd != (func_decl*)0) {
+                                    i32 mc = ed.variant_method_counts[vi];
+                                    if (mc < 8) {
+                                        ed.variant_method_flat[vi * 8 + mc] = (i8*)mfd;
+                                        ed.variant_method_counts[vi] = mc + 1;
+                                    }
+                                }
+                            } else { self.current = saved_pos; self.advance_tok(); }
+                        } else { self.current = saved_pos; self.advance_tok(); }
+                    } else { self.advance_tok(); }
+                }
+                self.consume_tok(cbrace, "Expected '}' after variant body");
+                ed.variant_field_counts[vi] = fc;
+            }
+
+            if (self.match_tok(assign)) {
+                expr_node* val_expr = self.parse_expr();
+                if (val_expr.kind == ek_int_lit) { next_val = val_expr.int_val; }
+                ed.variant_vals[vi]    = next_val;
+                ed.variant_has_val[vi] = true;
             } else {
-                ed.variant_vals[ed.variants_len]    = next_val;
-                ed.variant_has_val[ed.variants_len] = false;
+                ed.variant_vals[vi]    = next_val;
+                ed.variant_has_val[vi] = false;
             }
             next_val = next_val + 1;
             ed.variants_len = ed.variants_len + 1;
@@ -1059,11 +1582,12 @@ istruc parser_t {
 
         self.consume_tok(obrace, "Expected '{' after class name");
         while (!self.check_tok(cbrace) && !self.is_at_end_p()) {
-            // Skip modifiers
+            // Skip modifiers: const, static, inline, virtual, override, noexcept, constexpr
             bool skip_mod = true;
             while (skip_mod) {
                 i32 tt = self.peek_type();
-                if (tt == kw_const) {
+                if (tt == kw_const || tt == kw_static || tt == kw_noexcept ||
+                        tt == kw_constexpr || tt == kw_consteval) {
                     self.advance_tok();
                 } else {
                     skip_mod = false;
@@ -1071,6 +1595,39 @@ istruc parser_t {
             }
 
             if (self.check_tok(cbrace)) { break; }
+
+            // Conversion operator: operator TypeName(...) — no return type prefix
+            if (self.check_tok(kw_operator)) {
+                i32 op_nt = self.peek_at_type(1);
+                if (op_nt == kw_arb_int || op_nt == kw_arb_uint || op_nt == kw_arb_float) {
+                    self.advance_tok(); // consume 'operator'
+                    i32 op_tt = self.peek_type();
+                    type_node* conv_ret = self.parse_type();
+                    i8 conv_name[64];
+                    if (op_tt == kw_arb_int) {
+                        snprintf(conv_name, (u64)64, "operator_i%d", (i32)conv_ret.bit_width);
+                    } else if (op_tt == kw_arb_uint) {
+                        snprintf(conv_name, (u64)64, "operator_u%d", (i32)conv_ret.bit_width);
+                    } else {
+                        snprintf(conv_name, (u64)64, "operator_f%d", (i32)conv_ret.bit_width);
+                    }
+                    lexer.token_t conv_nt;
+                    conv_nt.type  = id;
+                    conv_nt.value = lexer.str_dup(conv_name);
+                    conv_nt.line  = 0;
+                    self.consume_tok(oparen, "Expected '(' for conversion operator");
+                    func_decl* conv_fd = self.parse_func_body(conv_ret, conv_nt, false);
+                    if (conv_fd != (func_decl*)0) {
+                        if (nd.decls_len >= nd.decls_cap) {
+                            nd.decls_cap = nd.decls_cap * 2;
+                            nd.decls = (ast_node**)realloc((i8*)nd.decls, sizeof(i8*) * (u64)nd.decls_cap);
+                        }
+                        nd.decls[nd.decls_len] = (ast_node*)conv_fd;
+                        nd.decls_len = nd.decls_len + 1;
+                    }
+                    continue;
+                }
+            }
 
             ast_node* member = self.parse_func_or_var_decl();
             if (member != (ast_node*)0) {
@@ -1084,11 +1641,65 @@ istruc parser_t {
         }
         self.consume_tok(cbrace, "Expected '}' after class body");
         self.match_tok(sm);
-        return (ast_node*)nd;
+
+        // Post-process: split var_decl fields vs func_decl methods.
+        // Build a struct_decl for the fields, then a namespace_decl with
+        // the struct_decl first, followed by the method func_decls.
+        struct_decl* sd = (struct_decl*)malloc(sizeof(parser__NS_struct_decl));
+        memset((i8*)sd, 0, sizeof(parser__NS_struct_decl));
+        sd.kind       = nd_struct_decl;
+        sd.line       = ln;
+        sd.name       = lexer.str_dup(nd.name);
+        sd.fields_cap = 8;
+        sd.fields     = (var_decl**)malloc(sizeof(i8*) * (u64)sd.fields_cap);
+        sd.fields_len = 0;
+
+        namespace_decl* out = (namespace_decl*)malloc(sizeof(parser__NS_namespace_decl));
+        memset((i8*)out, 0, sizeof(parser__NS_namespace_decl));
+        out.kind      = nd_namespace_decl;
+        out.line      = ln;
+        out.name      = nd.name;
+        out.decls_cap = nd.decls_len + 4;
+        out.decls     = (ast_node**)malloc(sizeof(i8*) * (u64)out.decls_cap);
+        out.decls_len = 0;
+
+        // Add struct_decl as first child (fields collected below)
+        out.decls[0]  = (ast_node*)sd;
+        out.decls_len = 1;
+
+        // Pass: fields → struct, methods → namespace
+        i32 pi = 0;
+        while (pi < nd.decls_len) {
+            ast_node* m = nd.decls[pi];
+            if (m != (ast_node*)0 && m.kind == nd_var_decl) {
+                if (sd.fields_len >= sd.fields_cap) {
+                    sd.fields_cap = sd.fields_cap * 2;
+                    sd.fields = (var_decl**)realloc((i8*)sd.fields, sizeof(i8*) * (u64)sd.fields_cap);
+                }
+                sd.fields[sd.fields_len] = (var_decl*)m;
+                sd.fields_len = sd.fields_len + 1;
+            } else if (m != (ast_node*)0) {
+                if (out.decls_len >= out.decls_cap) {
+                    out.decls_cap = out.decls_cap * 2;
+                    out.decls = (ast_node**)realloc((i8*)out.decls, sizeof(i8*) * (u64)out.decls_cap);
+                }
+                out.decls[out.decls_len] = m;
+                out.decls_len = out.decls_len + 1;
+            }
+            pi = pi + 1;
+        }
+        free((i8*)nd.decls);
+        free((i8*)nd);
+        return (ast_node*)out;
     }
 
     ast_node* parse_top_level(parser_t* self) {
         if (self.check_tok(kw_struct))     { return (ast_node*)self.parse_struct_decl(); }
+        if (self.check_tok(kw_union))      {
+            struct_decl* ud = self.parse_struct_decl();
+            if (ud != (struct_decl*)0) { ud.is_union = true; }
+            return (ast_node*)ud;
+        }
         if (self.check_tok(kw_enum))       { return (ast_node*)self.parse_enum_decl(); }
         if (self.check_tok(kw_typedef))    { return (ast_node*)self.parse_typedef_decl(); }
         if (self.check_tok(kw_istruc))     { return self.parse_class_decl_stub(); }
@@ -1100,28 +1711,112 @@ istruc parser_t {
             while (!self.check_tok(cbracket) && !self.is_at_end_p()) {
                 self.advance_tok();
             }
-            if (!self.is_at_end_p()) { self.advance_tok(); }
+            if (!self.is_at_end_p()) { self.advance_tok(); } // consume ']'
+            return self.parse_top_level();
         }
-        if (self.check_tok(kw_smem)) {
-            // memstr: treat like istruc
-            self.advance_tok();
-            // consume name and body
-            self.consume_tok(id, "Expected memstr name");
-            if (self.check_tok(obrace)) {
-                i32 depth = 1;
-                self.advance_tok();
-                while (depth > 0 && !self.is_at_end_p()) {
-                    if (self.check_tok(obrace)) { depth = depth + 1; }
-                    else if (self.check_tok(cbrace)) { depth = depth - 1; }
-                    self.advance_tok();
-                }
+        if (self.check_tok(kw_smem)) { return self.parse_class_decl_stub(); }
+        // using Alias = Type; — treat as typedef
+        if (self.check_tok(kw_using)) {
+            self.advance_tok(); // consume 'using'
+            typedef_decl* td = (typedef_decl*)malloc(sizeof(parser__NS_typedef_decl));
+            memset((i8*)td, 0, sizeof(parser__NS_typedef_decl));
+            td.kind = nd_typedef_decl;
+            td.name = lexer.str_dup(self.consume_id_value("Expected alias name after using"));
+            self.consume_tok(assign, "Expected '=' in using declaration");
+            td.target = self.parse_type();
+            self.consume_tok(sm, "Expected ';' after using declaration");
+            return (ast_node*)td;
+        }
+        // const_resolve macro definitions
+        if (self.check_tok(kw_const_resolve)) {
+            self.advance_tok(); // consume keyword
+            i8* macro_name = (i8*)0;
+            if (self.check_tok(id)) {
+                lexer.token_t nm_tok = self.advance_tok();
+                macro_name = lexer.str_dup(nm_tok.value);
             }
-            // Return empty node
-            namespace_decl* nd = (namespace_decl*)malloc(sizeof(parser__NS_namespace_decl));
-            memset((i8*)nd, 0, sizeof(parser__NS_namespace_decl));
-            nd.kind = nd_namespace_decl;
-            nd.name = lexer.str_dup("__memstr__");
-            return (ast_node*)nd;
+            if (macro_name == (i8*)0) { return (ast_node*)0; }
+            self.consume_tok(obrace, "Expected '{' after const_resolve name");
+            // Parse rules until '}'
+            while (!self.check_tok(cbrace) && !self.is_at_end_p()) {
+                i8* param_names_buf[16];
+                i32 param_count = 0;
+                // Pattern: (...) or [...]
+                i32 pat_open  = self.check_tok(oparen)   ? oparen   : (self.check_tok(obracket) ? obracket : -1);
+                i32 pat_close = (pat_open == oparen)      ? cparen   : (pat_open == obracket ? cbracket : -1);
+                if (pat_open != -1) {
+                    self.advance_tok(); // consume open
+                    while (!self.check_tok(pat_close) && !self.is_at_end_p()) {
+                        if (self.check_tok(dollar)) {
+                            self.advance_tok(); // '$'
+                            i8* pname = (i8*)0;
+                            if (self.check_tok(id)) {
+                                lexer.token_t pn_tok = self.advance_tok();
+                                pname = lexer.str_dup(pn_tok.value);
+                            }
+                            if (self.check_tok(colon)) {
+                                self.advance_tok(); // ':'
+                                self.advance_tok(); // type fragment
+                            }
+                            if (pname != (i8*)0 && param_count < 16) {
+                                param_names_buf[param_count] = pname;
+                                param_count = param_count + 1;
+                            }
+                        } else {
+                            self.advance_tok(); // skip literal match tokens
+                        }
+                        if (self.check_tok(comma) && !self.check_tok(pat_close)) { self.advance_tok(); }
+                    }
+                    self.consume_tok(pat_close, "Expected closing delimiter for macro pattern");
+                }
+                // Consume '=>'
+                if (self.check_tok(assign)) { self.advance_tok(); }
+                if (self.check_tok(gt))     { self.advance_tok(); }
+                // Collect template tokens
+                i32 tpl_cap = 64;
+                lexer.token_t* tpl = (lexer.token_t*)malloc(sizeof(lexer__NS_token_t) * (u64)tpl_cap);
+                i32 tpl_len = 0;
+                if (self.check_tok(obrace)) {
+                    self.advance_tok(); // consume '{'
+                    i32 depth_t = 1;
+                    while (depth_t > 0 && !self.is_at_end_p()) {
+                        lexer.token_t cur = self.peek_tok();
+                        if (cur.type == obrace) { depth_t = depth_t + 1; }
+                        else if (cur.type == cbrace) {
+                            depth_t = depth_t - 1;
+                            if (depth_t == 0) { self.advance_tok(); break; }
+                        }
+                        if (tpl_len >= tpl_cap) {
+                            tpl_cap = tpl_cap * 2;
+                            tpl = (lexer.token_t*)realloc((i8*)tpl, sizeof(lexer__NS_token_t) * (u64)tpl_cap);
+                        }
+                        tpl[tpl_len] = cur;
+                        tpl_len = tpl_len + 1;
+                        self.advance_tok();
+                    }
+                }
+                // Store macro definition
+                macro_def_t* mdef = (macro_def_t*)malloc(sizeof(parser__NS_macro_def_t));
+                mdef.name         = macro_name;
+                mdef.param_count  = param_count;
+                mdef.template_toks = (i8*)tpl;
+                mdef.template_len  = tpl_len;
+                mdef.param_names   = (i8**)malloc(sizeof(i8*) * (u64)(param_count + 1));
+                i32 pi = 0;
+                while (pi < param_count) {
+                    mdef.param_names[pi] = param_names_buf[pi];
+                    pi = pi + 1;
+                }
+                if (self.macros_len >= self.macros_cap) {
+                    self.macros_cap = self.macros_cap * 2;
+                    self.macros = (macro_def_t**)realloc((i8*)self.macros, sizeof(i8*) * (u64)self.macros_cap);
+                }
+                self.macros[self.macros_len] = mdef;
+                self.macros_len = self.macros_len + 1;
+                if (self.check_tok(comma)) { self.advance_tok(); }
+            }
+            self.consume_tok(cbrace, "Expected '}' after const_resolve body");
+            return (ast_node*)0;
         }
         return self.parse_func_or_var_decl();
     }
@@ -1182,7 +1877,45 @@ istruc parser_t {
             }
             self.consume_tok(cbracket, "Expected ']' after array size");
         }
-        if (self.match_tok(assign)) {
+        // Constructor call: TypeName varname(args...)
+        if (self.match_tok(oparen)) {
+            vd.has_ctor_parens = true;
+            i32 ctor_cap2 = 4;
+            vd.ctor_args = (i8**)malloc(sizeof(i8*) * (u64)ctor_cap2);
+            vd.ctor_args_len = 0;
+            if (!self.check_tok(cparen)) {
+                bool p_ctor2 = true;
+                while (p_ctor2) {
+                    if (vd.ctor_args_len >= ctor_cap2) {
+                        ctor_cap2 = ctor_cap2 * 2;
+                        vd.ctor_args = (i8**)realloc((i8*)vd.ctor_args, sizeof(i8*) * (u64)ctor_cap2);
+                    }
+                    vd.ctor_args[vd.ctor_args_len] = (i8*)self.parse_assignment();
+                    vd.ctor_args_len = vd.ctor_args_len + 1;
+                    if (!self.match_tok(comma)) { p_ctor2 = false; }
+                }
+            }
+            self.consume_tok(cparen, "Expected ')' after constructor args");
+        } else if (self.match_tok(obrace)) {
+            // Brace constructor: TypeName varname{args...}
+            vd.has_ctor_parens = true;
+            i32 ctor_cap3 = 4;
+            vd.ctor_args = (i8**)malloc(sizeof(i8*) * (u64)ctor_cap3);
+            vd.ctor_args_len = 0;
+            if (!self.check_tok(cbrace)) {
+                bool p_ctor3 = true;
+                while (p_ctor3) {
+                    if (vd.ctor_args_len >= ctor_cap3) {
+                        ctor_cap3 = ctor_cap3 * 2;
+                        vd.ctor_args = (i8**)realloc((i8*)vd.ctor_args, sizeof(i8*) * (u64)ctor_cap3);
+                    }
+                    vd.ctor_args[vd.ctor_args_len] = (i8*)self.parse_assignment();
+                    vd.ctor_args_len = vd.ctor_args_len + 1;
+                    if (!self.match_tok(comma)) { p_ctor3 = false; }
+                }
+            }
+            self.consume_tok(cbrace, "Expected '}' after constructor args");
+        } else if (self.match_tok(assign)) {
             vd.init     = self.parse_expr();
             vd.has_init = true;
         }
@@ -1234,6 +1967,29 @@ istruc parser_t {
     ast_node* parse_for_stmt(parser_t* self) {
         u64 ln = (u64)self.advance_line_get();  // consume 'for'
         bool has_parens = self.match_tok(oparen);
+
+        // Try range-for: for (T name : expr)
+        if (self.is_type_start()) {
+            i32 saved_pos = self.current;
+            bool saved_err = self.had_parse_error;
+            type_node* rvar_type = self.parse_type();
+            if (self.check_tok(id) && self.peek_at_type(1) == colon) {
+                for_range_stmt* rn = (for_range_stmt*)malloc(sizeof(parser__NS_for_range_stmt));
+                memset((i8*)rn, 0, sizeof(parser__NS_for_range_stmt));
+                rn.kind = nd_for_range_stmt;
+                rn.line = ln;
+                rn.var_type = rvar_type;
+                rn.var_name = self.advance_value_get();  // consume name
+                self.advance_tok();  // consume ':'
+                rn.range = self.parse_expr();
+                if (has_parens) { self.consume_tok(cparen, "Expected ')' after range-for"); }
+                rn.body = self.parse_stmt();
+                return (ast_node*)rn;
+            }
+            // Not a range-for; restore and fall through to C-style for
+            self.current = saved_pos;
+            self.had_parse_error = saved_err;
+        }
 
         for_stmt* n = (for_stmt*)malloc(sizeof(parser__NS_for_stmt));
         memset((i8*)n, 0, sizeof(parser__NS_for_stmt));
@@ -1351,7 +2107,7 @@ istruc parser_t {
     ast_node* parse_defer_stmt(parser_t* self) {
         defer_stmt* n = (defer_stmt*)malloc(sizeof(parser__NS_defer_stmt));
         memset((i8*)n, 0, sizeof(parser__NS_defer_stmt));
-        n.kind = nd_defer_stmt;
+        n.kind = self.check_tok(kw_errdefer) ? nd_errdefer_stmt : nd_defer_stmt;
         n.line = (u64)self.advance_line_get();
         if (self.check_tok(obrace)) {
             n.blk      = (i8*)self.parse_block();
@@ -1744,6 +2500,47 @@ istruc parser_t {
             n.operand = self.parse_unary();
             return n;
         }
+        if (tt == kw_noexcept) {
+            // noexcept(expr) — always evaluates to true (1) in this compiler
+            self.advance_tok();
+            expr_node* n = alloc_expr_node();
+            n.kind = ek_int_lit; n.line = ln; n.int_val = 1;
+            if (self.check_tok(oparen)) {
+                self.advance_tok();
+                self.parse_expr(); // consume but discard the expression
+                self.consume_tok(cparen, "Expected ')' after noexcept argument");
+            }
+            return n;
+        }
+        if (tt == kw_try) {
+            // try expr — propagates error upward; yields value on success
+            self.advance_tok();
+            expr_node* n = alloc_expr_node();
+            n.kind = ek_try_expr;
+            n.line = ln;
+            n.operand = self.parse_unary();
+            return n;
+        }
+        if (tt == kw_error) {
+            // error.Variant or error.Variant(payload) — return -1 sentinel
+            self.advance_tok(); // consume 'error'
+            expr_node* payload_expr = (expr_node*)0;
+            if (self.check_tok(dot)) {
+                self.advance_tok(); // consume '.'
+                if (self.check_tok(id)) { self.advance_tok(); } // consume variant name
+                // Optional payload: error.Variant(expr)
+                if (self.check_tok(oparen)) {
+                    self.advance_tok(); // consume '('
+                    if (!self.check_tok(cparen)) { payload_expr = self.parse_expr(); }
+                    self.consume_tok(cparen, "Expected ')' after error payload");
+                }
+            }
+            expr_node* n = alloc_expr_node();
+            n.kind    = ek_error_lit;
+            n.line    = ln;
+            n.operand = payload_expr;
+            return n;
+        }
         if (tt == kw_sizeof) {
             self.advance_tok();
             expr_node* n = alloc_expr_node();
@@ -1762,7 +2559,7 @@ istruc parser_t {
         if (tt == oparen) {
             i32 saved = self.current;
             self.advance_tok();  // consume (
-            if (self.is_type_start()) {
+            if (self.is_cast_start()) {
                 type_node* ct = self.parse_type();
                 if (self.check_tok(cparen)) {
                     self.advance_tok();  // consume )
@@ -1784,7 +2581,7 @@ istruc parser_t {
 
         bool running = true;
         while (running) {
-            if (self.check_tok(dot)) {
+            if (self.check_tok(dot) && self.peek_at_type(1) != obrace) {
                 self.advance_tok();
                 lexer.token_t mem_name = self.consume_tok(id, "Expected member name after '.'");
                 if (self.match_tok(oparen)) {
@@ -1839,6 +2636,74 @@ istruc parser_t {
                 u64 ln = (u64)self.advance_line_get();
                 expr_node* n = alloc_expr_node();
                 n.kind = ek_unary; n.line = ln; n.uop = uop_post_dec; n.operand = lhs;
+                lhs = n;
+            } else if (self.check_tok(kw_except)) {
+                self.advance_tok(); // consume 'except'
+                i8* handler_var = (i8*)0;
+                if (self.check_tok(bit_or)) {
+                    self.advance_tok(); // consume '|'
+                    if (self.check_tok(id)) {
+                        lexer.token_t evar_tok = self.advance_tok();
+                        handler_var = lexer.str_dup(evar_tok.value);
+                    }
+                    self.consume_tok(bit_or, "Expected '|' after except variable");
+                }
+                i8* handler_blk = (i8*)0;
+                if (self.check_tok(obrace)) {
+                    handler_blk = (i8*)self.parse_block();
+                }
+                expr_node* n = alloc_expr_node();
+                n.kind = ek_except_expr;
+                n.line = (u64)self.prev_line();
+                n.object = lhs;
+                n.member_name = handler_var;
+                n.handler_block = handler_blk;
+                lhs = n;
+            } else if (self.check_tok(obrace) && self.peek_at_type(1) == dot) {
+                // ADT named-struct constructor: expr { .field = val, ... }
+                u64 brace_ln = (u64)self.advance_line_get(); // consume '{'
+                expr_node* n = alloc_expr_node();
+                n.kind = ek_class_init; n.line = brace_ln;
+                n.object = lhs; // base expression (e.g., event.key_press)
+                str_vec field_names; str_vec_init(&field_names);
+                expr_ptr_vec field_vals; expr_ptr_vec_init(&field_vals);
+                while (!self.check_tok(cbrace) && !self.is_at_end_p()) {
+                    self.consume_tok(dot, "Expected '.' in field init");
+                    lexer.token_t fn2 = self.consume_tok(id, "Expected field name");
+                    self.consume_tok(assign, "Expected '=' in field init");
+                    expr_node* fv = self.parse_expr();
+                    str_vec_push(&field_names, lexer.str_dup(fn2.value));
+                    expr_ptr_vec_push(&field_vals, fv);
+                    self.match_tok(comma);
+                }
+                self.consume_tok(cbrace, "Expected '}' after field inits");
+                n.field_names = field_names.data;
+                n.field_vals  = field_vals.data;
+                n.field_count = field_names.len;
+                lhs = n;
+            } else if (self.check_tok(dot) && self.peek_at_type(1) == obrace) {
+                // ADT istruc constructor: expr .{ .field = val, ... }
+                u64 dot_ln = (u64)self.advance_line_get(); // consume '.'
+                self.advance_tok(); // consume '{'
+                expr_node* n = alloc_expr_node();
+                n.kind = ek_class_init; n.line = dot_ln;
+                n.object = lhs;
+                n.is_implicit_init = true;
+                str_vec field_names; str_vec_init(&field_names);
+                expr_ptr_vec field_vals; expr_ptr_vec_init(&field_vals);
+                while (!self.check_tok(cbrace) && !self.is_at_end_p()) {
+                    self.consume_tok(dot, "Expected '.' in field init");
+                    lexer.token_t fn2 = self.consume_tok(id, "Expected field name");
+                    self.consume_tok(assign, "Expected '=' in field init");
+                    expr_node* fv = self.parse_expr();
+                    str_vec_push(&field_names, lexer.str_dup(fn2.value));
+                    expr_ptr_vec_push(&field_vals, fv);
+                    self.match_tok(comma);
+                }
+                self.consume_tok(cbrace, "Expected '}' after field inits");
+                n.field_names = field_names.data;
+                n.field_vals  = field_vals.data;
+                n.field_count = field_names.len;
                 lhs = n;
             } else {
                 running = false;
@@ -1927,6 +2792,52 @@ istruc parser_t {
             self.advance_tok();
             i8* name = lexer.str_dup(tok.value);
 
+            // Generic call: func<Type>(args) — parse and save type args
+            i8** gen_ta_ptrs = (i8**)0;
+            i32 gen_ta_len   = 0;
+            if (self.check_tok(lt)) {
+                i32 saved_g = self.current;
+                self.advance_tok(); // consume '<'
+                i32 gen_ta_cap = 4;
+                gen_ta_ptrs = (i8**)malloc(sizeof(i8*) * (u64)gen_ta_cap);
+                i32 depth_gc = 1;
+                while (depth_gc > 0 && !self.is_at_end_p()) {
+                    i32 tgc = self.peek_type();
+                    if (tgc == gt && depth_gc == 1) {
+                        depth_gc = 0; self.advance_tok();
+                    } else if (tgc == lt) { depth_gc = depth_gc + 1; self.advance_tok(); }
+                    else if (tgc == gt)   { depth_gc = depth_gc - 1; self.advance_tok(); }
+                    else if (tgc == right && depth_gc <= 2) { depth_gc = 0; self.advance_tok(); }
+                    else if (tgc == comma) { self.advance_tok(); }
+                    else if (tgc == question) { depth_gc = 0; } // ternary — not generic args
+                    else if (tgc == cparen || tgc == cbrace || tgc == sm) { depth_gc = 0; } // not inside generic args
+                    else if (self.is_type_start()) {
+                        type_node* gta = self.parse_type();
+                        if (gen_ta_len >= gen_ta_cap) {
+                            gen_ta_cap = gen_ta_cap * 2;
+                            gen_ta_ptrs = (i8**)realloc((i8*)gen_ta_ptrs, sizeof(i8*) * (u64)gen_ta_cap);
+                        }
+                        gen_ta_ptrs[gen_ta_len] = (i8*)gta;
+                        gen_ta_len = gen_ta_len + 1;
+                    } else { self.advance_tok(); }
+                }
+                // Only treat as generic if followed by '('
+                if (!self.check_tok(oparen)) {
+                    self.current = saved_g;
+                    free((i8*)gen_ta_ptrs);
+                    gen_ta_ptrs = (i8**)0;
+                    gen_ta_len  = 0;
+                }
+            }
+
+            // Macro expansion: check if name is a const_resolve macro
+            if (self.check_tok(oparen)) {
+                macro_def_t* mdef = self.find_macro(name);
+                if (mdef != (macro_def_t*)0) {
+                    return self.expand_macro_call(mdef);
+                }
+            }
+
             // Function call or identifier
             if (self.match_tok(oparen)) {
                 expr_node* callee = alloc_expr_node();
@@ -1949,8 +2860,10 @@ istruc parser_t {
                     }
                 }
                 self.consume_tok(cparen, "Expected ')' after arguments");
-                call_n.args     = args.data;
-                call_n.args_len = args.len;
+                call_n.args          = args.data;
+                call_n.args_len      = args.len;
+                call_n.type_args     = (type_node**)gen_ta_ptrs;
+                call_n.type_args_len = gen_ta_len;
                 return call_n;
             }
 

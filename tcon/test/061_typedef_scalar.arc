@@ -1,5 +1,5 @@
-typedef i32 Score;
-typedef f64 Real;
+using i32 Score;
+using f64 Real;
 
 Score triple(Score s) { return s * 3; }
 

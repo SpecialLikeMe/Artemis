@@ -13,13 +13,13 @@ i32 main() {
     i32 err_fired = 0;
 
     // propagated error hits the except handler
-    caller(10, 0) except |e| {
+    caller(10, 0) catch |e| {
         err_fired = 1;
     }
     if (err_fired != 1) { return 1; }
 
     // successful path: handler must NOT fire
-    caller(10, 2) except |e| {
+    caller(10, 2) catch |e| {
         err_fired = 99;
     }
     if (err_fired != 1) { return 2; }

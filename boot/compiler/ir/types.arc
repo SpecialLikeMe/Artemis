@@ -2,6 +2,39 @@
 
 namespace ir {
 
+// Compute byte size of an LLVM type without requiring data layout.
+u64 llvm_type_byte_size(i8* ty) {
+    if (ty == (i8*)0) { return 8; }
+    i32 k = LLVMGetTypeKind(ty);
+    if (k == LLVMIntegerTypeKind) {
+        u32 bits = LLVMGetIntTypeWidth(ty);
+        return (u64)((bits + 7) / 8);
+    }
+    if (k == LLVMFloatTypeKind)  { return 4; }
+    if (k == LLVMDoubleTypeKind) { return 8; }
+    if (k == LLVMX86_FP80TypeKind) { return 10; }
+    if (k == LLVMPointerTypeKind) { return 8; }
+    if (k == LLVMArrayTypeKind) {
+        i8* elem_t = LLVMGetElementType(ty);
+        u64 elem_sz = llvm_type_byte_size(elem_t);
+        u32 cnt = LLVMGetArrayLength(ty);
+        return elem_sz * (u64)cnt;
+    }
+    if (k == LLVMStructTypeKind) {
+        // Sum field sizes (conservative: no padding)
+        u32 nf = LLVMCountStructElementTypes(ty);
+        u64 total = 0;
+        u32 fi = 0;
+        while (fi < nf) {
+            i8* ft = LLVMStructGetTypeAtIndex(ty, fi);
+            total = total + llvm_type_byte_size(ft);
+            fi = fi + 1;
+        }
+        return total;
+    }
+    return 8;
+}
+
 // Returns true if the type_node is an unsigned integer primitive.
 bool is_unsigned_type_node(parser.type_node* t) {
     if (t == (parser.type_node*)0) { return false; }
@@ -98,8 +131,14 @@ i8* llvm_type_of(parser.type_node* t, ir_context* ctx) {
                 }
             }
             if (base == (i8*)0) {
-                // Fallback to i8* (opaque pointer)
-                base = LLVMInt8TypeInContext(ctx.llvm_ctx);
+                // Check type parameter bindings (for generic instantiation)
+                i8* tp_t = st_map_get(&ctx.type_param_bindings, name);
+                if (tp_t != (i8*)0) {
+                    base = tp_t;
+                } else {
+                    // Fallback to i8* (opaque pointer)
+                    base = LLVMInt8TypeInContext(ctx.llvm_ctx);
+                }
             }
         }
     }
@@ -128,6 +167,29 @@ i8* llvm_type_of(parser.type_node* t, ir_context* ctx) {
     }
 
     return base;
+}
+
+// Returns the bare LLVMFunctionType for a func-ptr type node (no pointer wrapper).
+// Used to store the function type for indirect-call resolution in opaque-pointer mode.
+i8* llvm_func_type_of(parser.type_node* t, ir_context* ctx) {
+    if (t == (parser.type_node*)0) { return (i8*)0; }
+    if (!t.is_func_ptr || t.fp_ret == (i8*)0) { return (i8*)0; }
+    i8* ret_t = llvm_type_of((parser.type_node*)t.fp_ret, ctx);
+    i32 nparams = t.fp_params_len;
+    i8** param_ts = (i8**)0;
+    if (nparams > 0) {
+        param_ts = (i8**)malloc(sizeof(i8*) * (u64)nparams);
+        i32 pi = 0;
+        while (pi < nparams) {
+            parser.type_node* pt = (parser.type_node*)t.fp_params[pi];
+            param_ts[pi] = llvm_type_of(pt, ctx);
+            pi = pi + 1;
+        }
+    }
+    i32 variadic = t.fp_variadic ? 1 : 0;
+    i8* fn_t = LLVMFunctionType(ret_t, param_ts, nparams, variadic);
+    if (param_ts != (i8**)0) { free((i8*)param_ts); }
+    return fn_t;
 }
 
 // Resolve typedef alias: returns the underlying type_node.

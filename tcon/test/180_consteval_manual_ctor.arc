@@ -12,8 +12,8 @@ i32 main() {
     if (t.elapsed() != 1) { return 1; }
     if (t.start != 10) { return 2; }
 
-    // consteval: manual ctor call
-    consteval Timer u;
+    // comptime: manual ctor call
+    comptime Timer u;
     u.__construct__(20);
     u.tick();
     u.tick();

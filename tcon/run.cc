@@ -109,6 +109,14 @@ int main(int argc, char** argv) {
         extra_flags += argv[i];
     }
 
+    // If the test directory name is "fail" (or ends with /fail or \fail),
+    // treat every test in it as expected-to-fail by default.
+    bool dir_is_fail = false;
+    {
+        std::string dn = fs::path(test_dir).filename().string();
+        if (dn == "fail") dir_is_fail = true;
+    }
+
     std::vector<fs::path> files;
     for (const auto& entry : fs::directory_iterator(test_dir)) {
         if (entry.path().extension() == ".arc")
@@ -128,9 +136,35 @@ int main(int argc, char** argv) {
         std::string outbin = srcstr + ".out";
 #endif
 
+        // Check if test expects compile failure.
+        // Auto-fail if: directory is named "fail", first line is "// EXPECT_FAIL",
+        // or first line starts with "// FAIL".
+        bool expect_fail = dir_is_fail;
+        if (!expect_fail) {
+            FILE* f = fopen(srcstr.c_str(), "r");
+            if (f) {
+                char line[128] = {};
+                fgets(line, sizeof(line), f);
+                fclose(f);
+                if (strncmp(line, "// EXPECT_FAIL", 14) == 0) expect_fail = true;
+                if (strncmp(line, "// FAIL", 7) == 0) expect_fail = true;
+            }
+        }
+
         // Compile
         std::string compile_cmd = bin + std_include + extra_flags + " " + srcstr + " -o " + outbin;
         int crc = run_cmd(compile_cmd);
+        if (expect_fail) {
+            if (crc != 0) {
+                printf("PASS       %s\n", name.c_str());
+                ++passed;
+            } else {
+                printf("FAIL::0  %s  (expected compile error but succeeded)\n", name.c_str());
+                ++failed;
+                fs::remove(outbin);
+            }
+            continue;
+        }
         if (crc != 0) {
             printf("FAIL::%d  %s  (compile error)\n", crc, name.c_str());
             ++failed;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(artemis VERSION 0.1.0 LANGUAGES C CXX)
+project(artemis VERSION 0.1.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,14 +20,65 @@ llvm_map_components_to_libnames(LLVM_LIBS
 # ------------------------------------------------------------------ warnings
 set(WARN_FLAGS -Wall -Wextra -Wpedantic)
 
-# ------------------------------------------------------------------ main executable: artemis
-add_executable(artemis src/main.cpp)
-target_include_directories(artemis PRIVATE ${CMAKE_SOURCE_DIR}/compiler)
-target_link_libraries(artemis PRIVATE ${LLVM_LIBS})
-target_compile_options(artemis PRIVATE ${WARN_FLAGS})
-# Embed the stdlib path at build time so the compiler can find it regardless of CWD.
-target_compile_definitions(artemis PRIVATE
+# ------------------------------------------------------------------ stage-1: C++ bootstrap compiler
+add_executable(artemis_bootstrap boot/cxx/main.cpp)
+target_include_directories(artemis_bootstrap PRIVATE ${CMAKE_SOURCE_DIR}/boot/compiler)
+target_link_libraries(artemis_bootstrap PRIVATE ${LLVM_LIBS})
+target_compile_options(artemis_bootstrap PRIVATE ${WARN_FLAGS})
+target_compile_definitions(artemis_bootstrap PRIVATE
     ARTEMIS_STDLIB_PATH="${CMAKE_SOURCE_DIR}/compiler/std/include")
+
+# ------------------------------------------------------------------ stage-2: self-hosted Artemis compiler
+# Compile compiler/main.arc with the bootstrap to produce the final artemis binary.
+set(ARC_SRC   "${CMAKE_SOURCE_DIR}/compiler/main.arc")
+set(BOOT_LL   "${CMAKE_BINARY_DIR}/artemis_boot.ll")
+set(BOOT_OBJ  "${CMAKE_BINARY_DIR}/artemis_boot.o")
+set(INIT_SRC  "${CMAKE_SOURCE_DIR}/boot/llvm_init.c")
+set(INIT_OBJ  "${CMAKE_BINARY_DIR}/llvm_init.o")
+
+# Compile llvm_init.c shim (provides LLVMInitializeAll*_shim symbols)
+add_custom_command(
+    OUTPUT "${INIT_OBJ}"
+    COMMAND "${CMAKE_C_COMPILER}" -c "${INIT_SRC}" -o "${INIT_OBJ}"
+    DEPENDS "${INIT_SRC}"
+    COMMENT "Compiling llvm_init.c shim"
+    VERBATIM
+)
+
+# Compile compiler/main.arc → LLVM IR
+file(GLOB_RECURSE ARC_SOURCES "${CMAKE_SOURCE_DIR}/compiler/*.arc")
+add_custom_command(
+    OUTPUT "${BOOT_LL}"
+    COMMAND "$<TARGET_FILE:artemis_bootstrap>"
+            "${ARC_SRC}"
+            --unsafe -S
+            -I "${CMAKE_SOURCE_DIR}/compiler/std/include"
+            -o "${BOOT_LL}"
+    DEPENDS artemis_bootstrap ${ARC_SOURCES}
+    COMMENT "Compiling compiler/main.arc → LLVM IR (self-hosting stage)"
+    VERBATIM
+)
+
+# Assemble IR → object file
+add_custom_command(
+    OUTPUT "${BOOT_OBJ}"
+    COMMAND llc -O2 -filetype=obj -o "${BOOT_OBJ}" "${BOOT_LL}"
+    DEPENDS "${BOOT_LL}"
+    COMMENT "Assembling artemis LLVM IR → object file"
+    VERBATIM
+)
+
+# Link self-hosted compiler binary
+add_custom_target(artemis ALL
+    COMMAND "${CMAKE_CXX_COMPILER}"
+            "${BOOT_OBJ}" "${INIT_OBJ}"
+            -o "${CMAKE_BINARY_DIR}/artemis.exe"
+            ${LLVM_LIBS}
+            -lstdc++ -lm
+    DEPENDS "${BOOT_OBJ}" "${INIT_OBJ}"
+    COMMENT "Linking artemis (self-hosted)"
+    VERBATIM
+)
 
 # ------------------------------------------------------------------ aciso build system / package manager
 set(ACISO_SRCS
@@ -52,7 +103,8 @@ if(UNIX)
 endif()
 
 # ------------------------------------------------------------------ install: artemis + aciso + aliases
-install(TARGETS artemis aciso DESTINATION bin)
+install(PROGRAMS "${CMAKE_BINARY_DIR}/artemis.exe" DESTINATION bin)
+install(TARGETS aciso DESTINATION bin)
 
 if(WIN32)
     # Create CMD wrapper scripts so aliases work in every shell context.
@@ -109,7 +161,7 @@ enable_testing()
 
 add_executable(artemis_tests test/runner.cpp)
 target_include_directories(artemis_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/compiler
+    ${CMAKE_SOURCE_DIR}/boot/compiler
     ${CMAKE_SOURCE_DIR}/test)
 target_link_libraries(artemis_tests PRIVATE ${LLVM_LIBS})
 target_compile_options(artemis_tests PRIVATE ${WARN_FLAGS})
@@ -120,12 +172,12 @@ add_test(NAME unit_and_integration
 
 # Pass the built artemis binary path to tests via environment.
 set_tests_properties(unit_and_integration PROPERTIES
-    ENVIRONMENT "ARTEMIS_BIN=$<TARGET_FILE:artemis>")
+    ENVIRONMENT "ARTEMIS_BIN=${CMAKE_BINARY_DIR}/artemis.exe")
 
 # ------------------------------------------------------------------ AddressSanitizer (opt-in)
 option(ENABLE_ASAN "Build with AddressSanitizer + UBSan" OFF)
 if(ENABLE_ASAN)
-    foreach(tgt artemis artemis_tests)
+    foreach(tgt artemis_bootstrap artemis_tests)
         target_compile_options(${tgt} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(${tgt}    PRIVATE -fsanitize=address,undefined)
     endforeach()

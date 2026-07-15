@@ -7,7 +7,7 @@ extern void  free(void* p);
 namespace std {
 namespace alloc {
 
-constexpr i32 SLAB_OBJECTS_PER_SLAB = 64;
+comptime i32 SLAB_OBJECTS_PER_SLAB = 64;
 
 istruc slab_page {
     void*     base;
@@ -51,7 +51,7 @@ istruc slab_page {
 //   void* slots[64] (512)
 //   slab_page* next (8)
 // Total: 544 bytes
-constexpr u64 SLAB_PAGE_SIZE = (u64)544;
+comptime u64 SLAB_PAGE_SIZE = (u64)544;
 
 memstr slab {
     slab_page* head;
@@ -72,7 +72,7 @@ memstr slab {
             pg = (*pg).next;
         }
         // All pages full — allocate a new slab_page
-        consteval slab_page* new_pg = malloc(SLAB_PAGE_SIZE);
+        comptime slab_page* new_pg = malloc(SLAB_PAGE_SIZE);
         (*new_pg).__construct__(self.slot_size);
         (*new_pg).next = self.head;
         self.head = new_pg;

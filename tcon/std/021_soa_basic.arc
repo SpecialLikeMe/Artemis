@@ -1,5 +1,4 @@
 // PASS: make_soa() transposes an AoS struct array into SoA layout.
-extern std.ifo;
 extern std.soa;
 extern std.alloc.bump;
 
@@ -17,7 +16,7 @@ i32 main() {
     aos[3].x = 4; aos[3].y = 40;
 
     // Get type info and transpose
-    std.ifo.ifo_t* ti = get_ifo_t(Vec2);
+    type_info* ti = @typeinfo(Vec2);
     std.soa.soa_layout layout = std.soa.make_soa((void*)aos, ti, 4, scratch);
 
     // The layout should report 2 fields and 4 elements

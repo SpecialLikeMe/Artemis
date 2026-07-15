@@ -3,7 +3,7 @@
 extern void* malloc(u64 n);
 extern void free(void* p);
 
-istruc SimpleAlloc {
+memstr SimpleAlloc {
     i32 count;
     void __construct__(SimpleAlloc* self) { self.count = 0; }
     void* alloc(SimpleAlloc* self, u64 n)  { self.count = self.count + 1; return malloc(n); }

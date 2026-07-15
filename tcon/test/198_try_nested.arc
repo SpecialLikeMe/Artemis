@@ -16,13 +16,13 @@ i32 main() {
     i32 outer_err = 0;
 
     // inner_fn(-1) fails -> try propagates -> outer_fn fails -> except fires
-    outer_fn(-1) except |e| {
+    outer_fn(-1) catch |e| {
         outer_err = 1;
     }
     if (outer_err != 1) { return 1; }
 
     // inner_fn(3) succeeds -> outer_fn returns 8 -> except does NOT fire
-    outer_fn(3) except |e| {
+    outer_fn(3) catch |e| {
         outer_err = 99;
     }
     if (outer_err != 1) { return 2; }

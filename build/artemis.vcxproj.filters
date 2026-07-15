@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\a06e5e545d7bb3f82b68586faf1ea611\artemis_boot.ll.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\a06e5e545d7bb3f82b68586faf1ea611\artemis_boot.o.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\a06e5e545d7bb3f82b68586faf1ea611\llvm_init.o.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\dd2228df4028cd971d4b836c9086638c\artemis.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\devon\Artemis\build\CMakeFiles\artemis" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{BB082EDD-5C18-3970-AC32-E5A7D1FFF1FE}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

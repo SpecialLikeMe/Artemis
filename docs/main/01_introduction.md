@@ -12,11 +12,13 @@ Artemis is a compiled, statically typed systems programming language that genera
 ## Compiler Invocation
 
 ```
-arc file.arc -o output       # compile to executable
-arc file.arc -S              # emit LLVM IR
-arc file.arc -c              # emit object file
-arc run file.arc             # compile and run immediately
+artemis file.arc -o output       # compile to executable
+artemis file.arc -S              # emit LLVM IR
+artemis file.arc -c              # emit object file
+artemis file.arc -O2 -o output   # optimised build
 ```
+
+The compiler binary is `build/artemis.exe` (self-hosting) or `build/artemis_bootstrap_cxx.exe` (bootstrap). Both accept identical flags.
 
 ---
 

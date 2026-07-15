@@ -27,10 +27,10 @@ extern i32    closedir(void* dir);
 namespace std {
 namespace fs {
 
-constexpr i32 F_OK = 0;  // existence test
-constexpr i32 R_OK = 4;  // read permission
-constexpr i32 W_OK = 2;  // write permission
-constexpr i32 X_OK = 1;  // execute permission
+comptime i32 F_OK = 0;  // existence test
+comptime i32 R_OK = 4;  // read permission
+comptime i32 W_OK = 2;  // write permission
+comptime i32 X_OK = 1;  // execute permission
 
 // --- file handle ---
 

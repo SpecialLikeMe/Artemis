@@ -61,45 +61,45 @@ namespace system {
 // --- Platform constants ---
 
 @ifdef _WIN32
-constexpr i32 STDIN  = 0;  // STD_INPUT_HANDLE  = -10 (0xFFFFFFF6), simplified
-constexpr i32 STDOUT = 1;
-constexpr i32 STDERR = 2;
+comptime i32 STDIN  = 0;  // STD_INPUT_HANDLE  = -10 (0xFFFFFFF6), simplified
+comptime i32 STDOUT = 1;
+comptime i32 STDERR = 2;
 
-constexpr u32 MEM_COMMIT   = 0x00001000;
-constexpr u32 MEM_RESERVE  = 0x00002000;
-constexpr u32 MEM_RELEASE  = 0x00008000;
-constexpr u32 PAGE_RW      = 0x04;
+comptime u32 MEM_COMMIT   = 0x00001000;
+comptime u32 MEM_RESERVE  = 0x00002000;
+comptime u32 MEM_RELEASE  = 0x00008000;
+comptime u32 PAGE_RW      = 0x04;
 @else
-constexpr i32 PROT_NONE  = 0x0;
-constexpr i32 PROT_READ  = 0x1;
-constexpr i32 PROT_WRITE = 0x2;
-constexpr i32 PROT_EXEC  = 0x4;
+comptime i32 PROT_NONE  = 0x0;
+comptime i32 PROT_READ  = 0x1;
+comptime i32 PROT_WRITE = 0x2;
+comptime i32 PROT_EXEC  = 0x4;
 
-constexpr i32 MAP_PRIVATE   = 0x02;
-constexpr i32 MAP_ANONYMOUS = 0x20;
-constexpr i32 MAP_ANON      = 0x20;
+comptime i32 MAP_PRIVATE   = 0x02;
+comptime i32 MAP_ANONYMOUS = 0x20;
+comptime i32 MAP_ANON      = 0x20;
 
-constexpr i32 SEEK_SET = 0;
-constexpr i32 SEEK_CUR = 1;
-constexpr i32 SEEK_END = 2;
+comptime i32 SEEK_SET = 0;
+comptime i32 SEEK_CUR = 1;
+comptime i32 SEEK_END = 2;
 
-constexpr i32 O_RDONLY  = 0x0000;
-constexpr i32 O_WRONLY  = 0x0001;
-constexpr i32 O_RDWR    = 0x0002;
-constexpr i32 O_CREAT   = 0x0040;
-constexpr i32 O_TRUNC   = 0x0200;
-constexpr i32 O_APPEND  = 0x0400;
+comptime i32 O_RDONLY  = 0x0000;
+comptime i32 O_WRONLY  = 0x0001;
+comptime i32 O_RDWR    = 0x0002;
+comptime i32 O_CREAT   = 0x0040;
+comptime i32 O_TRUNC   = 0x0200;
+comptime i32 O_APPEND  = 0x0400;
 
-constexpr i32 STDIN  = 0;
-constexpr i32 STDOUT = 1;
-constexpr i32 STDERR = 2;
+comptime i32 STDIN  = 0;
+comptime i32 STDOUT = 1;
+comptime i32 STDERR = 2;
 
-constexpr i32 CLOCK_REALTIME  = 0;
-constexpr i32 CLOCK_MONOTONIC = 1;
+comptime i32 CLOCK_REALTIME  = 0;
+comptime i32 CLOCK_MONOTONIC = 1;
 
-constexpr i32 SIGTERM = 15;
-constexpr i32 SIGKILL = 9;
-constexpr i32 SIGINT  = 2;
+comptime i32 SIGTERM = 15;
+comptime i32 SIGKILL = 9;
+comptime i32 SIGINT  = 2;
 @endif
 
 // --- Portable OS-backed virtual memory allocator ---

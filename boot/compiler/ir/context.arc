@@ -233,6 +233,7 @@ struct struct_meta {
     type_list  field_types;   // LLVMTypeRef*
     bool_list  field_unsigned;
     type_list  field_pointee; // pointee types for pointer fields (null for non-pointers)
+    bool       is_union;    // true if declared as 'union' rather than 'struct'
 }
 
 struct struct_meta_vec {
@@ -266,6 +267,12 @@ struct_meta* struct_meta_find(struct_meta_vec* v, i8* name) {
         i = i + 1;
     }
     return (struct_meta*)0;
+}
+
+bool ctx_is_union(ir_context* ctx, i8* struct_name) {
+    struct_meta* sm = struct_meta_find(&ctx.struct_meta_tbl, struct_name);
+    if (sm == (struct_meta*)0) { return false; }
+    return sm.is_union;
 }
 
 // ---- typedef alias entry ----
@@ -318,10 +325,11 @@ i8* typedef_map_get(typedef_map* m, i8* name) {
 
 // ---- IR scope frame ----
 struct ir_scope_frame {
-    sv_map alloca_ptrs;    // name -> LLVMValueRef (alloca)
-    st_map alloca_types;   // name -> LLVMTypeRef (element type)
-    st_map deref_types;    // name -> LLVMTypeRef (pointed-to type)
-    sb_map alloca_unsigned;// name -> bool
+    sv_map alloca_ptrs;     // name -> LLVMValueRef (alloca)
+    st_map alloca_types;    // name -> LLVMTypeRef (element type)
+    st_map deref_types;     // name -> LLVMTypeRef (pointed-to type)
+    sb_map alloca_unsigned; // name -> bool
+    st_map local_func_types;// name -> LLVMTypeRef (function type for func-ptr locals)
 }
 
 struct scope_frame_vec {
@@ -472,6 +480,13 @@ struct ir_context {
 
     // Error union type (memstr fat type, etc.)
     i8* memstr_fat_type;
+
+    // Generic function support
+    sv_map generic_funcs;       // name -> func_decl* (i8*)
+    st_map type_param_bindings; // type param name -> LLVMTypeRef
+
+    // ADT enum support: enum name -> enum_decl* (i8*)
+    sv_map adt_enum_decls;
 }
 
 // Allocate and initialize an ir_context.
@@ -497,6 +512,9 @@ ir_context* make_ir_context(i8* module_name) {
     defer_stack_init(&ctx.defers);
     defer_stack_init(&ctx.errdefers);
     sv_map_init(&ctx.constexpr_int_vals_map);
+    sv_map_init(&ctx.generic_funcs);
+    st_map_init(&ctx.type_param_bindings);
+    sv_map_init(&ctx.adt_enum_decls);
 
     ctx.current_class_name = (i8*)0;
     ctx.current_namespace  = (i8*)0;
@@ -521,6 +539,7 @@ void ctx_push_scope(ir_context* ctx) {
     st_map_init(&f.alloca_types);
     st_map_init(&f.deref_types);
     sb_map_init(&f.alloca_unsigned);
+    st_map_init(&f.local_func_types);
     scope_frame_vec_push(&ctx.scopes, f);
 }
 
@@ -568,6 +587,22 @@ i8* ctx_lookup_deref_type(ir_context* ctx, i8* name) {
     i32 i = ctx.scopes.len - 1;
     while (i >= 0) {
         i8* v = st_map_get(&ctx.scopes.data[i].deref_types, name);
+        if (v != (i8*)0) { return v; }
+        i = i - 1;
+    }
+    return (i8*)0;
+}
+
+void ctx_declare_local_func_type(ir_context* ctx, i8* name, i8* fn_type) {
+    if (ctx.scopes.len == 0) { ctx_push_scope(ctx); }
+    i32 idx = ctx.scopes.len - 1;
+    st_map_set(&ctx.scopes.data[idx].local_func_types, name, fn_type);
+}
+
+i8* ctx_lookup_local_func_type(ir_context* ctx, i8* name) {
+    i32 i = ctx.scopes.len - 1;
+    while (i >= 0) {
+        i8* v = st_map_get(&ctx.scopes.data[i].local_func_types, name);
         if (v != (i8*)0) { return v; }
         i = i - 1;
     }
@@ -635,10 +670,27 @@ void ctx_add_defer(ir_context* ctx, i8* ptr, bool is_block) {
     defer_scope_push(&ctx.defers.data[ctx.defers.len - 1], di);
 }
 
+void ctx_add_errdefer(ir_context* ctx, i8* ptr, bool is_block) {
+    if (ctx.errdefers.len == 0) { return; }
+    defer_item di;
+    di.ptr      = ptr;
+    di.is_block = is_block;
+    defer_scope_push(&ctx.errdefers.data[ctx.errdefers.len - 1], di);
+}
+
 void ctx_pop_errdefer_scope(ir_context* ctx) {
     if (ctx.errdefers.len > 0) {
         ctx.errdefers.len = ctx.errdefers.len - 1;
     }
+}
+
+defer_scope ctx_pop_errdefer_scope_get(ir_context* ctx) {
+    defer_scope empty;
+    defer_scope_init(&empty);
+    if (ctx.errdefers.len == 0) { return empty; }
+    defer_scope s = ctx.errdefers.data[ctx.errdefers.len - 1];
+    ctx.errdefers.len = ctx.errdefers.len - 1;
+    return s;
 }
 
 // Pop and return the defer scope (caller emits in reverse order).

@@ -3,7 +3,7 @@ extern void* malloc(u64 size);
 extern void free(void* ptr);
 extern void* memset(void* ptr, i32 val, u64 n);
 
-istruc Arena {
+memstr Arena {
     void* base;
     u64   used;
     u64   cap;

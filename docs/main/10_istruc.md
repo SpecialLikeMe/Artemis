@@ -62,14 +62,13 @@ i32 v = c.get();   // equivalent to Counter.get(&c)
 
 ## Constructors (`__construct__`)
 
-A method named `__construct__` is called automatically when a variable is declared with `()` or `{}`:
+A method named `__construct__` is called automatically when a variable is declared with `()`:
 
 ```arc
 Vec3 v(1.0, 2.0, 3.0);   // calls __construct__(1.0, 2.0, 3.0)
-Vec3 w{1.0, 2.0, 3.0};   // same with brace form
 ```
 
-A zero-argument constructor is invoked when you declare with no arguments:
+A zero-argument constructor is invoked when you declare with no arguments and the istruc defines one:
 
 ```arc
 istruc Empty {
@@ -79,36 +78,21 @@ istruc Empty {
 Empty e;    // calls e.__construct__()
 ```
 
-### Multiple Constructors (Overloaded)
+### Brace Syntax — Struct Literal (Not Constructor)
 
-You may define multiple `__construct__` overloads with different signatures. The compiler selects the one matching the call-site argument types.
+`{ }` after a type name is a **struct literal initializer**, not a constructor call:
 
 ```arc
-istruc Buffer {
-    i32* data;
-    i32  cap;
-
-    void __construct__(Buffer* self) {
-        self.data = (i32*)0;
-        self.cap  = 0;
-    }
-
-    void __construct__(Buffer* self, i32 n, &memstr alloc) {
-        self.data = (i32*)alloc.mmap((u64)(sizeof(i32) * n));
-        self.cap  = n;
-    }
-}
-
-Buffer empty_buf;              // zero-arg ctor
-Buffer sized_buf(64, alloc);   // capacity ctor
+Vec3 v = Vec3 { .x = 1.0, .y = 0.0, .z = 0.0 };  // struct literal, not constructor
 ```
+
+This initializes fields by name and does not call `__construct__`. If you want the constructor, always use `()`.
 
 ### Assignment (`=`) vs Construction
 
-**Construction** happens only via `()` or `{}`:
+**Construction** happens only via `()`:
 ```arc
 Vec3 v(1.0, 2.0, 3.0);    // constructor called
-Vec3 w{1.0, 2.0, 3.0};    // constructor called
 ```
 
 **Assignment** (`= expr`) calls `operator=` if the class defines one, otherwise performs a raw memory copy:
@@ -280,12 +264,12 @@ Each distinct instantiation (`Box<i32>`, `Box<f64>`) is compiled to a separate c
 
 ---
 
-## `consteval` — Deferred Construction
+## `comptime` — Deferred Construction
 
 Declare a variable without invoking any constructor, then call it yourself:
 
 ```arc
-consteval Timer u;
+comptime Timer u;
 u.__construct__(20);   // called manually, e.g. inside a conditional
 ```
 

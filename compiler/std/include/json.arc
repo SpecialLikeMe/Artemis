@@ -4,13 +4,13 @@ namespace std {
 namespace json {
 
 // Value kinds
-constexpr i32 JSON_NULL   = 0;
-constexpr i32 JSON_BOOL   = 1;
-constexpr i32 JSON_INT    = 2;
-constexpr i32 JSON_FLOAT  = 3;
-constexpr i32 JSON_STRING = 4;
-constexpr i32 JSON_ARRAY  = 5;
-constexpr i32 JSON_OBJECT = 6;
+comptime i32 JSON_NULL   = 0;
+comptime i32 JSON_BOOL   = 1;
+comptime i32 JSON_INT    = 2;
+comptime i32 JSON_FLOAT  = 3;
+comptime i32 JSON_STRING = 4;
+comptime i32 JSON_ARRAY  = 5;
+comptime i32 JSON_OBJECT = 6;
 
 // Forward decl
 istruc json_val;

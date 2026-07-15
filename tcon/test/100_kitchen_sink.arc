@@ -20,7 +20,7 @@ i32 stack_pop(Stack* s) {
 
 i32 stack_size(Stack* s) { return (*s).top; }
 
-typedef i32 Result;
+using i32 Result;
 
 enum OpCode { Push = 0, Pop = 1 }
 

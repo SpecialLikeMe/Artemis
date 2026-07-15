@@ -50,31 +50,15 @@ printf("Value: %d\n", 42);
 
 ---
 
-## `inline` and `register` Hints
+## `inline` Hint
 
-`inline` is a hint to inline the function at call sites. `register` hints to keep a parameter or local in a CPU register:
-
-```arc
-inline   i32 fast_add(i32 a, i32 b) { return a + b; }
-register i32 hot_var = 0;
-```
-
-These are optimizer hints — the compiler may ignore them.
-
----
-
-## `noexcept`
-
-`noexcept` signals that the function will never return an error. Using `try`, `except`, or `return error.X` inside a `noexcept` function is a compile error:
+`inline` is a hint to inline the function at call sites:
 
 ```arc
-i32 safe_div(i32 a, i32 b) noexcept {
-    if (b == 0) return 0;
-    return a / b;
-}
-
-bool b = noexcept(safe_div(10, 2));   // true at compile time
+inline i32 fast_add(i32 a, i32 b) { return a + b; }
 ```
+
+This is an optimizer hint — the compiler may ignore it.
 
 ---
 
@@ -137,15 +121,16 @@ void* make_buffer(u64 n, &memstr alloc) {
 
 ---
 
-## `sta` — Comptime Type-Erased Parameters
+## `type` — First-Class Types as Parameters
 
-`sta` marks a parameter as compile-time type-erased — the type is resolved at the call site but erased from the mangled name. This is used primarily by the standard library for generic allocator passing:
+`type` is a first-class keyword for compile-time types. A function that accepts a `comptime type` parameter is monomorphized at the call site:
 
 ```arc
-void process(sta x) { /* ... */ }
+comptime type T = i32;
+T identity(T x) { return x; }
 ```
 
-User code rarely needs `sta` directly.
+`comptime type` declarations can also appear at file scope as type aliases. See [Chapter 18](18_comptime.md) for the full `comptime` feature set.
 
 ---
 

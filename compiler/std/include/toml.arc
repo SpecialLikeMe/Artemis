@@ -6,13 +6,13 @@ namespace std {
 namespace toml {
 
 // Value kinds
-constexpr i32 TOML_NULL    = 0;
-constexpr i32 TOML_BOOL    = 1;
-constexpr i32 TOML_INT     = 2;
-constexpr i32 TOML_FLOAT   = 3;
-constexpr i32 TOML_STRING  = 4;
-constexpr i32 TOML_ARRAY   = 5;
-constexpr i32 TOML_TABLE   = 6;
+comptime i32 TOML_NULL    = 0;
+comptime i32 TOML_BOOL    = 1;
+comptime i32 TOML_INT     = 2;
+comptime i32 TOML_FLOAT   = 3;
+comptime i32 TOML_STRING  = 4;
+comptime i32 TOML_ARRAY   = 5;
+comptime i32 TOML_TABLE   = 6;
 
 istruc val;
 istruc pair;

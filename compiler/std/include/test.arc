@@ -12,7 +12,7 @@ namespace test {
 // ---- Test allocator ----
 // Tracks allocation/free counts via malloc/free; detects potential leaks.
 
-constexpr i32 MAX_ALLOCS = 4096;
+comptime i32 MAX_ALLOCS = 4096;
 
 istruc test_alloc {
     i32 count;
@@ -116,7 +116,7 @@ void assert_not_null(void* p, i8* msg, i8* file, i32 line) {
 
 // ---- Test runner ----
 
-constexpr i32 MAX_TESTS = 256;
+comptime i32 MAX_TESTS = 256;
 
 istruc runner {
     i8*  test_names[256];

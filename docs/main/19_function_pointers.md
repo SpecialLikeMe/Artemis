@@ -2,10 +2,10 @@
 
 ## Declaring a Function Pointer Type
 
-Use `typedef` to give a function-pointer type a name:
+Use `using` to give a function-pointer type a name:
 
 ```arc
-typedef i32(i32, i32)* BinaryOp;
+using i32(i32, i32)* BinaryOp;
 ```
 
 This declares `BinaryOp` as a pointer to a function taking two `i32` arguments and returning `i32`.
@@ -40,12 +40,12 @@ istruc Dispatcher {
 
 ## Inline Types
 
-Function pointer types can appear inline without a typedef:
+Function pointer types can appear inline without a using:
 ```arc
 void call_with_5(i32(i32)* fn) { fn(5); }
 ```
 
-> **Challenge:** Build an `EventSystem` istruc that holds up to 8 function pointers of type `void(i32)*`. Add `register(void(i32)* cb)` and `emit(i32 event)` that calls all registered callbacks.
+> **Challenge:** Build an `EventSystem` istruc that holds up to 8 function pointers of type `void(i32)*`. Add `(void(i32)* cb)` and `emit(i32 event)` that calls all registered callbacks.
 
 ---
 

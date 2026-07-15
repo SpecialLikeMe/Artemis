@@ -43,15 +43,15 @@ extern f32 expf(f32 x);
 
 namespace std {
 namespace math {
-constexpr f64 PI     = 3.14159265358979323846;
-constexpr f64 TAU    = 6.28318530717958647692;
-constexpr f64 E      = 2.71828182845904523536;
-constexpr f64 PHI    = 1.61803398874989484820;
-constexpr f64 SQRT2  = 1.41421356237309504880;
-constexpr f64 LN2    = 0.69314718055994530941;
-constexpr f64 LN10   = 2.30258509299404568401;
-constexpr f64 INF    = 1.0 / 0.0;
-constexpr f64 NAN_V  = 0.0 / 0.0;
+comptime f64 PI     = 3.14159265358979323846;
+comptime f64 TAU    = 6.28318530717958647692;
+comptime f64 E      = 2.71828182845904523536;
+comptime f64 PHI    = 1.61803398874989484820;
+comptime f64 SQRT2  = 1.41421356237309504880;
+comptime f64 LN2    = 0.69314718055994530941;
+comptime f64 LN10   = 2.30258509299404568401;
+comptime f64 INF    = 1.0 / 0.0;
+comptime f64 NAN_V  = 0.0 / 0.0;
 
 // --- basic ---
 i32 abs_i32(i32 x)   { return x < 0 ? -x : x; }

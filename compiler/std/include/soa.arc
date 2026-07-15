@@ -236,12 +236,12 @@ istruc kv<K, V> {
 // Usage: soa.zip_each(xs.data, ys.data, n, callback_fn);
 // The callback receives (f32 x, f32 y, i32 index) — use function pointers.
 
-// ---- make_soa: ifo_t-driven AoS → SoA transposition ----
+// ---- make_soa: type_info-driven AoS → SoA transposition ----
 //
 // Given:
 //   - src:        void* pointing to an array of `count` structs, each of
 //                 byte size described by ifo.size
-//   - info:       ifo_t* from get_ifo_t(YourType) — carries field metadata
+//   - info:       type_info* from @typeinfo(YourType) — carries field metadata
 //   - count:      number of elements in the source array
 //   - scratch:    &memstr allocator used for the intermediate SoA block
 //
@@ -258,7 +258,7 @@ istruc kv<K, V> {
 extern void* memcpy(void* dst, void* src, u64 n);
 
 // Descriptor of a transposed SoA block.
-constexpr i32 SOA_MAX_FIELDS = 64;
+comptime i32 SOA_MAX_FIELDS = 64;
 
 istruc soa_layout {
     void*  block;                        // raw allocation (pass to allocator to free)
@@ -268,7 +268,7 @@ istruc soa_layout {
     i32    element_count;                // number of elements per field array
 }
 
-soa_layout make_soa(void* src, std.ifo.ifo_t* info, i32 count, &memstr scratch) {
+soa_layout make_soa(void* src, std.typeinfo.type_info* info, i32 count, &memstr scratch) {
     soa_layout layout;
     layout.field_count   = info.field_count;
     layout.element_count = count;

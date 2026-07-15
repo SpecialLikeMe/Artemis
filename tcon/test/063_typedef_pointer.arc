@@ -1,4 +1,4 @@
-typedef i32* IntPtr;
+using i32* IntPtr;
 
 void zero(IntPtr p) { *p = 0; }
 

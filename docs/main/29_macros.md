@@ -32,7 +32,7 @@ i32 main() {
 | `$name:tt`     | Any single token or balanced `()`/`[]`/`{}`    |
 | `$name:stmt`   | A statement (including its `;`)                 |
 | `$name:block`  | A `{ ... }` block                               |
-| `$name:path`   | A `.` or `.` separated identifier path        |
+| `$name:path`   | A `.`-separated identifier path               |
 
 ---
 

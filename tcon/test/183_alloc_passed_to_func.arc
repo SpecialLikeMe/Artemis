@@ -2,7 +2,7 @@
 extern void* malloc(u64 size);
 extern void free(void* ptr);
 
-istruc Alloc {
+memstr Alloc {
     i32 total_allocs;
     i32 total_frees;
 

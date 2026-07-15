@@ -2,8 +2,8 @@
 
 namespace std {
 
-constexpr i32 SET_RED   = 0;
-constexpr i32 SET_BLACK = 1;
+comptime i32 SET_RED   = 0;
+comptime i32 SET_BLACK = 1;
 
 istruc set_node<K> {
     K           key;

@@ -3,6 +3,7 @@
 // It mirrors the existing C++ compiler driver in src/main.cpp.
 
 @include <compiler/bind/llvm.arc>
+@include <compiler/preproc.arc>
 @include <compiler/lexer/main.arc>
 @include <compiler/parser/expr.arc>
 @include <compiler/parser/main.arc>
@@ -30,18 +31,20 @@ struct cli_opts {
     bool emit_asm;
     bool no_link;
     bool verbose;
+    i8*  stdlib_path;
 }
 
 void cli_opts_init(cli_opts* opts) {
-    opts.input     = (i8*)0;
-    opts.output    = (i8*)0;
-    opts.opt_level = 0;
-    opts.emit_ir   = false;
-    opts.emit_obj  = false;
-    opts.emit_ast  = false;
-    opts.emit_asm  = false;
-    opts.no_link   = false;
-    opts.verbose   = false;
+    opts.input       = (i8*)0;
+    opts.output      = (i8*)0;
+    opts.opt_level   = 0;
+    opts.emit_ir     = false;
+    opts.emit_obj    = false;
+    opts.emit_ast    = false;
+    opts.emit_asm    = false;
+    opts.no_link     = false;
+    opts.verbose     = false;
+    opts.stdlib_path = (i8*)0;
 }
 
 // Parse command line arguments.
@@ -76,6 +79,15 @@ bool parse_args(cli_opts* opts, i32 argc, i8** argv) {
             opts.opt_level = 3;
         } else if (strcmp(arg, "-v") == 0) {
             opts.verbose = true;
+        } else if (strcmp(arg, "--unsafe") == 0) {
+            // Accepted for compatibility with build scripts; no-op in boot compiler.
+        } else if (strcmp(arg, "-I") == 0) {
+            i = i + 1;
+            if (i < argc && opts.stdlib_path == (i8*)0) {
+                opts.stdlib_path = argv[i];
+            }
+        } else if (arg[0] == '-' && arg[1] == 'I') {
+            if (opts.stdlib_path == (i8*)0) { opts.stdlib_path = arg + 2; }
         } else if (arg[0] != '-') {
             // Input file
             if (opts.input != (i8*)0) {
@@ -178,9 +190,13 @@ i32 main(i32 argc, i8** argv) {
         printf("artemis_boot: compiling '%s'\n", opts.input);
     }
 
+    // Preprocess
+    i8* pp_src = preproc.preprocess(src, opts.input, opts.stdlib_path);
+
     // Lex
     lexer.lexer_t lxr;
-    lxr.init(src, src_len);
+    u64 pp_len = (u64)strlen(pp_src);
+    lxr.init(pp_src, pp_len);
     lexer.token_vec toks = lxr.tokenize();
 
     // Parse
@@ -308,10 +324,43 @@ i32 main(i32 argc, i8** argv) {
             return 1;
         }
     } else {
-        // Default: write IR
-        i8* write_err = (i8*)0;
-        LLVMPrintModuleToFile(llvm_mod, output, &write_err);
-        if (write_err != (i8*)0) { LLVMDisposeMessage(write_err); }
+        // Default: compile to object then link into executable.
+        if (tm == (i8*)0) {
+            printf("error: cannot link: no target machine\n");
+            LLVMDisposeModule(llvm_mod);
+            free(src);
+            return 1;
+        }
+        // Build temp object path alongside the output.
+        i8 tmp_obj[2048];
+        snprintf(tmp_obj, (u64)2048, "%s.tmp.o", output);
+
+        i8* emit_err = (i8*)0;
+        i32 emit_rc  = LLVMTargetMachineEmitToFile(tm, llvm_mod,
+                                                    tmp_obj,
+                                                    LLVMObjectFile, &emit_err);
+        if (emit_rc != 0) {
+            printf("error: cannot emit object to '%s': %s\n", tmp_obj, emit_err);
+            LLVMDisposeMessage(emit_err);
+            if (tm != (i8*)0) { LLVMDisposeTargetMachine(tm); }
+            LLVMDisposeModule(llvm_mod);
+            free(src);
+            return 1;
+        }
+
+        // Invoke system linker.  Use gcc as the driver so it pulls in CRT.
+        i8 link_cmd[4096];
+        snprintf(link_cmd, (u64)4096, "gcc \"%s\" -o \"%s\" -lm", tmp_obj, output);
+        if (opts.verbose) { printf("Link: %s\n", link_cmd); }
+        i32 link_rc = system(link_cmd);
+        remove(tmp_obj);
+        if (link_rc != 0) {
+            printf("error: linker failed (exit %d)\n", link_rc);
+            if (tm != (i8*)0) { LLVMDisposeTargetMachine(tm); }
+            LLVMDisposeModule(llvm_mod);
+            free(src);
+            return 1;
+        }
     }
 
     if (opts.verbose) {

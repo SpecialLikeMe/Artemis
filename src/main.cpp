@@ -10,17 +10,17 @@
 #include <stdexcept>
 #include <filesystem>
 
-// Compiler pipeline
-#include "../compiler/preproc/main.hxx"
-#include "../compiler/lexer/main.hxx"
-#include "../compiler/parser/main.hxx"
-#include "../compiler/analysis/main.hxx"
-#include "../compiler/mir/mir.hxx"
-#include "../compiler/lir/lir.hxx"
-#include "../compiler/smt/smt.hxx"
-#include "../compiler/smt/inject.hxx"
-#include "../compiler/ir/main.hxx"
-#include "../compiler/diagnostics.hxx"
+// Compiler pipeline (C++ bootstrap headers — live in src/, not compiler/)
+#include "preproc/main.hxx"
+#include "lexer/main.hxx"
+#include "parser/main.hxx"
+#include "analysis/main.hxx"
+#include "mir/mir.hxx"
+#include "lir/lir.hxx"
+#include "smt/smt.hxx"
+#include "smt/inject.hxx"
+#include "ir/main.hxx"
+#include "diagnostics.hxx"
 
 // LLVM
 #include <llvm-c/Core.h>

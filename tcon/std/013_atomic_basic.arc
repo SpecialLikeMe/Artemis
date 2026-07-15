@@ -27,7 +27,7 @@ i32 main() {
     if (lk.locked.val != 0) { printf("FAIL spin_lock init\n"); return 6; }
 
     // ref_count constructs with count.val = 1
-    std.atomic.ref_count rc;
+    std.atomic.ref_count rc();
     if (rc.count.val != 1) { printf("FAIL ref_count init\n"); return 7; }
 
     return 0;

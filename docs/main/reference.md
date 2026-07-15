@@ -8,13 +8,17 @@
 | `u8`–`u512` | Unsigned integer types (also `uint` = `u32`) |
 | `f8`–`f512` | Floating-point types (also `float` = `f64`) |
 | `bool`, `b1`–`bN` | Boolean types |
+| `nN` | Natural number (≥ 0); alias for `uN` |
+| `zN` | Integer; alias for `iN` |
+| `chN` | N-bit character; alias for `uN` |
+| `cN` | Complex number: `struct { fN re; fN im; }` |
+| `qN` | Rational number: `struct { iN num; iN den; }` |
 | `void` | No-value type / untyped pointer base (`void*`) |
 | `null` | Null pointer / nullable constant |
 | `true`, `false` | Boolean literals |
 | `signed`, `unsigned` | Signedness qualifiers for integer types |
 | `const` | Immutable variable / pointer-to-const-data qualifier |
 | `volatile` | Volatile qualifier (inhibits optimization) |
-| `register` | Register-allocation hint |
 | `inline` | Inline function hint |
 | `extern` | External linkage declaration |
 | `extern "C"` | C-linkage block |
@@ -26,26 +30,23 @@
 | `switch`, `case`, `default` | Multi-way branch |
 | `return` | Return from function |
 | `defer` | Run statement/block at scope exit |
-| `errdefer` | Run statement/block at scope exit only when an error is propagated |
+| `errdefer` | Run statement/block at scope exit only on error path |
 | `struct` | Plain C-style aggregate |
 | `union` | Overlapping-storage aggregate |
 | `enum` | Plain or ADT enum |
-| `typedef` | Type alias |
+| `using` | Type alias / contextual alias (`using let = const auto;`) |
 | `istruc` | Class (struct with methods) |
 | `interface` | Contract declaration |
 | `namespace` | Group functions/types under a qualified name |
 | `operator` | Operator overloading |
-| `noexcept` | Non-throwing function annotation / compile-time test |
-| `constexpr` | Compile-time constant variable |
-| `consteval` | Manually-constructed variable |
-| `auto` | Type inference / error-union placeholder |
-| `using` | Contextual type alias (`using let = const auto;`) |
+| `comptime` | Compile-time constant / manually-constructed variable |
+| `comptime type` | First-class type alias (`comptime type T = i32;`) |
+| `auto` | Type inference / error-union return type placeholder |
 | `try` | Propagate error from `!T` expression |
-| `except` | Catch error from `!T` expression |
-| `res` | Error-handling resource block |
+| `catch` | Catch error from `!T` expression |
 | `error` | Error literal (`error.Name`) |
 | `memstr` | Allocator struct declaration |
-| `sta` | Comptime type-erased parameter |
+| `type` | First-class type value / compile-time type alias |
 | `__asm__` | Inline assembly |
 | `const_resolve` | Compile-time token-rewriting macro |
 | `__token` | Custom token type in proc-macro bodies |
@@ -111,17 +112,14 @@
 
 | Flag | Effect |
 |------|--------|
-| `-o <file>` | Output executable path |
-| `-S` | Emit LLVM IR (`.ll`) |
-| `-c` | Emit object file (`.o`) |
-| `-O0`–`-O3` | Optimisation level |
-| `--target <t>` | LLVM target triple |
-| `-D <name>` | Pre-define preprocessor symbol |
-| `-I <path>` | Add include search path |
-| `-v` | Verbose output |
-| `-l` | Target Linux |
-| `-w` | Target Windows |
-| `-m` | Target macOS |
+| `-o <file>` | Output file path |
+| `-S` | Emit LLVM IR text (`.ll`) instead of binary |
+| `-c` | Emit object file (`.o`), no link |
+| `-O0`–`-O3` | Optimisation level (default `-O0`) |
+| `-I <path>` | Add standard library / include search path |
+| `-v` | Verbose output (show compile steps) |
+| `--unsafe` | Suppress safety checks (required to compile the compiler itself) |
+| `--use-mir` | Enable experimental MIR → LIR pipeline before LLVM IR emission |
 
 ---
 

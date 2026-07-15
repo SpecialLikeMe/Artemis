@@ -2,7 +2,7 @@
 extern void* malloc(u64 n);
 extern void free(void* p);
 
-istruc BufAlloc {
+memstr BufAlloc {
     i32 alloc_count;
     i32 free_count;
 

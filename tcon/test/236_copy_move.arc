@@ -1,0 +1,19 @@
+// PASS: @shcopy and @move semantics on structs.
+struct Point { i32 x; i32 y; }
+i32 main() {
+    Point a;
+    a.x = 3; a.y = 4;
+
+    // @shcopy: shallow copy, independent value
+    Point b = @shcopy(a);
+    if (b.x != 3 || b.y != 4) { return 1; }
+    b.x = 99;
+    if (a.x != 3) { return 2; }  // original unchanged
+
+    // @move: transfers value and zeros source
+    Point c = @move(a);
+    if (c.x != 3 || c.y != 4) { return 3; }
+    if (a.x != 0 || a.y != 0) { return 4; }  // source zeroed
+
+    return 0;
+}

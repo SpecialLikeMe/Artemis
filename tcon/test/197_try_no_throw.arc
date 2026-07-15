@@ -6,7 +6,7 @@ auto add(i32 a, i32 b) !i32 {
 i32 main() {
     i32 err_fired = 0;
 
-    add(3, 4) except |e| {
+    add(3, 4) catch |e| {
         err_fired = 1;
     }
 

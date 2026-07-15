@@ -1,0 +1,10 @@
+^C:\USERS\DEVON\ARTEMIS\BUILD\CMAKEFILES\DD2228DF4028CD971D4B836C9086638C\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/devon/Artemis -BC:/Users/devon/Artemis/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/devon/Artemis/build/artemis.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

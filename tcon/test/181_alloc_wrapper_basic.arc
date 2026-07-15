@@ -2,7 +2,7 @@
 extern void* malloc(u64 size);
 extern void free(void* ptr);
 
-istruc HeapAlloc {
+memstr HeapAlloc {
     i32 count;
 
     void __construct__(HeapAlloc* self) { self.count = 0; }

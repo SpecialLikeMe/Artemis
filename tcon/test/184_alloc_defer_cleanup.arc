@@ -2,7 +2,7 @@
 extern void* malloc(u64 size);
 extern void free(void* ptr);
 
-istruc TrackedAlloc {
+memstr TrackedAlloc {
     i32 live;
     void __construct__(TrackedAlloc* self) { self.live = 0; }
     void* alloc(TrackedAlloc* self, u64 n)  { self.live = self.live + 1; return malloc(n); }

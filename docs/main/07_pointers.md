@@ -144,7 +144,7 @@ const i32 MAX = 100;
 MAX = 200;   // COMPILE ERROR: assignment to const
 ```
 
-`const` variables are not compile-time constants — for that, use `constexpr`. `const` only prevents reassignment at runtime.
+`const` variables are not compile-time constants — for that, use `comptime`. `const` only prevents reassignment at runtime.
 
 ---
 

@@ -7,12 +7,6 @@ istruc vector<T> {
     i32 length;
     i32 cap;
 
-    void __construct__(vector* self) {
-        self.data   = (T*)0;
-        self.length = 0;
-        self.cap    = 0;
-    }
-
     void __construct__(vector* self, i32 initial_cap, &memstr a) {
         self.cap    = initial_cap;
         self.length = 0;

@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\e5b2c1042ed8fa1da6ebc99fc58c9a05\artemis-macos-mkdir.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\e5b2c1042ed8fa1da6ebc99fc58c9a05\artemis-macos-download.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\e5b2c1042ed8fa1da6ebc99fc58c9a05\artemis-macos-update.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\e5b2c1042ed8fa1da6ebc99fc58c9a05\artemis-macos-patch.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\e5b2c1042ed8fa1da6ebc99fc58c9a05\artemis-macos-configure.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\e5b2c1042ed8fa1da6ebc99fc58c9a05\artemis-macos-build.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\build\CMakeFiles\dd2228df4028cd971d4b836c9086638c\artemis-macos-build.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\devon\Artemis\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\devon\Artemis\build\CMakeFiles\artemis-macos-build" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{BB082EDD-5C18-3970-AC32-E5A7D1FFF1FE}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

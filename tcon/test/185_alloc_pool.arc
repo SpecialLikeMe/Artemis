@@ -3,7 +3,7 @@
 extern void* malloc(u64 size);
 extern void free(void* ptr);
 
-istruc Pool {
+memstr Pool {
     void* free_slots[16];   // stack of available slot pointers
     i32   top;              // number of free slots remaining
     void* block;            // backing allocation

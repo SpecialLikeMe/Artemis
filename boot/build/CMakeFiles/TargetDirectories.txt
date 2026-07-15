@@ -1,0 +1,8 @@
+C:/Users/devon/artemis/boot/build/CMakeFiles/intrinsics_gen.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/vt_gen.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/omp_gen.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/acc_gen.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/target_parser_gen.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/artemis_boot.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/edit_cache.dir
+C:/Users/devon/artemis/boot/build/CMakeFiles/rebuild_cache.dir

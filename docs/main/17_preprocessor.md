@@ -61,9 +61,9 @@ Removes a previously defined macro:
 
 ```arc
 @ifdef RELEASE
-    constexpr bool DEBUG = false;
+    comptime bool DEBUG = false;
 @else
-    constexpr bool DEBUG = true;
+    comptime bool DEBUG = true;
 @endif
 ```
 
@@ -83,13 +83,13 @@ Removes a previously defined macro:
 
 ```arc
 @ifdef FAST
-    constexpr i32 OPT = 3;
+    comptime i32 OPT = 3;
 @elifdef SAFE
-    constexpr i32 OPT = 1;
+    comptime i32 OPT = 1;
 @elifndef TINY
-    constexpr i32 OPT = 2;
+    comptime i32 OPT = 2;
 @else
-    constexpr i32 OPT = 0;
+    comptime i32 OPT = 0;
 @endif
 ```
 

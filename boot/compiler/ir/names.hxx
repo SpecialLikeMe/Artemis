@@ -1,0 +1,43 @@
+#pragma once
+#include "types.hxx"
+#include "../parser/main.hxx"
+
+// Encode a single type_node into a short string for name mangling.
+inline std::string mangle_type(const type_node* t) {
+    if (!t) return "v";
+    if (t->is_func_ptr) return "FP";
+    std::string s;
+    for (int i = 0; i < t->pointer_depth; i++) s += "P";
+    if (t->is_primitive) {
+        switch (t->prim.value_or(prim_type_t::void_t)) {
+            case prim_type_t::void_t:    s += "v";  break;
+            case prim_type_t::char_t:    s += "c";  break;
+            case prim_type_t::arb_int:   s += "i" + std::to_string(t->bit_width); break;
+            case prim_type_t::arb_uint:  s += "u" + std::to_string(t->bit_width); break;
+            case prim_type_t::arb_float: s += "f" + std::to_string(t->bit_width); break;
+            case prim_type_t::arb_bool:  s += "b" + std::to_string(t->bit_width); break;
+            default:                     s += "?";  break;
+        }
+    } else {
+        s += t->name.value_or("?");
+    }
+    return s;
+}
+
+// Build the mangled name for an overloaded function: funcname__type1_type2_...
+inline std::string build_mangled_name(const std::string& base, const std::vector<param_decl>& params) {
+    std::string m = base + "__";
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i) m += "_";
+        m += mangle_type(params[i].type);
+    }
+    return m;
+}
+
+// Get the IR name for a func_decl (handles mangling, extern "C", class methods).
+inline std::string ir_func_name(const func_decl* fd) {
+    if (fd->is_extern_c)         return fd->name;
+    if (!fd->mangled_name.empty()) return fd->mangled_name;
+    if (fd->is_overloaded)       return build_mangled_name(fd->name, fd->params);
+    return fd->name;
+}

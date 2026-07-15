@@ -3,7 +3,7 @@ struct _Pair {
     i32 second;
 }
 
-typedef _Pair Pair;
+using _Pair Pair;
 
 Pair make_pair(i32 a, i32 b) {
     Pair p;

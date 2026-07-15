@@ -1,6 +1,6 @@
 # 24. Error Handling
 
-Artemis uses **error unions** instead of exceptions. Functions that may fail declare a `!T` return type. The caller either propagates the error with `try` or catches it with `except`. There is no `throw` keyword and no stack unwinding.
+Artemis uses **error unions** instead of exceptions. Functions that may fail declare a `!T` return type. The caller either propagates the error with `try` or catches it with `catch`. There is no `throw` keyword and no stack unwinding.
 
 ---
 
@@ -38,25 +38,25 @@ Any identifier after `error.` is valid — there is no enum declaration needed. 
 
 ---
 
-## `except` — Catching Errors
+## `catch` — Catching Errors
 
-`expr except |varname| { handler }` catches an error from the preceding `!T` call. The handler block runs **only if** the call returned an error; if the call succeeded, the block is skipped:
+`expr catch |varname| { handler }` catches an error from the preceding `!T` call. The handler block runs **only if** the call returned an error; if the call succeeded, the block is skipped:
 
 ```arc
-maybe_divide(10, 0) except |e| {
+maybe_divide(10, 0) catch |e| {
     // e is error_t: { i32 code; i8* name; i8* payload; }
     printf("Error: %s (code %d)\n", e.name, e.code);
 }
 
 // No error: handler does not run
-maybe_divide(10, 2) except |e| {
+maybe_divide(10, 2) catch |e| {
     printf("This will not print\n");
 }
 ```
 
 ### The `error_t` Struct
 
-The `e` variable in `except |e|` is of type `error_t`, which has these fields:
+The `e` variable in `catch |e|` is of type `error_t`, which has these fields:
 
 ```arc
 struct error_t {
@@ -93,38 +93,6 @@ auto read_config(i8* path) !i32 {
 
 ---
 
-## `res` Block
-
-A `res` block scopes error propagation as an inline unit. `try` inside a `res` block propagates the error out of the block, not the enclosing function:
-
-```arc
-i32 safe_value = 0;
-res {
-    safe_value = try maybe_divide(10, 2);
-}
-```
-
-`res` is useful when you want to use `try` without making the surrounding function a `!T` function.
-
----
-
-## `noexcept` Functions
-
-A function marked `noexcept` signals it will never return an error. The compiler enforces this:
-
-```arc
-i32 safe_add(i32 a, i32 b) noexcept {
-    return a + b;
-}
-```
-
-A `noexcept` function body must not contain `try`, `except`, or `return error.X`. Using these inside a `noexcept` function is a compile error.
-
-You can test at compile time whether an expression is `noexcept`:
-
-```arc
-bool b = noexcept(safe_add(1, 2));   // true
-```
 
 ---
 
@@ -146,12 +114,12 @@ auto outer_fn(i32 x) !i32 {
 i32 main() {
     i32 outer_err = 0;
 
-    outer_fn(-1) except |e| {
+    outer_fn(-1) catch |e| {
         // e.name == "Negative"
         outer_err = 1;
     }
 
-    outer_fn(3) except |e| {
+    outer_fn(3) catch |e| {
         outer_err = 99;   // not reached
     }
 

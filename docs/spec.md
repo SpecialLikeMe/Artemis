@@ -1,6 +1,6 @@
 # Artemis Language Specification
 
-**Version:** 0.2.0  
+**Version:** 0.1.1  
 **Status:** Draft
 
 ---
@@ -118,8 +118,8 @@ T name(arg0, arg1, ...);       // constructor call
 T name{arg0, arg1, ...};       // constructor call (brace form)
 T name = T { .field = val };   // named aggregate initializer
 const T name = expr;           // immutable
-constexpr T name = expr;       // compile-time constant (evaluated at compile time)
-consteval T name;              // user manages construction manually via __construct__
+comptime T name = expr;       // compile-time constant (evaluated at compile time)
+comptime T name;              // user manages construction manually via __construct__
 ```
 
 **Constructor invocation:** For `istruc` class types, the constructor is invoked by `()` or `{}` forms. The `= expr` form calls `operator=` if the class defines one, or performs a raw store otherwise. There is no implicit constructor invocation through `=` alone.
@@ -139,10 +139,10 @@ extern std.module;              // import a standard library module
 Inside a function: `static T name = expr;` — variable with static (process-lifetime) storage, initialized once.  
 Inside an `istruc`: `static T name;` — class-level storage (one instance per type).
 
-### 2.4 `typedef`
+### 2.4 `using`
 
 ```
-typedef OldType NewName;
+using OldType NewName;
 ```
 
 ### 2.5 `using`
@@ -153,10 +153,10 @@ using let = const auto;
 
 Contextual alias for type expressions.
 
-### 2.6 `inline` / `register`
+### 2.6 `inline` / ``
 
 `inline` on a function: hint to inline at call sites.  
-`register` on a variable: hint to keep in register.
+`` on a variable: hint to keep in .
 
 ---
 
@@ -281,23 +281,23 @@ T val = try fn_returning_error_union();
 
 If the callee returned an error, `try` propagates it as the return value of the current (also `!T`) function. If it succeeded, unwraps the value.
 
-### 4.15 `except` Expression
+### 4.15 `catch` Expression
 
 ```
-fn_returning_error_union() except |e| {
+fn_returning_error_union() catch |e| {
     // e is error_t { i32 code; i8* name; i8* payload; }
 }
 ```
 
 Catches an error from the preceding call. The handler block runs only if the call returned an error. See §10.
 
-### 4.16 `noexcept`
+### 4.16 ``
 
 ```
-bool b = noexcept(fn());
+bool b = (fn());
 ```
 
-Returns `true` if the call expression would not throw (i.e., the called function is `noexcept`).
+Returns `true` if the call expression would not throw (i.e., the called function is ``).
 
 ---
 
@@ -319,8 +319,8 @@ if (cond) { ... }
 if (cond) { ... } else { ... }
 if (cond) { ... } else if (cond2) { ... }
 
-constexpr if (cond) { ... }        // compile-time branch
-if constexpr (cond) { ... }        // equivalent
+comptime if (cond) { ... }        // compile-time branch
+if comptime (cond) { ... }        // equivalent
 ```
 
 ### 5.3 `while`
@@ -415,13 +415,13 @@ RetType funcname(T param, ...) { ... }
 
 Accepts C-style variadic arguments.
 
-### 6.4 `noexcept`
+### 6.4 ``
 
 ```
-void funcname() noexcept { ... }
+void funcname()  { ... }
 ```
 
-Marks the function as non-throwing. `noexcept(fn())` tests this at compile time.
+Marks the function as non-throwing. `(fn())` tests this at compile time.
 
 ### 6.5 Generic Functions
 
@@ -609,16 +609,16 @@ error.Name
 
 A named error tag. Tags are `i32` values internally. Any name is valid; there is no enum declaration needed.
 
-### 10.3 `except` — Catching Errors
+### 10.3 `catch` — Catching Errors
 
 ```
-maybe_divide(10, 0) except |e| {
+maybe_divide(10, 0) catch |e| {
     // e: error_t — has fields: i32 code, i8* name, i8* payload
     printf("Error: %s\n", e.name);
 }
 ```
 
-The `except |varname| { ... }` block runs only if the preceding expression returned an error. If the expression succeeded, the block is skipped.
+The `catch |varname| { ... }` block runs only if the preceding expression returned an error. If the expression succeeded, the block is skipped.
 
 ### 10.4 `try` — Propagating Errors
 
@@ -630,18 +630,6 @@ auto outer(i32 x) !i32 {
 ```
 
 `try expr` unwraps the value if success, or propagates the error as the current function's return value (which must also be `!T`).
-
-### 10.5 `res` Block
-
-```
-res {
-    // inline error-handling resource block
-    T val = try some_fn();
-    ...
-}
-```
-
-A `res` block scopes error propagation; errors inside propagate out of the block.
 
 ---
 
@@ -732,14 +720,14 @@ istruc Vec {
 
 `operator=` is called when assigning to an `istruc` variable if defined.
 
-### 12.7 `consteval`
+### 12.7 `comptime`
 
 ```
-consteval Timer u;
+comptime Timer u;
 u.__construct__(20);  // user calls constructor manually
 ```
 
-`consteval` allocates the object without running any constructor. The user must call `__construct__` explicitly.
+`comptime` allocates the object without running any constructor. The user must call `__construct__` explicitly.
 
 ### 12.8 Generic `istruc`
 
@@ -834,9 +822,9 @@ p.first = 1;
 p.second = 2.0;
 ```
 
-### 14.3 `sta` — Comptime Type-Erased Parameters
+### 14.3 `type` — Comptime Type-Erased Parameters
 
-`sta` marks a compile-time-erased parameter (structural typing without a concrete type name). Used internally for generic allocator passing.
+`type` marks a compile-time-erased parameter (structural typing without a concrete type name). Used internally for generic allocator passing.
 
 ---
 
@@ -885,7 +873,7 @@ __asm__ {
 ```
 
 - Instructions reference variables by `%name` or positional `*N`.
-- Constraint modifiers: `"r"` (register), `"m"` (memory), `"i"` (immediate).
+- Constraint modifiers: `"r"` (), `"m"` (memory), `"i"` (immediate).
 - `"cca"` as a clobber string means auto-detect.
 - All three `:` sections are optional.
 
@@ -902,42 +890,42 @@ __asm__ {
 
 ---
 
-## 17. `constexpr` / `consteval`
+## 17. `comptime` / `comptime`
 
-### 17.1 `constexpr` Variables
-
-```
-constexpr i32 N = 6;
-constexpr i32 M = N + 1;   // computed at compile time
-```
-
-`constexpr` variables are compile-time constants usable as array sizes, template arguments, and in constant expressions.
-
-### 17.2 `constexpr if`
+### 17.1 `comptime` Variables
 
 ```
-constexpr if (SOME_CONST == 1) {
+comptime i32 N = 6;
+comptime i32 M = N + 1;   // computed at compile time
+```
+
+`comptime` variables are compile-time constants usable as array sizes, template arguments, and in constant expressions.
+
+### 17.2 `comptime if`
+
+```
+comptime if (SOME_CONST == 1) {
     ...
 }
 ```
 
 The branch that is not taken is not compiled.
 
-### 17.3 `consteval` Variables
+### 17.3 `comptime` Variables
 
 ```
-consteval Timer u;
+comptime Timer u;
 u.__construct__(20);
 ```
 
-`consteval` declares a variable without running its constructor. The user invokes `__construct__` manually. Useful when construction order must be controlled explicitly.
+`comptime` declares a variable without running its constructor. The user invokes `__construct__` manually. Useful when construction order must be controlled explicitly.
 
 ---
 
 ## 18. Type Reflection
 
 ```
-get_ifo_t(Type)
+@typeinfo(Type)
 ```
 
 Returns compile-time type information for `Type`. Used for proc-macro and metaprogramming purposes.
@@ -1306,7 +1294,6 @@ void std.test.expect_not_null(runner* r, void* p, i8* msg)
 | `static` | Static storage |
 | `extern` | External linkage / import |
 | `inline` | Inline hint |
-| `register` | Register hint |
 | `sizeof` | Size of type/expr |
 | `struct` | Plain aggregate |
 | `enum` | Enum or ADT enum |
@@ -1314,20 +1301,18 @@ void std.test.expect_not_null(runner* r, void* p, i8* msg)
 | `istruc` | Class (struct with methods) |
 | `interface` | Contract declaration |
 | `namespace` | Namespace scope |
-| `typedef` | Type alias |
+| `using` | Type alias |
 | `using` | Contextual alias |
 | `operator` | Operator overload |
-| `noexcept` | No-throw marker / test |
-| `constexpr` | Compile-time constant |
-| `consteval` | Manual-construction marker |
+| `comptime` | Compile-time constant |
+| `comptime` | Manual-construction marker |
 | `auto` | Type inference / error-union placeholder |
 | `defer` | Deferred execution |
 | `try` | Error propagation |
-| `except` | Error catching |
-| `res` | Error-handling resource block |
+| `catch` | Error catching |
 | `error` | Error literal (`error.Name`) |
 | `__asm__` | Inline assembly |
-| `sta` | Comptime type-erased parameter |
+| `type` | Comptime type-erased parameter |
 
 ---
 
@@ -1350,17 +1335,17 @@ Scope resolution `.` in source code maps to `__NS_` in internal names.
 ```
 program       .= decl*
 decl          .= var_decl | func_decl | struct_decl | enum_decl | istruc_decl
-                | namespace_decl | interface_decl | typedef | extern_decl | extern_std
+                | namespace_decl | interface_decl | using | extern_decl | extern_std
 
 type          .= prim_type | id ('<' type_args '>')?  | type ('*')+ | '?' type
                 | type '[' expr ']' | ret_type '(' param_types ')' '*'
                 | 'const' type | 'volatile' type | '&' 'memstr'
 
 var_decl      .= type id ('=' expr | '(' args ')' | '{' args '}')? ';'
-                | 'constexpr' type id '=' expr ';'
-                | 'consteval' type id ';'
+                | 'comptime' type id '=' expr ';'
+                | 'comptime' type id ';'
 
-func_decl     .= type id ('<' tparams '>')? '(' params ')' ('noexcept')? block
+func_decl     .= type id ('<' tparams '>')? '(' params ')' ('')? block
                 | 'auto' id ('<' tparams '>')? '(' params ')' '!' type block
 
 enum_decl     .= 'enum' id '{' variant (',' variant)* ','? '}'
@@ -1385,7 +1370,279 @@ expr          .= literal | id | unary_op expr | expr binary_op expr
                 | expr '?' expr ':' expr | '(' type ')' expr
                 | expr '(' args ')' | expr '[' expr ']' | expr '.' id
                 | 'sizeof' '(' type_or_expr ')' | 'error' '.' id
-                | 'try' expr | expr 'except' '|' id '|' block
+                | 'try' expr | expr 'catch' '|' id '|' block
                 | 'null' | type '{' field_inits '}'
                 | '.' '{' field_inits '}'
 ```
+
+---
+
+## §18. Generics — istruc, enum, union
+
+Generic types use the same `<T>` syntax as generic functions.
+
+### 18.1 Generic istruc
+
+```arc
+istruc Pair<T> {
+    T first;
+    T second;
+    void __construct__(Pair<T>* self, T a, T b) { self.first = a; self.second = b; }
+}
+
+Pair<i32> p(1, 2);
+Pair<f64> q(3.14, 2.71);
+```
+
+At each use site the compiler monomorphizes the struct, creating `Pair__mono_i32` and `Pair__mono_f64` LLVM struct types.
+
+### 18.2 Generic enum
+
+```arc
+enum Maybe<T> { nothing, something, }
+
+Maybe<i32> m;
+m = nothing;    // variant value 0
+m = something;  // variant value 1
+```
+
+Generic enums have the same integer representation as plain enums. The type parameter is informational for the programmer; variants use bare names.
+
+### 18.3 Generic union
+
+```arc
+union Either<T> { T val; i32 tag; }
+
+Either<f32> e;
+e.tag = 1;
+```
+
+All fields share the same memory region (max-field-size bytes). Generic unions are monomorphized at use sites.
+
+---
+
+## §19. Range-for (`for (T x : container)`)
+
+Two forms are supported.
+
+### 19.1 Array range-for
+
+```arc
+i32 arr[5];
+for (i32 x : arr) { /* x iterates arr[0..4] */ }
+```
+
+The compiler emits a counter loop from 0 to the statically-known length.
+
+### 19.2 begin()/end() range-for
+
+Any istruc with `begin()` and `end()` methods returning a pointer type works:
+
+```arc
+istruc Span {
+    i32* ptr;
+    i32  len;
+    i32* begin(Span* self) { return self.ptr; }
+    i32* end(Span*   self) { return self.ptr + self.len; }
+}
+
+Span s;
+for (i32 x : s) { /* x is each element via iterator */ }
+```
+
+The desugared form is:
+
+```arc
+T* __it  = s.begin();
+T* __end = s.end();
+while (__it != __end) { T x = *__it; BODY; __it = __it + 1; }
+```
+
+`auto` as the element type infers from `*begin()`.
+
+---
+
+## §20. `comptime type` — First-Class Type Aliases
+
+```arc
+comptime type MyInt = i32;
+comptime type Vec2  = Pair<i32>;
+
+MyInt a = 42;
+Vec2  v(1, 2);
+```
+
+`comptime type T = Expr;` at top-level declares `T` as a compile-time alias for the type `Expr`. It is equivalent to `using T = Expr;` with explicit comptime semantics.
+
+---
+
+## §21. New Primitive Types
+
+| Prefix | Meaning | Backing type |
+|--------|---------|--------------|
+| `nN`   | natural number (≥0) | `uN` |
+| `zN`   | integer | `iN` |
+| `chN`  | N-bit character | `uN` |
+| `cN`   | complex (re + im) | struct `{ fN re; fN im; }` |
+| `qN`   | rational (num / den) | struct `{ iN num; iN den; }` |
+
+```arc
+n8  a = 200u;        // unsigned 8-bit natural
+z32 b = -100;        // signed 32-bit integer
+ch8 c = 'A';         // 8-bit character
+c64 z;  z.re = 1.0;  z.im = 2.0;
+q32 r;  r.num = 3;   r.den = 4;
+```
+
+---
+
+## §22. Proc Macros
+
+### 22.1 Declaration
+
+```arc
+tokenstream* log_calls(&memstr alloc, tokenstream* input) attr { return input; }
+tokenstream* add_debug(&memstr alloc, tokenstream* input) derive { return input; }
+```
+
+`attr` macros may modify any part of the decorated declaration. `derive` macros may only append new declarations. `attr verify` additionally syntax-checks the token stream before the macro receives it.
+
+### 22.2 Application
+
+```arc
+#[log_calls]
+i32 my_func(i32 x) { return x * 2; }
+
+#derive[add_debug]
+istruc MyType { i32 val; }
+
+#![log_calls]   // applies to the whole file
+```
+
+### 22.3 Token stream type
+
+```arc
+struct token {
+    i32  kind;   // lexer token_type value
+    i8*  text;   // raw source text
+    u64  line;
+    u64  col;
+}
+// tokenstream = token* (array; len passed separately or null-terminated)
+```
+
+Compiler-provided helpers: `quote { code }` → `token*`, `ast(token*)` → opaque AST, `tks(void*)` → `token*`.
+
+---
+
+## §23. `@typeinfo` — Compile-time Type Reflection
+
+```arc
+type_info* ti = @typeinfo(i32);
+type_info* ts = @typeinfo(MyStruct);
+```
+
+Returns a pointer to a compiler-generated constant `type_info` struct.
+
+### 23.1 `type_info` layout
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `i8*` | type name |
+| `size` | `i32` | byte size |
+| `align` | `i32` | byte alignment |
+| `kind` | `i32` | see table below |
+| `bits` | `i32` | bit width (primitives) |
+| `is_signed` | `i32` | 1 if signed integer |
+| `field_count` | `i32` | struct field count |
+| `fields` | `type_info_field*` | array of field descriptors |
+| `elem_type` | `type_info*` | pointee type (pointer kinds) |
+| `method_count` | `i32` | method count |
+| `methods` | `type_info_method*` | array of method descriptors |
+
+### 23.2 Kind constants
+
+| Value | Meaning |
+|-------|---------|
+| 0 | `IFO_KIND_PRIM` — primitive |
+| 1 | `IFO_KIND_PTR` — pointer |
+| 2 | `IFO_KIND_STRUCT` — struct |
+| 3 | `IFO_KIND_UNION` — union |
+| 4 | `IFO_KIND_ENUM` — enum |
+| 5 | `IFO_KIND_ISTRUC` — istruc |
+| 6 | `IFO_KIND_ARRAY` — fixed array |
+| 7 | `IFO_KIND_FUNC` — function pointer |
+| 8 | `IFO_KIND_UNKNOWN` — unresolved |
+
+### 23.3 `type_info_field` layout
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `i8*` | field name |
+| `offset` | `i32` | byte offset within struct |
+| `size` | `i32` | field byte size |
+| `align` | `i32` | field alignment |
+
+No `extern` statement is needed; `type_info`, `type_info_field`, and `type_info_method` are compiler builtins.
+
+---
+
+## §24. MIR / LIR Pipeline (experimental, `--use-mir`)
+
+The compiler includes a mid-level (MIR) and low-level (LIR) intermediate representation layer gated behind the `--use-mir` flag. When supplied, the pipeline is:
+
+```
+AST → Semantic Analysis → MIR → LIR → SMT → LLVM IR
+```
+
+Without `--use-mir`, the pipeline goes directly `AST → LLVM IR`.
+
+**MIR** (`compiler/mir/`): Three-address, single-assignment form. All loops are flattened to label/branch; compound conditions are split; struct field accesses normalized to byte offsets.
+
+**LIR** (`compiler/lir/`): Scalar-only form derived from MIR. All aggregate values become pointer + scalar loads/stores. Includes `LI_RTCHECK_NULL` and `LI_RTCHECK_BOUNDS` pseudo-instructions for SMT injection points.
+
+Both passes are currently scaffolded; the full lowering implementation is a work in progress.
+
+---
+
+## §25. `std.regex` — In-house Regex Engine
+
+The standard library provides a native regex engine with no external dependencies.
+
+```arc
+extern std.regex;
+
+regex_t r("\\d+", 0u);
+if (r.is_valid()) { /* ... */ }
+if (r.test("123", 3)) { /* matches */ }
+```
+
+### 25.1 API
+
+| Method | Description |
+|--------|-------------|
+| `regex_t(pattern, flags)` | Compile pattern |
+| `r.is_valid()` | True if compilation succeeded |
+| `r.test(str, len)` | True if pattern matches anywhere in str |
+| `r.find(str, len, cap)` | Fills `capture_t cap[10]`; returns match count |
+| `std.regex.find_offset(r, str, len, offset)` | Match starting from byte offset |
+
+### 25.2 Flags
+
+| Constant | Meaning |
+|----------|---------|
+| `std.regex.REGEX_CASELESS` | Case-insensitive matching |
+| `std.regex.REGEX_MULTILINE` | `^`/`$` match line boundaries |
+| `std.regex.REGEX_DOTALL` | `.` matches `\n` |
+
+### 25.3 Character class escapes
+
+`\d` digits, `\w` word characters, `\s` whitespace, `\D \W \S` negated forms. Character classes `[...]` and negated classes `[^...]` are supported. Quantifiers: `*`, `+`, `?`, `{n}`, `{n,m}`. Alternation `|` and capture groups `(...)`.
+
+### 25.4 `capture_t`
+
+```arc
+struct capture_t { i32 start; i32 len; }
+```
+
+`REGEX_MAX_CAPTURES` = 10.

@@ -2,8 +2,8 @@
 
 namespace std {
 
-constexpr u64 USET_EMPTY   = 0xFFFFFFFFFFFFFFFFu;
-constexpr u64 USET_DELETED = 0xFFFFFFFFFFFFFFFEu;
+comptime u64 USET_EMPTY   = 0xFFFFFFFFFFFFFFFFu;
+comptime u64 USET_DELETED = 0xFFFFFFFFFFFFFFFEu;
 
 istruc uset_slot<K> {
     u64 hash;

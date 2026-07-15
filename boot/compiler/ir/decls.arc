@@ -18,6 +18,7 @@ void visit_struct_decl(parser.struct_decl* d, ir_context* ctx) {
 
     struct_meta sm;
     sm.name = d.name;
+    sm.is_union = d.is_union;
     name_list_init(&sm.field_names);
     type_list_init(&sm.field_types);
     bool_list_init(&sm.field_unsigned);
@@ -43,7 +44,24 @@ void visit_struct_decl(parser.struct_decl* d, ir_context* ctx) {
         i = i + 1;
     }
 
-    LLVMStructSetBody(struct_t, field_types_arr, nfields, 0);
+    if (d.is_union && nfields > 0) {
+        // For unions: compute max field byte size and use { [max x i8] } as body.
+        u64 max_size = 0;
+        i32 ui = 0;
+        while (ui < nfields) {
+            u64 fsz = llvm_type_byte_size(field_types_arr[ui]);
+            if (fsz > max_size) { max_size = fsz; }
+            ui = ui + 1;
+        }
+        if (max_size == 0) { max_size = 1; }
+        i8* i8t = LLVMInt8TypeInContext(ctx.llvm_ctx);
+        i8* arr_t = LLVMArrayType(i8t, (u32)max_size);
+        i8* union_body[1];
+        union_body[0] = arr_t;
+        LLVMStructSetBody(struct_t, union_body, 1, 0);
+    } else {
+        LLVMStructSetBody(struct_t, field_types_arr, nfields, 0);
+    }
     free((i8*)field_types_arr);
 
     struct_meta_vec_push(&ctx.struct_meta_tbl, sm);
@@ -53,13 +71,134 @@ void visit_struct_decl(parser.struct_decl* d, ir_context* ctx) {
 
 void visit_enum_decl(parser.enum_decl* d, ir_context* ctx) {
     i8* i32t = LLVMInt32TypeInContext(ctx.llvm_ctx);
+
+    // For ADT enums: compute max payload size across all variants
+    u64 max_payload = 0;
+    if (d.is_adt && d.variant_kinds != (i32*)0) {
+        i32 vi = 0;
+        while (vi < d.variants_len) {
+            i32 vkind = d.variant_kinds[vi];
+            i32 fc = (d.variant_field_counts != (i32*)0) ? d.variant_field_counts[vi] : 0;
+            if ((vkind == 1 || vkind == 2 || vkind == 3) && fc > 0 && d.variant_field_type_flat != (i8**)0) {
+                u64 variant_size = 0;
+                i32 fi = 0;
+                while (fi < fc) {
+                    parser.type_node* ft = (parser.type_node*)d.variant_field_type_flat[vi * 8 + fi];
+                    i8* lt = (ft != (parser.type_node*)0) ? llvm_type_of(ft, ctx) : i32t;
+                    u64 fsz = llvm_type_byte_size(lt);
+                    // Align to 8 bytes
+                    variant_size = variant_size + ((fsz + 7) & ~(u64)7);
+                    fi = fi + 1;
+                }
+                if (variant_size > max_payload) { max_payload = variant_size; }
+            }
+            vi = vi + 1;
+        }
+    }
+
+    // Create ADT enum struct type: { i32 tag, [max_payload x i8] }
+    i8* adt_struct_t = (i8*)0;
+    i8* adt_arr_t = (i8*)0;
+    if (d.is_adt && max_payload > 0) {
+        i8* i8t = LLVMInt8TypeInContext(ctx.llvm_ctx);
+        adt_arr_t = LLVMArrayType(i8t, (i32)max_payload);
+        i8* flds[2]; flds[0] = i32t; flds[1] = adt_arr_t;
+        adt_struct_t = LLVMStructCreateNamed(ctx.llvm_ctx, d.name);
+        LLVMStructSetBody(adt_struct_t, flds, 2, 0);
+        st_map_set(&ctx.struct_types, d.name, adt_struct_t);
+        // Register field metadata: __tag (index 0) and __payload (index 1)
+        struct_meta sm;
+        sm.name = lexer.str_dup(d.name);
+        name_list_init(&sm.field_names);
+        type_list_init(&sm.field_types);
+        bool_list_init(&sm.field_unsigned);
+        type_list_init(&sm.field_pointee);
+        sm.is_union = false;
+        name_list_push(&sm.field_names, (i8*)"__tag");
+        type_list_push(&sm.field_types, i32t);
+        bool_list_push(&sm.field_unsigned, false);
+        type_list_push(&sm.field_pointee, (i8*)0);
+        name_list_push(&sm.field_names, (i8*)"__payload");
+        type_list_push(&sm.field_types, adt_arr_t);
+        bool_list_push(&sm.field_unsigned, false);
+        type_list_push(&sm.field_pointee, (i8*)0);
+        struct_meta_vec_push(&ctx.struct_meta_tbl, sm);
+        // Register this enum_decl for ADT constructor lookup
+        sv_map_set(&ctx.adt_enum_decls, d.name, (i8*)d);
+    }
+
+    // Register per-variant field metadata for named/istruc variants
+    if (d.is_adt && d.variant_kinds != (i32*)0) {
+        i32 vi = 0;
+        while (vi < d.variants_len) {
+            i32 vkind = d.variant_kinds[vi];
+            i32 fc = (d.variant_field_counts != (i32*)0) ? d.variant_field_counts[vi] : 0;
+            if ((vkind == 2 || vkind == 3) && fc > 0 && d.variant_field_type_flat != (i8**)0) {
+                i8 vqname[512];
+                snprintf(vqname, (u64)512, "%s__%s", d.name, d.variant_names[vi]);
+                struct_meta vsm;
+                vsm.name = lexer.str_dup(vqname);
+                name_list_init(&vsm.field_names);
+                type_list_init(&vsm.field_types);
+                bool_list_init(&vsm.field_unsigned);
+                type_list_init(&vsm.field_pointee);
+                vsm.is_union = false;
+                i32 fi = 0;
+                while (fi < fc) {
+                    parser.type_node* ft = (parser.type_node*)d.variant_field_type_flat[vi * 8 + fi];
+                    i8* flt = (ft != (parser.type_node*)0) ? llvm_type_of(ft, ctx) : i32t;
+                    i8* fname = (d.variant_field_names_flat != (i8**)0) ? d.variant_field_names_flat[vi * 8 + fi] : (i8*)0;
+                    if (fname == (i8*)0) { i8 tmp[16]; snprintf(tmp, (u64)16, "_f%d", fi); fname = lexer.str_dup(tmp); }
+                    name_list_push(&vsm.field_names, fname);
+                    type_list_push(&vsm.field_types, flt);
+                    bool_list_push(&vsm.field_unsigned, false);
+                    type_list_push(&vsm.field_pointee, (i8*)0);
+                    fi = fi + 1;
+                }
+                struct_meta_vec_push(&ctx.struct_meta_tbl, vsm);
+            }
+            vi = vi + 1;
+        }
+    }
+
+    // Emit methods stored on ADT istruc/named_struct variants
+    if (d.is_adt && d.variant_kinds != (i32*)0 && d.variant_method_flat != (i8**)0) {
+        i32 vi = 0;
+        while (vi < d.variants_len) {
+            i32 vkind = d.variant_kinds[vi];
+            i32 mc = (d.variant_method_counts != (i32*)0) ? d.variant_method_counts[vi] : 0;
+            if ((vkind == 2 || vkind == 3) && mc > 0) {
+                i8* vname = d.variant_names[vi];
+                // Register variant name as alias for the enum struct so
+                // "const fatal* self" resolves to the enum type
+                i8* enum_st = st_map_get(&ctx.struct_types, d.name);
+                if (enum_st != (i8*)0) {
+                    st_map_set(&ctx.struct_types, vname, enum_st);
+                }
+                i32 mi = 0;
+                while (mi < mc) {
+                    parser.func_decl* mfd = (parser.func_decl*)d.variant_method_flat[vi * 8 + mi];
+                    if (mfd != (parser.func_decl*)0) {
+                        i8 mt_name[512];
+                        snprintf(mt_name, (u64)512, "%s__NS_%s__MT_%s", d.name, vname, mfd.name);
+                        i8* saved_name = mfd.name;
+                        mfd.name = lexer.str_dup(mt_name);
+                        visit_func_decl_prototype(mfd, ctx);
+                        visit_func_decl(mfd, ctx);
+                        mfd.name = saved_name;
+                    }
+                    mi = mi + 1;
+                }
+            }
+            vi = vi + 1;
+        }
+    }
+
+    // Register variant tag constants
     i64 next_val = 0;
     i32 i = 0;
     while (i < d.variants_len) {
-        if (d.variant_has_val[i]) {
-            next_val = d.variant_vals[i];
-        }
-        // Register as global constant: EnumName__VariantName
+        if (d.variant_has_val[i]) { next_val = d.variant_vals[i]; }
         i8 qname[512];
         snprintf(qname, (u64)512, "%s__%s", d.name, d.variant_names[i]);
         i8* gv = LLVMAddGlobal(ctx.llvm_mod, i32t, qname);
@@ -67,10 +206,7 @@ void visit_enum_decl(parser.enum_decl* d, ir_context* ctx) {
         LLVMSetGlobalConstant(gv, 1);
         LLVMSetLinkage(gv, LLVMInternalLinkage);
         sv_map_set(&ctx.global_vars, qname, gv);
-
-        // Also register bare name for same-scope access
         sv_map_set(&ctx.global_vars, d.variant_names[i], gv);
-
         next_val = next_val + 1;
         i = i + 1;
     }
@@ -98,6 +234,13 @@ void visit_typedef_decl(parser.typedef_decl* d, ir_context* ctx) {
 // ---- Function prototype (pass 1) ----
 
 void visit_func_decl_prototype(parser.func_decl* fd, ir_context* ctx) {
+    // Generic functions: save for lazy monomorphization, don't compile now
+    if (fd.type_params_len > 0) {
+        i8* gname = ir_func_name(fd);
+        sv_map_set(&ctx.generic_funcs, gname, (i8*)fd);
+        return;
+    }
+
     i8* fn_name = ir_func_name(fd);
 
     // Build return type
@@ -145,6 +288,7 @@ void visit_func_decl_prototype(parser.func_decl* fd, ir_context* ctx) {
 
 void visit_func_decl(parser.func_decl* fd, ir_context* ctx) {
     if (!fd.has_body) { return; }
+    if (fd.type_params_len > 0) { return; } // handled by monomorphization
     i8* fn_name = ir_func_name(fd);
     i8* fn      = sv_map_get(&ctx.global_funcs, fn_name);
     i8* fn_type = st_map_get(&ctx.global_func_types, fn_name);
@@ -182,7 +326,12 @@ void visit_func_decl(parser.func_decl* fd, ir_context* ctx) {
             deref_t = llvm_type_of(&stripped, ctx);
         }
         bool puns = is_unsigned_type_node(p.type);
-        ctx_declare_local(ctx, p.name != (i8*)0 ? p.name : "arg", alloca, pt, deref_t, puns);
+        i8* pname = p.name != (i8*)0 ? p.name : "arg";
+        ctx_declare_local(ctx, pname, alloca, pt, deref_t, puns);
+        if (p.type != (parser.type_node*)0 && p.type.is_func_ptr) {
+            i8* pfn_ty = llvm_func_type_of(p.type, ctx);
+            if (pfn_ty != (i8*)0) { ctx_declare_local_func_type(ctx, pname, pfn_ty); }
+        }
         i = i + 1;
     }
 
@@ -226,7 +375,25 @@ void visit_namespace_decl(parser.namespace_decl* nd, ir_context* ctx) {
         parser.ast_node* decl = nd.decls[i];
         if (decl != (parser.ast_node*)0) {
             i32 k = decl.kind;
-            if (k == nd_struct_decl)   { visit_struct_decl((parser.struct_decl*)decl, ctx); }
+            if (k == nd_struct_decl)   {
+                parser.struct_decl* sd = (parser.struct_decl*)decl;
+                visit_struct_decl(sd, ctx);
+                // Also register the struct under the namespace-qualified name so that
+                // external code can look it up as "ns__NS_StructName".
+                i8 ns_sname[512];
+                snprintf(ns_sname, (u64)512, "%s__NS_%s", nd.name, sd.name);
+                i8* bare_st = st_map_get(&ctx.struct_types, sd.name);
+                if (bare_st != (i8*)0) {
+                    st_map_set(&ctx.struct_types, lexer.str_dup(ns_sname), bare_st);
+                    // For nested istruc (e.g. shapes { istruc Circle }), also register
+                    // as "shapes__NS_Circle" so qualified type "shapes.Circle" resolves.
+                    if (saved_ns != (i8*)0) {
+                        i8 fq_sname[512];
+                        snprintf(fq_sname, (u64)512, "%s__NS_%s", saved_ns, sd.name);
+                        st_map_set(&ctx.struct_types, lexer.str_dup(fq_sname), bare_st);
+                    }
+                }
+            }
             if (k == nd_enum_decl)     { visit_enum_decl((parser.enum_decl*)decl, ctx); }
             if (k == nd_typedef_decl)  { visit_typedef_decl((parser.typedef_decl*)decl, ctx); }
             if (k == nd_func_decl) {
@@ -302,6 +469,7 @@ void visit_namespace_decl(parser.namespace_decl* nd, ir_context* ctx) {
 // ---- Extern C block ----
 
 void visit_extern_c_block(parser.extern_c_block* blk, ir_context* ctx) {
+    // Pass 1: register prototypes
     i32 i = 0;
     while (i < blk.decls_len) {
         parser.ast_node* decl = blk.decls[i];
@@ -311,6 +479,19 @@ void visit_extern_c_block(parser.extern_c_block* blk, ir_context* ctx) {
             visit_func_decl_prototype(fd, ctx);
         }
         i = i + 1;
+    }
+    // Pass 2: emit bodies for functions that have them
+    i32 j = 0;
+    while (j < blk.decls_len) {
+        parser.ast_node* decl = blk.decls[j];
+        if (decl != (parser.ast_node*)0 && decl.kind == nd_func_decl) {
+            parser.func_decl* fd = (parser.func_decl*)decl;
+            if (fd.has_body) {
+                fd.is_extern_c = true;
+                visit_func_decl(fd, ctx);
+            }
+        }
+        j = j + 1;
     }
 }
 
@@ -361,6 +542,9 @@ void visit_top_level_decl(parser.ast_node* node, ir_context* ctx) {
             LLVMSetInitializer(gv, LLVMConstNull(gt));
         }
         sv_map_set(&ctx.global_vars, vd.name, gv);
+        if (is_unsigned_type_node(vd.type)) {
+            sb_map_set(&ctx.global_var_unsigned, vd.name, true);
+        }
         return;
     }
     if (kind == nd_namespace_decl) {

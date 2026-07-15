@@ -1,0 +1,1885 @@
+#pragma once
+#include <memory>
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
+#include "scope.hxx"
+#include "types.hxx"
+#include "../parser/main.hxx"
+
+// ------------------------------------------------------------------ heap-use detection helpers
+
+static bool heap_expr(const expr_node* e);
+static bool heap_block(const block_stmt* blk);
+
+static bool heap_stmt(const ast_node* n) {
+    if (!n) return false;
+    if (auto* e = dynamic_cast<const expr_stmt*>(n))  return heap_expr(e->expr);
+    if (auto* r = dynamic_cast<const return_stmt*>(n)) return r->value.has_value() && heap_expr(r->value.value());
+    if (auto* b = dynamic_cast<const block_stmt*>(n))  return heap_block(b);
+    if (auto* i = dynamic_cast<const if_stmt*>(n))
+        return heap_expr(i->cond) || heap_stmt(i->then_body) || heap_stmt(i->else_body);
+    if (auto* w = dynamic_cast<const while_stmt*>(n))
+        return heap_expr(w->cond) || heap_stmt(w->body);
+    if (auto* f = dynamic_cast<const for_stmt*>(n))
+        return heap_stmt(f->init) || heap_expr(f->cond) || heap_expr(f->step) || heap_stmt(f->body);
+    if (auto* v = dynamic_cast<const var_decl*>(n)) {
+        if (v->init.has_value() && heap_expr(v->init.value())) return true;
+        for (auto* a : v->ctor_args) if (heap_expr(a)) return true;
+        return false;
+    }
+    return false;
+}
+static bool heap_block(const block_stmt* blk) {
+    if (!blk) return false;
+    for (auto* s : blk->stmts) if (heap_stmt(s)) return true;
+    return false;
+}
+static bool heap_expr(const expr_node* e) {
+    if (!e) return false;
+    if (e->kind == expr_kind::call && e->callee &&
+        e->callee->kind == expr_kind::identifier) {
+        const auto& n = e->callee->str_val;
+        if (n == "malloc" || n == "calloc" || n == "realloc" || n == "free") return true;
+    }
+    if (heap_expr(e->operand)) return true;
+    if (heap_expr(e->object))  return true;
+    if (heap_expr(e->index))   return true;
+    if (heap_expr(e->lhs))     return true;
+    if (heap_expr(e->rhs))     return true;
+    if (e->callee && heap_expr(e->callee)) return true;
+    for (auto* a : e->args) if (heap_expr(a)) return true;
+    return false;
+}
+
+class analyzer {
+public:
+    bool skip_heap_check = false; // set via --unsafe flag
+
+    void analyze(program_node* prog) {
+        // global scope lives for the entire analysis
+        scope.push();
+
+        // Pre-register the built-in error_t struct used in `except |e| { e.code / e.name / e.payload }`.
+        // The IR defines this as {i32 code, i8* name, i8* payload}.
+        {
+            auto make_field = [&](const std::string& fname, type_node t) -> var_decl* {
+                auto* f   = new var_decl();
+                f->name   = fname;
+                f->type   = make_type(t);
+                owned_vars.push_back(std::unique_ptr<var_decl>(f));
+                return f;
+            };
+            auto* sd = new struct_decl();
+            sd->name = "error_t";
+            type_node i32t;  i32t.is_primitive = true;  i32t.prim = prim_type_t::arb_int;  i32t.bit_width = 32;
+            type_node i8pt;  i8pt.is_primitive = true;  i8pt.prim = prim_type_t::char_t;   i8pt.pointer_depth = 1;
+            sd->fields.push_back(make_field("code",    i32t));
+            sd->fields.push_back(make_field("name",    i8pt));
+            sd->fields.push_back(make_field("payload", i8pt));
+            owned_structs.push_back(std::unique_ptr<struct_decl>(sd));
+            scope.declare_struct(sd);
+        }
+
+        // Pass 1: register all top-level type/function names so bodies can reference
+        // anything declared later in the file.
+        for (auto* node : prog->decls) register_decl(node);
+
+        // Pass 2: full type-check
+        for (auto* node : prog->decls) visit_top_level(node);
+
+        scope.pop();
+    }
+
+private:
+    scope_manager scope;
+    func_decl*    current_func  = nullptr;
+    std::string   current_class;    // name of the class whose method body is being analyzed
+    std::string   current_namespace; // set while visiting declarations inside a namespace
+    int           loop_depth    = 0;
+    int           switch_depth  = 0;
+    std::unordered_map<std::string, type_node*> using_aliases; // using X = type;
+
+    // Generic templates (not type-checked here; instantiated by the IR via monomorphization).
+    std::unordered_map<std::string, func_decl*> generic_templates;
+    std::unordered_set<std::string>             generic_class_names;
+
+    // Arenas so returned type_node* pointers stay valid for the lifetime of the analyzer.
+    std::vector<std::unique_ptr<type_node>>   owned_types;
+    std::vector<std::unique_ptr<var_decl>>    owned_vars;    // synthetic var_decl for params
+    std::vector<std::unique_ptr<struct_decl>> owned_structs; // synthetic struct_decl (e.g. error_t)
+
+    // -------------------------------------------------------------- helpers
+
+    std::string err(uint64_t line, const std::string& msg) const {
+        return "Semantic Error at line " + std::to_string(line) + ": " + msg;
+    }
+
+    type_node* make_type(type_node t) {
+        owned_types.push_back(std::make_unique<type_node>(std::move(t)));
+        return owned_types.back().get();
+    }
+
+    type_node* prim(prim_type_t p, uint32_t bw = 0) {
+        type_node t; t.is_primitive = true; t.prim = p; t.bit_width = bw;
+        return make_type(t);
+    }
+
+    type_node* ptr_to(type_node base, int depth = 1) {
+        base.pointer_depth += depth;
+        return make_type(base);
+    }
+
+    var_decl* make_param_var(type_node* type, const std::string& name, uint64_t line) {
+        auto v = std::make_unique<var_decl>();
+        v->type = type; v->name = name; v->line = line;
+        owned_vars.push_back(std::move(v));
+        return owned_vars.back().get();
+    }
+
+    // Resolve one level of typedef aliasing; returns the underlying type if the
+    // named type is a typedef, otherwise returns t unchanged.
+    const type_node* resolve_alias(const type_node* t) const {
+        if (!t || t->is_primitive || !t->name.has_value()) return t;
+        auto it = scope.typedefs.find(t->name.value());
+        if (it == scope.typedefs.end()) return t;
+        // Preserve pointer depth from the alias if needed
+        return it->second->underlying;
+    }
+
+    bool assignable_td(const type_node* lhs, const type_node* rhs) const {
+        // Leniency for generics: a non-primitive named type whose name is not a known
+        // concrete type is treated as an (unbound) type parameter and is compatible with
+        // anything. Concrete-type validity is enforced separately by check_var_type.
+        if (is_type_param_like(lhs) || is_type_param_like(rhs)) return true;
+        return assignable(resolve_alias(lhs), resolve_alias(rhs));
+    }
+
+    bool is_type_param_like(const type_node* t) const {
+        if (!t || t->is_primitive || t->is_func_ptr) return false;
+        if (!t->name) return false;
+        return !scope.is_known_type(*t->name);
+    }
+
+    static bool is_lvalue(const expr_node* e) {
+        if (!e) return false;
+        switch (e->kind) {
+            case expr_kind::identifier: return true;
+            case expr_kind::subscript:  return true;
+            case expr_kind::member:     return true;
+            case expr_kind::unary:      return e->uop == unary_op::deref;
+            default:                    return false;
+        }
+    }
+
+    // Resolve a type name that may be unqualified when inside a namespace.
+    // If bare name not found and we're in a namespace, try ns__NS_name.
+    void resolve_type_name(type_node* t) {
+        if (!t || t->is_primitive || t->is_func_ptr || t->is_self_ref || t->is_memstr_ref) return;
+        if (!t->name) return;
+        if (!current_namespace.empty() && !scope.is_known_type(*t->name)) {
+            std::string qualified = current_namespace + "__NS_" + *t->name;
+            if (scope.is_known_type(qualified)) t->name = qualified;
+        }
+    }
+
+    // Validate that a named type is defined; check void not used as a variable type.
+    void check_var_type(type_node* t, uint64_t line) {
+        if (!t) throw std::runtime_error(err(line, "null type"));
+        if (t->is_func_ptr || t->is_self_ref || t->is_memstr_ref) return;
+        if (t->is_auto) return; // auto placeholder — type inferred from init
+        if (t->is_primitive) {
+            if (t->prim == prim_type_t::void_t && t->pointer_depth == 0)
+                throw std::runtime_error(err(line, "Cannot declare a variable of type 'void'"));
+            return;
+        }
+        resolve_type_name(t);
+        const std::string& name = t->name.value_or("");
+        // Check using aliases before failing
+        if (!scope.is_known_type(name)) {
+            auto ua = using_aliases.find(name);
+            if (ua != using_aliases.end()) return; // valid alias, resolved at use
+        }
+        if (!scope.is_known_type(name))
+            throw std::runtime_error(err(line, "Unknown type '" + name + "'"));
+    }
+
+    void check_type_known(type_node* t, uint64_t line) {
+        if (!t || t->is_primitive) return;
+        resolve_type_name(t);
+        const std::string& name = t->name.value_or("");
+        if (!scope.is_known_type(name))
+            throw std::runtime_error(err(line, "Unknown type '" + name + "'"));
+    }
+
+    // Walk typedef chain and return the concrete underlying type (struct/union/enum/prim).
+    type_node* resolve_typedef(type_node* t, uint64_t line) {
+        int depth = 0;
+        while (t && !t->is_primitive && t->name.has_value()) {
+            const std::string& name = t->name.value();
+            auto it = scope.typedefs.find(name);
+            if (it != scope.typedefs.end()) {
+                t = it->second->underlying;
+            } else {
+                auto ua = using_aliases.find(name);
+                if (ua != using_aliases.end()) t = ua->second;
+                else break;
+            }
+            if (++depth > 64)
+                throw std::runtime_error(err(line, "Circular typedef chain"));
+        }
+        return t;
+    }
+
+    // -------------------------------------------------------------- pass 1: register
+
+    void register_decl(ast_node* node) {
+        if (auto* d = dynamic_cast<func_decl*>(node)) {
+            // Generic function templates are recorded, not declared as concrete functions.
+            if (!d->type_params.empty()) { generic_templates[d->name] = d; return; }
+            scope.declare_func(d);    return;
+        }
+        if (auto* d = dynamic_cast<struct_decl*>(node))  { scope.declare_struct(d);  return; }
+        if (auto* d = dynamic_cast<enum_decl*>(node))    { scope.declare_enum(d);    return; }
+        if (auto* d = dynamic_cast<union_decl*>(node))   { scope.declare_union(d);   return; }
+        if (auto* d = dynamic_cast<typedef_decl*>(node)) { scope.declare_typedef(d); return; }
+        if (auto* d = dynamic_cast<class_decl*>(node)) {
+            // Interface declarations: register in interfaces map, not classes map
+            if (d->is_interface) { scope.declare_interface(d); return; }
+            // Generic class templates: only register the name as a known type; skip method
+            // registration (their signatures reference unbound type parameters).
+            if (!d->type_params.empty()) { generic_class_names.insert(d->name); scope.declare_class(d); return; }
+            register_class_decl(d);   return;
+        }
+        if (auto* d = dynamic_cast<extern_c_block*>(node)) {
+            for (auto* decl : d->decls) {
+                if (auto* fd = dynamic_cast<func_decl*>(decl)) {
+                    fd->is_extern_c = true;
+                    scope.declare_func(fd);
+                } else register_decl(decl);
+            }
+            return;
+        }
+        if (auto* d = dynamic_cast<namespace_decl*>(node)) {
+            scope.declare_namespace(d->name);
+            for (auto* decl : d->decls) {
+                if (auto* fd = dynamic_cast<func_decl*>(decl)) {
+                    // extern/"C" functions keep their original C name — don't namespace-mangle them.
+                    if (!fd->is_extern_c)
+                        fd->name = d->name + "__NS_" + fd->name;
+                }
+                if (auto* cd = dynamic_cast<class_decl*>(decl))
+                    cd->name = d->name + "__NS_" + cd->name;
+                if (auto* sd = dynamic_cast<struct_decl*>(decl))
+                    sd->name = d->name + "__NS_" + sd->name;
+                if (auto* ud = dynamic_cast<union_decl*>(decl))
+                    ud->name = d->name + "__NS_" + ud->name;
+                if (auto* td = dynamic_cast<typedef_decl*>(decl))
+                    td->alias = d->name + "__NS_" + td->alias;
+                if (auto* vd = dynamic_cast<var_decl*>(decl))
+                    vd->name = d->name + "__NS_" + vd->name;
+                // Nested namespace: prepend parent name so its contents get the full path.
+                if (auto* nd = dynamic_cast<namespace_decl*>(decl))
+                    nd->name = d->name + "__NS_" + nd->name;
+                register_decl(decl);
+            }
+            return;
+        }
+        // global var_decl registered in pass 2 (needs type resolution first)
+    }
+
+    void register_class_decl(class_decl* d) {
+        scope.declare_class(d);
+        if (d->is_memstr) scope.declare_memstr(d->name);
+        // Reject duplicate method names (method overloading is not supported)
+        for (size_t i = 0; i < d->methods.size(); i++) {
+            for (size_t j = i + 1; j < d->methods.size(); j++) {
+                if (d->methods[i]->name == d->methods[j]->name)
+                    throw std::runtime_error(err(d->methods[j]->line,
+                        "Duplicate method '" + d->methods[j]->name + "' in '" + d->name +
+                        "': method overloading is not supported"));
+            }
+        }
+        // Register methods as global functions with mangled names ClassName__MT_methodname
+        for (auto* m : d->methods) {
+            // Build a synthetic func_decl for each method so call resolution works
+            auto* fd = new func_decl(); // lives for lifetime of analysis; OK for now
+            fd->line = m->line;
+            fd->name = d->name + "__MT_" + m->name;
+            fd->ret_type = m->ret_type;
+            fd->is_variadic = m->is_variadic;
+            fd->is_extern_c = false;
+            // Add implicit self param if needed
+            if (m->has_self) {
+                param_decl sp;
+                auto* st = new type_node();
+                st->is_primitive = false; st->name = d->name; st->pointer_depth = 1;
+                if (m->self_const) st->is_const = true;
+                sp.type = st;
+                sp.name = m->self_param_name.empty() ? "self" : m->self_param_name;
+                sp.line = m->line;
+                fd->params.push_back(sp);
+            }
+            for (auto& p : m->params) fd->params.push_back(p);
+            fd->body = m->body;
+            m->mangled_name = fd->name;
+            scope.declare_func(fd);
+        }
+
+        // Register #[derive(...)] synthesised functions so call-site analysis succeeds.
+        for (auto& attr : d->attributes) {
+            if (attr.name != "derive") continue;
+            for (auto& dname : attr.args) {
+                // Build a minimal func_decl for each synthesised derive function.
+                auto* fd = new func_decl();
+                fd->line = d->line;
+                auto* cls_ptr_t = new type_node();
+                cls_ptr_t->is_primitive = false;
+                cls_ptr_t->name = d->name;
+                cls_ptr_t->pointer_depth = 1;
+                auto* cls_t = new type_node();
+                cls_t->is_primitive = false;
+                cls_t->name = d->name;
+                cls_t->pointer_depth = 0;
+                auto* void_t = new type_node();
+                void_t->is_primitive = true;
+                void_t->prim = prim_type_t::void_t;
+                if (dname == "Debug") {
+                    // void __derive_Debug_Name(Name* self)
+                    fd->name = "__derive_Debug_" + d->name;
+                    fd->ret_type = void_t;
+                    param_decl p; p.name = "self"; p.type = cls_ptr_t; p.line = d->line;
+                    fd->params.push_back(p);
+                } else if (dname == "Clone") {
+                    // Name __derive_Clone_Name(Name* self)
+                    fd->name = "__derive_Clone_" + d->name;
+                    fd->ret_type = cls_t;
+                    param_decl p; p.name = "self"; p.type = cls_ptr_t; p.line = d->line;
+                    fd->params.push_back(p);
+                } else if (dname == "Default") {
+                    // Name __derive_Default_Name()
+                    fd->name = "__derive_Default_" + d->name;
+                    fd->ret_type = cls_t;
+                }
+                // body=nullptr means forward declaration — valid for extern-like synthetics
+                scope.declare_func(fd);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------- pass 2: visit top-level
+
+    void visit_top_level(ast_node* node) {
+        // Generic templates are not type-checked until instantiated (monomorphization).
+        if (auto* d = dynamic_cast<func_decl*>(node))  { if (!d->type_params.empty()) return; }
+        if (auto* d = dynamic_cast<class_decl*>(node)) { if (!d->type_params.empty()) return; }
+        // Proc macro functions (attr/derive marker) — registered as callables but body not type-checked here.
+        if (auto* d = dynamic_cast<func_decl*>(node))  {
+            if (d->pm_kind != func_decl::proc_macro_kind::none) return;
+        }
+        if (auto* d = dynamic_cast<func_decl*>(node))      { visit_func_decl(d);        return; }
+        if (auto* d = dynamic_cast<struct_decl*>(node))    { visit_struct_decl(d);      return; }
+        if (auto* d = dynamic_cast<enum_decl*>(node))      { visit_enum_decl(d);        return; }
+        if (auto* d = dynamic_cast<union_decl*>(node))     { visit_union_decl(d);       return; }
+        if (auto* d = dynamic_cast<typedef_decl*>(node))   { visit_typedef_decl(d);     return; }
+        if (auto* d = dynamic_cast<var_decl*>(node))       { visit_global_var_decl(d);  return; }
+        if (auto* d = dynamic_cast<class_decl*>(node))     { visit_class_decl(d);       return; }
+        if (auto* d = dynamic_cast<extern_c_block*>(node)) { visit_extern_c_block(d);   return; }
+        if (auto* d = dynamic_cast<memstr_decl*>(node))     { visit_memstr_decl(d);      return; }
+        if (auto* d = dynamic_cast<namespace_decl*>(node)) { visit_namespace_decl(d); return; }
+        if (auto* d = dynamic_cast<using_decl*>(node))     { visit_using_decl(d); return; }
+        if (auto* d = dynamic_cast<proc_macro_decl*>(node)) { visit_proc_macro_decl(d); return; }
+        // Macro stub nodes (const_resolve) — stored as namespace_decl with __macro_ prefix
+        if (auto* d = dynamic_cast<namespace_decl*>(node))
+            if (d->name.rfind("__macro_", 0) == 0) return; // skip macro stubs
+        throw std::runtime_error(err(node->line, "Unrecognised top-level declaration"));
+    }
+
+    void visit_extern_c_block(extern_c_block* blk) {
+        for (auto* d : blk->decls) {
+            if (auto* fd = dynamic_cast<func_decl*>(d)) { fd->is_extern_c = true; visit_func_decl(fd); }
+            else visit_top_level(d);
+        }
+    }
+
+    void visit_namespace_decl(namespace_decl* d) {
+        std::string saved_ns = current_namespace;
+        current_namespace = d->name;
+        for (auto* decl : d->decls) {
+            if (auto* fd = dynamic_cast<func_decl*>(decl)) {
+                if (!fd->type_params.empty()) continue; // skip generic function templates
+                visit_func_decl(fd);
+            } else if (auto* vd = dynamic_cast<var_decl*>(decl)) visit_global_var_decl(vd);
+            else if (auto* sd = dynamic_cast<struct_decl*>(decl)) visit_struct_decl(sd);
+            else if (auto* cd = dynamic_cast<class_decl*>(decl)) {
+                if (cd->is_interface) continue; // interfaces need no body visiting
+                if (!cd->type_params.empty()) continue; // skip generic class templates
+                visit_class_decl(cd);
+            } else if (auto* nd = dynamic_cast<namespace_decl*>(decl)) {
+                visit_namespace_decl(nd);
+            }
+        }
+        current_namespace = saved_ns;
+    }
+
+    void visit_class_decl(class_decl* d) {
+        // Interface declarations have no fields/bodies — nothing to visit
+        if (d->is_interface) return;
+
+        // Enforce interface contracts for every interface listed after ':'
+        for (const auto& iname : d->interface_names) {
+            if (scope.is_interface_type(iname)) {
+                class_decl* iface = scope.find_interface(iname);
+                // Required methods: stub (no body) — istruc MUST provide them
+                for (auto* im : iface->methods) {
+                    if (im->body) continue; // has default implementation — optional
+                    bool found = false;
+                    for (auto* cm : d->methods)
+                        if (cm->name == im->name) { found = true; break; }
+                    if (!found)
+                        throw std::runtime_error(err(d->line,
+                            "'" + d->name + "' does not implement required method '" +
+                            im->name + "' from interface '" + iname + "'"));
+                }
+                // Required fields: no initializer — istruc MUST provide them
+                for (auto* iff : iface->fields) {
+                    if (iff->init.has_value()) continue; // has default — optional
+                    bool found = false;
+                    for (auto* cf : d->fields)
+                        if (cf->name == iff->name) { found = true; break; }
+                    if (!found)
+                        throw std::runtime_error(err(d->line,
+                            "'" + d->name + "' does not implement required field '" +
+                            iff->name + "' from interface '" + iname + "'"));
+                }
+                // Inherit default methods the istruc did NOT override
+                for (auto* im : iface->methods) {
+                    if (!im->body) continue;
+                    bool overridden = false;
+                    for (auto* cm : d->methods)
+                        if (cm->name == im->name) { overridden = true; break; }
+                    if (!overridden) d->methods.push_back(im);
+                }
+                // Inherit default fields the istruc did NOT override
+                for (auto* iff : iface->fields) {
+                    if (!iff->init.has_value()) continue;
+                    bool overridden = false;
+                    for (auto* cf : d->fields)
+                        if (cf->name == iff->name) { overridden = true; break; }
+                    if (!overridden) d->fields.push_back(iff);
+                }
+            } else if (scope.classes.count(iname)) {
+                throw std::runtime_error(err(d->line,
+                    "Inheritance is not supported; use interfaces instead ('" +
+                    iname + "' is a class, not an interface)"));
+            } else {
+                throw std::runtime_error(err(d->line,
+                    "Unknown interface '" + iname + "'"));
+            }
+        }
+
+        // Process #[derive(...)] attributes: validate names (unknown = user proc macro,
+        // built-ins Debug/Clone/Default are accepted without error).
+        static const std::unordered_set<std::string> builtin_derives = {"Debug", "Clone", "Default"};
+        for (auto& attr : d->attributes) {
+            if (attr.name == "derive") {
+                for (auto& arg : attr.args) {
+                    if (!builtin_derives.count(arg))
+                        throw std::runtime_error(err(d->line,
+                            "Unknown derive macro '" + arg + "'; "
+                            "built-in derives are: Debug, Clone, Default"));
+                }
+            }
+        }
+
+        // Check all fields
+        for (auto* f : d->fields) {
+            check_var_type(f->type, f->line);
+        }
+
+        // Check all methods
+        for (auto* m : d->methods) {
+
+            if (!m->body) continue; // forward declaration, skip body check
+
+            // Type-check method body
+            func_decl* prev = current_func;
+            std::string prev_class = current_class;
+            // Build a synthetic func_decl for type-checking
+            auto* fd = owned_funcs_for_methods.emplace_back(std::make_unique<func_decl>()).get();
+            fd->line = m->line; fd->name = m->mangled_name; fd->ret_type = m->ret_type;
+            fd->is_variadic = m->is_variadic;
+            current_func = fd;
+            current_class = d->name;
+
+            scope.push();
+            // Declare self
+            if (m->has_self) {
+                auto* st = make_type(type_node{});
+                st->is_primitive = false; st->name = d->name; st->pointer_depth = 1;
+                st->is_const = m->self_const;
+                const std::string sname = m->self_param_name.empty() ? "self" : m->self_param_name;
+                var_decl* sv = make_param_var(st, sname, m->line);
+                scope.declare_var(sname, sv);
+            }
+            // Declare params
+            for (auto& p : m->params) {
+                check_var_type(p.type, p.line);
+                if (!p.name.empty()) {
+                    var_decl* pv = make_param_var(p.type, p.name, p.line);
+                    scope.declare_var(p.name, pv);
+                }
+            }
+            // Declare class fields as accessible via self
+            for (auto* f : d->fields) {
+                var_decl* fv = make_param_var(f->type, f->name, f->line);
+                scope.declare_var(f->name, fv);
+            }
+            // Heap-use check: istruc methods cannot call raw heap ops.
+            // Only memstr-declared types may do so.
+            if (!skip_heap_check && !d->is_memstr && heap_block(m->body))
+                throw std::runtime_error(err(m->line,
+                    "direct heap operation (malloc/calloc/realloc/free) not allowed "
+                    "in method '" + m->name + "' of '" + d->name +
+                    "'; declare with 'memstr' to allow direct heap access"));
+            visit_block(m->body);
+            scope.pop();
+            current_func = prev;
+            current_class = prev_class;
+        }
+    }
+
+    std::vector<std::unique_ptr<func_decl>> owned_funcs_for_methods;
+
+    // Returns true if child_name == parent_name or child inherits from parent (transitively).
+    bool is_derived_from(const std::string& child_name, const std::string& parent_name) const {
+        if (child_name == parent_name) return true;
+        auto it = scope.classes.find(child_name);
+        if (it == scope.classes.end()) return false;
+        std::string base = it->second->base_name;
+        int guard = 0;
+        while (!base.empty() && ++guard < 64) {
+            if (base == parent_name) return true;
+            auto bit = scope.classes.find(base);
+            if (bit == scope.classes.end()) break;
+            base = bit->second->base_name;
+        }
+        return false;
+    }
+
+    void visit_struct_decl(struct_decl* d) {
+        // struct is a pure data record — no methods allowed.
+        // The parser enforces this structurally (struct_decl has no methods vector).
+        // This check validates field types and rejects initializers.
+        for (auto* f : d->fields) {
+            check_var_type(f->type, f->line);
+            if (f->init.has_value())
+                throw std::runtime_error(err(f->line, "Struct field cannot have an initializer (use istruc for classes)"));
+        }
+    }
+
+    void visit_memstr_decl(memstr_decl* d) {
+        if (d->ptr_field) check_var_type(d->ptr_field->type, d->line);
+        std::vector<std::string> seen;
+        auto check_fn = [&](func_decl* fn) {
+            if (!fn) return;
+            for (const auto& m : seen)
+                if (m == fn->name)
+                    throw std::runtime_error(err(fn->line,
+                        "Duplicate method name '" + fn->name + "' in memstr '" + d->name + "'"));
+            seen.push_back(fn->name);
+            if (fn->ret_type) check_type_known(fn->ret_type, fn->line);
+            for (auto& p : fn->params) check_var_type(p.type, p.line);
+        };
+        check_fn(d->fn_mmap);
+        check_fn(d->fn_rmap);
+        check_fn(d->fn_deinit);
+        scope.declare_memstr(d->name);
+    }
+
+    void visit_union_decl(union_decl* d) {
+        for (auto* f : d->fields) {
+            check_var_type(f->type, f->line);
+            if (f->init.has_value())
+                throw std::runtime_error(err(f->line, "Union field cannot have an initializer"));
+        }
+    }
+
+    void visit_enum_decl(enum_decl* d) {
+        for (auto* ev : d->variants) {
+            switch (ev->kind) {
+            case enum_variant_kind::plain:
+                if (ev->plain_val.has_value()) {
+                    type_node* vt = visit_expr(ev->plain_val.value());
+                    if (!vt->is_primitive || !is_int_prim(vt->prim.value()))
+                        throw std::runtime_error(err(ev->line,
+                            "Enum variant value must be an integer expression"));
+                }
+                break;
+            case enum_variant_kind::tuple:
+                for (auto* tt : ev->tuple_types)
+                    check_type_known(tt, ev->line);
+                break;
+            case enum_variant_kind::named_struct:
+                for (auto* f : ev->struct_fields) {
+                    check_var_type(f->type, f->line);
+                    if (f->init.has_value())
+                        throw std::runtime_error(err(f->line,
+                            "ADT enum struct-variant fields cannot have initializers"));
+                }
+                break;
+            case enum_variant_kind::istruc_body:
+                // istruc variants are validated by the class analysis path
+                break;
+            }
+        }
+    }
+
+    void visit_typedef_decl(typedef_decl* d) {
+        check_type_known(d->underlying, d->line);
+    }
+
+    void visit_global_var_decl(var_decl* d) {
+        // sta-typed globals are comptime namespaces; skip type-checking.
+        if (d->is_sta || (d->type && d->type->is_sta)) {
+            scope.declare_var(d->name, d);
+            return;
+        }
+        check_var_type(d->type, d->line);
+        if (d->init.has_value()) {
+            type_node* it = visit_expr(d->init.value());
+            if (!assignable_td(d->type, it))
+                throw std::runtime_error(err(d->line,
+                    "Cannot initialise '" + type_to_str(d->type) +
+                    "' with '" + type_to_str(it) + "'"));
+        }
+        scope.declare_var(d->name, d);
+    }
+
+    void visit_func_decl(func_decl* fd) {
+        check_type_known(fd->ret_type, fd->line);
+
+        // A noexcept function cannot also be an error-union (!T) function — contradiction.
+        if (fd->is_noexcept && fd->is_error_union)
+            throw std::runtime_error(err(fd->line,
+                "Function '" + fd->name +
+                "' cannot be both 'noexcept' and '!T' (error union return)"));
+
+        if (fd->name == "main") {
+            bool ok = fd->ret_type && fd->ret_type->is_primitive
+                   && fd->ret_type->prim == prim_type_t::arb_int
+                   && fd->ret_type->bit_width == 32
+                   && fd->ret_type->pointer_depth == 0;
+            if (!ok)
+                throw std::runtime_error(err(fd->line,
+                    "Function 'main' must return i32 (the process exit code)"));
+        }
+
+        if (!fd->body) return; // forward declaration only
+
+        func_decl* prev = current_func;
+        current_func = fd;
+
+        // Params and function body share one scope frame so that re-declaring a
+        // param name inside the body is caught as a redeclaration.
+        // Heap-use check: raw heap ops (malloc/calloc/realloc/free) are only
+        // legal inside a memstr-declared type's methods. No exemptions for main()
+        // or functions that accept a &memstr param — call through the allocator instead.
+        if (!skip_heap_check && fd->body && !fd->is_extern_c) {
+            if (heap_block(fd->body))
+                throw std::runtime_error(err(fd->line,
+                    "direct heap operation (malloc/calloc/realloc/free) not allowed "
+                    "outside a 'memstr' allocator type in function '" + fd->name + "'"));
+        }
+
+        scope.push();
+        for (auto& p : fd->params) {
+            check_var_type(p.type, p.line);
+            if (!p.name.empty()) {
+                var_decl* pv = make_param_var(p.type, p.name, p.line);
+                scope.declare_var(p.name, pv);
+            }
+        }
+        // Iterate body statements directly (not via visit_block, which would push a
+        // fresh frame and hide the param-redeclaration check).
+        if (fd->body)
+            for (auto* s : fd->body->stmts) visit_stmt(s);
+
+        scope.pop();
+        current_func = prev;
+    }
+
+    // -------------------------------------------------------------- statements
+
+    void visit_stmt(ast_node* node) {
+        if (!node) return;
+        if (auto* n = dynamic_cast<block_stmt*>(node))    { visit_block(n);         return; }
+        if (auto* n = dynamic_cast<if_stmt*>(node))       { visit_if(n);            return; }
+        if (auto* n = dynamic_cast<while_stmt*>(node))    { visit_while(n);         return; }
+        if (auto* n = dynamic_cast<for_stmt*>(node))      { visit_for(n);           return; }
+        if (auto* n = dynamic_cast<switch_stmt*>(node))   { visit_switch(n);        return; }
+        if (auto* n = dynamic_cast<return_stmt*>(node))   { visit_return(n);        return; }
+        if (auto* n = dynamic_cast<break_stmt*>(node))    { visit_break(n);         return; }
+        if (auto* n = dynamic_cast<continue_stmt*>(node)) { visit_continue(n);      return; }
+        if (auto* n = dynamic_cast<var_decl*>(node))      { visit_local_var_decl(n); return; }
+        if (auto* n = dynamic_cast<expr_stmt*>(node))     { visit_expr(n->expr);    return; }
+        if (auto* n = dynamic_cast<asm_stmt*>(node))      { visit_asm_stmt(n);      return; }
+        if (auto* n = dynamic_cast<defer_stmt*>(node))    { visit_defer_stmt(n);    return; }
+        if (auto* n = dynamic_cast<errdefer_stmt*>(node)) { visit_errdefer_stmt(n); return; }
+        if (auto* n = dynamic_cast<for_range_stmt*>(node)) { visit_for_range(n); return; }
+        // new error system: try expr; — propagate
+        if (auto* n = dynamic_cast<try_expr_stmt*>(node)) {
+            if (current_func && current_func->is_noexcept)
+                throw std::runtime_error(err(node->line,
+                    "'try' cannot be used inside a 'noexcept' function ('" +
+                    current_func->name + "')"));
+            if (n->expr) visit_expr(n->expr);
+            return;
+        }
+        // new error system: res { ... }
+        if (auto* n = dynamic_cast<res_block_stmt*>(node)) {
+            if (current_func && current_func->is_noexcept)
+                throw std::runtime_error(err(node->line,
+                    "'res' block cannot be used inside a 'noexcept' function ('" +
+                    current_func->name + "')"));
+            visit_block(n->body);
+            return;
+        }
+        throw std::runtime_error(err(node->line, "Unknown statement kind"));
+    }
+
+    void visit_block(block_stmt* blk) {
+        scope.push();
+        for (auto* s : blk->stmts) visit_stmt(s);
+        scope.pop();
+    }
+
+    void visit_if(if_stmt* n) {
+        type_node* ct = visit_expr(n->cond);
+        if (!is_truthy(ct))
+            throw std::runtime_error(err(n->line,
+                "Condition must be numeric, bool, or pointer; got '" + type_to_str(ct) + "'"));
+        // Then branch — optional capture binds the condition value (nullable stripped)
+        if (n->then_capture.has_value()) {
+            scope.push();
+            type_node cap_t = *ct; cap_t.is_nullable = false;
+            scope.declare_var(*n->then_capture, make_param_var(make_type(cap_t), *n->then_capture, n->line));
+            visit_stmt(n->then_body);
+            scope.pop();
+        } else {
+            visit_stmt(n->then_body);
+        }
+        // Else branch — optional capture
+        if (n->else_body) {
+            if (n->else_capture.has_value()) {
+                scope.push();
+                type_node cap_t = *ct; cap_t.is_nullable = false;
+                scope.declare_var(*n->else_capture, make_param_var(make_type(cap_t), *n->else_capture, n->line));
+                visit_stmt(n->else_body);
+                scope.pop();
+            } else {
+                visit_stmt(n->else_body);
+            }
+        }
+    }
+
+    void visit_while(while_stmt* n) {
+        type_node* ct = visit_expr(n->cond);
+        if (!is_truthy(ct))
+            throw std::runtime_error(err(n->line,
+                "While condition must be numeric, bool, or pointer; got '" + type_to_str(ct) + "'"));
+        loop_depth++;
+        visit_stmt(n->body);
+        loop_depth--;
+    }
+
+    void visit_for(for_stmt* n) {
+        scope.push(); // for-init scope (encloses the body)
+        if (n->init) visit_stmt(n->init);
+        if (n->cond) {
+            type_node* ct = visit_expr(n->cond);
+            if (!is_truthy(ct))
+                throw std::runtime_error(err(n->line,
+                    "For condition must be numeric, bool, or pointer; got '" + type_to_str(ct) + "'"));
+        }
+        if (n->step) visit_expr(n->step);
+        loop_depth++;
+        visit_stmt(n->body);
+        loop_depth--;
+        scope.pop();
+    }
+
+    void visit_switch(switch_stmt* n) {
+        type_node* st = visit_expr(n->subject);
+        if (!st->is_primitive || !is_int_prim(st->prim.value()))
+            throw std::runtime_error(err(n->line,
+                "Switch subject must be an integer type; got '" + type_to_str(st) + "'"));
+
+        switch_depth++;
+        for (auto& [label, blk] : n->cases) {
+            if (label.has_value()) {
+                type_node* lt = visit_expr(label.value());
+                if (!assignable_td(st, lt))
+                    throw std::runtime_error(err(n->line,
+                        "Case value type '" + type_to_str(lt) +
+                        "' incompatible with switch subject '" + type_to_str(st) + "'"));
+            }
+            visit_block(blk);
+        }
+        switch_depth--;
+    }
+
+    void visit_return(return_stmt* n) {
+        if (!current_func)
+            throw std::runtime_error(err(n->line, "'return' outside of a function"));
+
+        type_node* ret = current_func->ret_type;
+        bool ret_void  = ret && ret->is_primitive && ret->prim == prim_type_t::void_t
+                         && ret->pointer_depth == 0;
+
+        if (!n->value.has_value()) {
+            if (!ret_void)
+                throw std::runtime_error(err(n->line,
+                    "Non-void function '" + current_func->name + "' must return a value"));
+            return;
+        }
+
+        if (ret_void)
+            throw std::runtime_error(err(n->line,
+                "Void function '" + current_func->name + "' cannot return a value"));
+
+        type_node* vt = visit_expr(n->value.value());
+        if (!assignable_td(ret, vt))
+            throw std::runtime_error(err(n->line,
+                "Return type mismatch in '" + current_func->name +
+                "': expected '" + type_to_str(ret) +
+                "', got '" + type_to_str(vt) + "'"));
+    }
+
+    void visit_break(break_stmt* n) {
+        if (loop_depth == 0 && switch_depth == 0)
+            throw std::runtime_error(err(n->line, "'break' outside loop or switch"));
+    }
+
+    void visit_continue(continue_stmt* n) {
+        if (loop_depth == 0)
+            throw std::runtime_error(err(n->line, "'continue' outside loop"));
+    }
+
+    void visit_asm_stmt(asm_stmt* s) {
+        // Validate all input/output variable names exist in scope.
+        for (auto& in : s->inputs) {
+            if (!scope.lookup_var(in.varname) && !scope.lookup_func(in.varname))
+                throw std::runtime_error(err(s->line,
+                    "Inline asm: unknown input operand '" + in.varname + "'"));
+        }
+        for (auto& out : s->outputs) {
+            if (!scope.lookup_var(out.varname))
+                throw std::runtime_error(err(s->line,
+                    "Inline asm: unknown output operand '" + out.varname + "'"));
+        }
+        // Validate every %name in the instruction text is listed in a constraint section.
+        const std::string& text = s->raw_instructions;
+        for (size_t pos = 0; pos < text.size(); pos++) {
+            if (text[pos] != '%') continue;
+            pos++;
+            std::string name;
+            while (pos < text.size() &&
+                   (std::isalnum((unsigned char)text[pos]) || text[pos] == '_'))
+                name += text[pos++];
+            pos--; // loop will increment
+            if (name.empty()) continue;
+            bool found = false;
+            for (auto& e : s->inputs)  { if (e.varname == name) { found = true; break; } }
+            for (auto& e : s->outputs) { if (e.varname == name) { found = true; break; } }
+            if (!found)
+                throw std::runtime_error(err(s->line,
+                    "Inline asm: '%"+name+"' is not listed in any constraint section"));
+        }
+    }
+
+    void visit_defer_stmt(defer_stmt* n) {
+        if (n->expr) visit_expr(n->expr);
+        else if (n->blk) visit_block(n->blk);
+    }
+
+    void visit_errdefer_stmt(errdefer_stmt* n) {
+        if (n->expr) visit_expr(n->expr);
+        else if (n->blk) visit_block(n->blk);
+    }
+
+    void visit_local_var_decl(var_decl* d) {
+        // sta-typed declarations are comptime namespaces; no runtime type-checking needed.
+        if (d->is_sta || (d->type && d->type->is_sta)) {
+            scope.declare_var(d->name, d);
+            return;
+        }
+
+        // Save the original parser-owned type node before any alias resolution.
+        // We must write inferred types back into this node (not into analyzer-owned
+        // nodes) so d->type doesn't become a dangling pointer once the analyzer
+        // is destroyed.
+        type_node* original_type = d->type;
+        // Resolve using aliases (e.g. 'var' → auto) before type checking.
+        if (d->type && !d->type->is_primitive && !d->type->is_auto && d->type->name) {
+            auto ua = using_aliases.find(*d->type->name);
+            if (ua != using_aliases.end()) d->type = ua->second;
+        }
+        check_var_type(d->type, d->line);
+        // consteval means the user will call __construct__ manually; passing ctor args
+        // at the declaration site (consteval T v(args)) is an error.
+        if (d->is_consteval && !d->ctor_args.empty())
+            throw std::runtime_error(err(d->line,
+                "A 'consteval' declaration cannot have constructor arguments at the declaration site; "
+                "call '" + d->name + ".__construct__(...)' explicitly after the declaration."));
+        if (d->init.has_value()) {
+            expr_node* init_e = d->init.value();
+            // Mark class_init used in assignment (copy-init) context so explicit ctor check works.
+            if (init_e->kind == expr_kind::class_init)
+                init_e->is_implicit_init = true;
+            type_node* it = visit_expr(init_e);
+            // auto type: infer from initializer. Copy the inferred type into the
+            // original parser-owned node so the IR sees stable memory after the
+            // analyzer is destroyed (analyzer-owned nodes in owned_types are freed).
+            if (d->type->is_auto) {
+                *original_type = *it;
+                d->type = original_type;
+                scope.declare_var(d->name, d);
+                return;
+            }
+            // Context-inferred class initializer .{...} adopts the variable's type; skip check.
+            bool inferred_init = (init_e->kind == expr_kind::class_init && !init_e->init_type);
+            if (!inferred_init && !assignable_td(d->type, it))
+                throw std::runtime_error(err(d->line,
+                    "Cannot initialise '" + d->name + "' (type '" + type_to_str(d->type) +
+                    "') with '" + type_to_str(it) + "'"));
+        }
+        // Implicit constructor arguments: Type v(args...) / v{args...}
+        for (auto* a : d->ctor_args) visit_expr(a);
+        scope.declare_var(d->name, d);
+    }
+
+    // -------------------------------------------------------------- expressions
+
+    type_node* visit_expr(expr_node* e) {
+        if (!e) throw std::runtime_error("Internal: null expression node");
+        switch (e->kind) {
+            case expr_kind::int_lit:    return visit_int_lit(e);
+            case expr_kind::float_lit:  return visit_float_lit(e);
+            case expr_kind::string_lit: return visit_string_lit(e);
+            case expr_kind::char_lit:   return visit_char_lit(e);
+            case expr_kind::bool_lit:   return visit_bool_lit(e);
+            case expr_kind::identifier: return visit_identifier(e);
+            case expr_kind::unary:      return visit_unary(e);
+            case expr_kind::binary:     return visit_binary(e);
+            case expr_kind::assign:     return visit_assign(e);
+            case expr_kind::call:       return visit_call(e);
+            case expr_kind::subscript:  return visit_subscript(e);
+            case expr_kind::member:     return visit_member(e);
+            case expr_kind::cast:       return visit_cast(e);
+            case expr_kind::sizeof_e:   return visit_sizeof(e);
+            case expr_kind::get_ifo_t_e: {
+                // Returns ifo::ifo_t* — treated as void* for type-checking purposes
+                auto* t = make_type(type_node{}); t->is_primitive = false; t->pointer_depth = 1;
+                t->name = "ifo_t"; return t;
+            }
+            case expr_kind::ternary:    return visit_ternary(e);
+            case expr_kind::annotation: return prim(prim_type_t::void_t); // @id has no type
+            case expr_kind::class_init: return visit_class_init(e);
+            case expr_kind::null_lit: {
+                // null is a null-pointer constant: assignable to any pointer or ?T type.
+                // Its synthetic type carries is_null_literal=true so assignable() can enforce
+                // that it cannot be stored in a non-pointer, non-nullable slot.
+                auto* t = make_type(type_node{});
+                t->is_primitive = true; t->prim = prim_type_t::void_t;
+                t->pointer_depth = 1; t->is_null_literal = true;
+                return t;
+            }
+            case expr_kind::null_coal: {
+                // lhs ?? rhs  or  lhs ?? { block }
+                type_node* lt = visit_expr(e->lhs);
+                if (e->rhs) visit_expr(e->rhs);
+                if (e->handler_block) visit_block(e->handler_block);
+                // Return type is the inner (unwrapped) type of lhs
+                type_node inner = *lt; inner.is_nullable = false;
+                return make_type(inner);
+            }
+            case expr_kind::error_lit: return prim(prim_type_t::arb_int, 32); // error tag is i32
+            case expr_kind::import_expr:
+            case expr_kind::sta_type_expr: {
+                // Comptime-only expressions: return a synthetic sta type node.
+                auto* t = make_type(type_node{}); t->is_sta = true; t->name = "sta";
+                return t;
+            }
+            case expr_kind::try_expr:
+                if (current_func && current_func->is_noexcept)
+                    throw std::runtime_error(err(e->line,
+                        "'try' cannot be used inside a 'noexcept' function ('" +
+                        current_func->name + "')"));
+                if (e->operand) visit_expr(e->operand);
+                return prim(prim_type_t::arb_int, 32); // success value type (simplified)
+            case expr_kind::except_expr: {
+                if (e->object) visit_expr(e->object);
+                if (!e->str_val.empty() && e->handler_block) {
+                    scope.push();
+                    // Declare binding as error_t {code:i32, name:i8*}
+                    type_node et_raw; et_raw.is_primitive = false; et_raw.name = "error_t";
+                    type_node* et = make_type(et_raw);
+                    scope.declare_var(e->str_val, make_param_var(et, e->str_val, e->line));
+                    visit_block(e->handler_block);
+                    scope.pop();
+                } else if (e->handler_block) {
+                    visit_block(e->handler_block);
+                }
+                return prim(prim_type_t::arb_int, 32);
+            }
+            default:
+                throw std::runtime_error(err(e->line, "Unknown expression kind"));
+        }
+    }
+
+    type_node* visit_class_init(expr_node* e) {
+        // Type-check field initializer expressions; the field-name validity and stores
+        // are handled by the IR. Returns the named type (or void for context-inferred .{}).
+        for (auto& fi : e->field_inits) visit_expr(fi.second);
+        if (e->init_type) {
+            // Enforce 'explicit': explicit constructors cannot be used in copy-init context.
+            if (e->is_implicit_init) {
+                const std::string cname = e->init_type->name.value_or("");
+                auto cit = scope.classes.find(cname);
+                if (cit != scope.classes.end()) {
+                    for (auto* m : cit->second->methods) {
+                        if (m->is_explicit && m->is_constructor) {
+                            throw std::runtime_error(err(e->line,
+                                "Cannot implicitly initialize '" + cname +
+                                "': constructor is marked explicit"));
+                        }
+                    }
+                }
+            }
+            return e->init_type;
+        }
+        // ADT enum named-struct/istruc variant init: EnumName::VariantName { .field = val }
+        // The object field holds the member expr (EnumName::VariantName).
+        if (e->object && e->object->kind == expr_kind::member &&
+            e->object->object && e->object->object->kind == expr_kind::identifier) {
+            const std::string& enum_name = e->object->object->str_val;
+            auto eit = scope.enums.find(enum_name);
+            if (eit != scope.enums.end() && eit->second->is_adt && !scope.lookup_var(enum_name)) {
+                auto* t = make_type(type_node{});
+                t->is_primitive = false;
+                t->name = enum_name;
+                return t;
+            }
+        }
+        return prim(prim_type_t::void_t);
+    }
+
+    type_node* visit_int_lit(expr_node* /*e*/)   { return prim(prim_type_t::arb_int, 32); }
+    type_node* visit_float_lit(expr_node* /*e*/) { return prim(prim_type_t::arb_float, 64); }
+    type_node* visit_bool_lit(expr_node* /*e*/)  { return prim(prim_type_t::arb_bool, 1); }
+
+    type_node* visit_string_lit(expr_node* /*e*/) {
+        type_node t; t.is_primitive = true; t.prim = prim_type_t::char_t;
+        t.pointer_depth = 1; t.is_const = true;
+        return make_type(t);
+    }
+
+    type_node* visit_char_lit(expr_node* /*e*/) { return prim(prim_type_t::char_t); }
+
+    type_node* visit_identifier(expr_node* e) {
+        var_decl* vd = scope.lookup_var(e->str_val);
+        if (vd) return vd->type;
+
+        // Intra-namespace bare variable/type reference: try ns__NS_name
+        if (!current_namespace.empty()) {
+            std::string ns_qual = current_namespace + "__NS_" + e->str_val;
+            var_decl* ns_vd = scope.lookup_var(ns_qual);
+            if (ns_vd) { e->str_val = ns_qual; return ns_vd->type; }
+            // Class name used as identifier (e.g. for static method dispatch)
+            if (scope.classes.count(ns_qual)) {
+                e->str_val = ns_qual;
+                auto* t = make_type(type_node{});
+                t->is_primitive = false;
+                t->name = ns_qual;
+                return t;
+            }
+            if (scope.enums.count(ns_qual)) {
+                e->str_val = ns_qual;
+                auto* t = make_type(type_node{});
+                t->is_primitive = false;
+                t->name = ns_qual;
+                return t;
+            }
+        }
+
+        // Function used as value (e.g. address-of for function pointer)
+        func_decl* fd = scope.lookup_func(e->str_val);
+        if (fd) {
+            // Return a function type (depth=0); addr_of will increment to 1 for pointer syntax
+            auto* fpt = make_type(type_node{});
+            fpt->is_func_ptr  = true;
+            fpt->fp_ret       = fd->ret_type;
+            for (auto& p : fd->params) fpt->fp_params.push_back(p.type);
+            fpt->fp_variadic  = fd->is_variadic;
+            fpt->pointer_depth = 0;
+            return fpt;
+        }
+
+        // Enum variant used as integer constant
+        if (scope.enum_variants.count(e->str_val))
+            return prim(prim_type_t::arb_int, 32);
+
+        // Enum type name used as scope qualifier (EnumName::VariantName)
+        if (scope.enums.count(e->str_val)) {
+            auto* t = make_type(type_node{});
+            t->is_primitive = false;
+            t->name = e->str_val;
+            return t;
+        }
+
+        throw std::runtime_error(err(e->line,
+            "Undeclared identifier '" + e->str_val + "'"));
+    }
+
+    type_node* visit_unary(expr_node* e) {
+        type_node* ot = visit_expr(e->operand);
+        uint64_t   ln = e->line;
+
+        switch (e->uop) {
+            case unary_op::neg:
+            case unary_op::pos:
+                if (!ot->is_primitive || !is_numeric_prim(ot->prim.value()))
+                    throw std::runtime_error(err(ln,
+                        "Unary +/- requires numeric type, got '" + type_to_str(ot) + "'"));
+                return ot;
+
+            case unary_op::bit_not:
+                if (!ot->is_primitive || !is_int_prim(ot->prim.value()))
+                    throw std::runtime_error(err(ln,
+                        "Bitwise NOT (~) requires integer type, got '" + type_to_str(ot) + "'"));
+                return ot;
+
+            case unary_op::log_not:
+                if (!is_truthy(ot))
+                    throw std::runtime_error(err(ln,
+                        "Logical NOT (!) requires numeric, bool, or pointer type, got '" +
+                        type_to_str(ot) + "'"));
+                return prim(prim_type_t::arb_bool, 1);
+
+            case unary_op::pre_inc:
+            case unary_op::pre_dec:
+            case unary_op::post_inc:
+            case unary_op::post_dec:
+                if (!is_lvalue(e->operand))
+                    throw std::runtime_error(err(ln, "Increment/decrement requires an lvalue"));
+                if (!is_truthy(ot))
+                    throw std::runtime_error(err(ln,
+                        "Increment/decrement requires numeric or pointer type, got '" +
+                        type_to_str(ot) + "'"));
+                return ot;
+
+            case unary_op::deref: {
+                // Resolve typedef aliases so `typedef i32* IntPtr; *p` works.
+                if (ot && !ot->is_primitive && ot->pointer_depth == 0 && ot->name.has_value())
+                    ot = resolve_typedef(ot, ln);
+                // ADT enum pseudo-deref: (*x) where x is an ADT enum — passthrough for (*x)[N].
+                if (ot && !ot->is_primitive && ot->pointer_depth == 0 && ot->name.has_value()
+                    && scope.enums.count(*ot->name) && scope.enums.at(*ot->name)->is_adt)
+                    return ot; // keep the enum type; subscript will resolve tuple field
+                if (ot->pointer_depth < 1)
+                    throw std::runtime_error(err(ln,
+                        "Cannot dereference non-pointer type '" + type_to_str(ot) + "'"));
+                type_node derefed = *ot;
+                derefed.pointer_depth--;
+                return make_type(derefed);
+            }
+
+            case unary_op::addr_of:
+                if (!is_lvalue(e->operand))
+                    throw std::runtime_error(err(ln, "Cannot take address of a non-lvalue"));
+                {
+                    type_node addr = *ot;
+                    addr.pointer_depth++;
+                    return make_type(addr);
+                }
+
+            default:
+                throw std::runtime_error(err(ln, "Unknown unary operator"));
+        }
+    }
+
+    type_node* find_class_op(const std::string& tname, const std::string& op_str, uint64_t = 0) {
+        std::string search = tname;
+        while (!search.empty() && scope.classes.count(search)) {
+            class_decl* cd = scope.classes[search];
+            for (auto* m : cd->methods) {
+                if (m->is_operator_overload && m->operator_str == op_str)
+                    return m->ret_type;
+            }
+            search = cd->base_name;
+        }
+        return nullptr;
+    }
+
+    type_node* visit_binary(expr_node* e) {
+        type_node* lt = visit_expr(e->lhs);
+        type_node* rt = visit_expr(e->rhs);
+        uint64_t   ln = e->line;
+
+        // Typedefs are transparent for operator type-checking: a `typedef i32 Score`
+        // behaves exactly like i32 in arithmetic/comparison. Resolve scalar aliases
+        // (pointer-depth 0 named types) to their underlying type before checking.
+        if (lt && !lt->is_primitive && lt->pointer_depth == 0 && lt->name.has_value())
+            lt = resolve_typedef(lt, ln);
+        if (rt && !rt->is_primitive && rt->pointer_depth == 0 && rt->name.has_value())
+            rt = resolve_typedef(rt, ln);
+
+        // Generic leniency: operands of unbound type-parameter type defer all checking
+        // to the monomorphized instantiation. Comparisons yield bool; others yield the
+        // concrete operand type when available.
+        if (is_type_param_like(lt) || is_type_param_like(rt)) {
+            switch (e->bop) {
+                case binary_op::eq: case binary_op::ne:
+                case binary_op::lt: case binary_op::gt:
+                case binary_op::lte: case binary_op::gte:
+                case binary_op::log_and: case binary_op::log_or:
+                    return prim(prim_type_t::arb_bool, 1);
+                default:
+                    return is_type_param_like(lt) ? rt : lt;
+            }
+        }
+
+        // Check for class operator overloads first.
+        auto bop_to_str = [](binary_op op) -> std::string {
+            switch (op) {
+                case binary_op::add: return "+";
+                case binary_op::sub: return "-";
+                case binary_op::mul: return "*";
+                case binary_op::div: return "/";
+                case binary_op::mod: return "%";
+                case binary_op::eq:  return "==";
+                case binary_op::ne:  return "!=";
+                case binary_op::lt:  return "<";
+                case binary_op::lte: return "<=";
+                case binary_op::gt:  return ">";
+                case binary_op::gte: return ">=";
+                default:             return "";
+            }
+        };
+        if (!lt->is_primitive && lt->pointer_depth == 0 && lt->name.has_value()) {
+            std::string op_str = bop_to_str(e->bop);
+            if (!op_str.empty()) {
+                type_node* res = find_class_op(lt->name.value(), op_str, ln);
+                if (res) return res;
+            }
+        }
+
+        auto need_num = [&](const type_node* t, const char* side) {
+            if (!t->is_primitive || !is_numeric_prim(t->prim.value()))
+                throw std::runtime_error(err(ln,
+                    std::string(side) + " operand must be numeric, got '" + type_to_str(t) + "'"));
+        };
+        auto need_int = [&](const type_node* t, const char* side) {
+            if (!t->is_primitive || !is_int_prim(t->prim.value()))
+                throw std::runtime_error(err(ln,
+                    std::string(side) + " operand must be integer, got '" + type_to_str(t) + "'"));
+        };
+
+        switch (e->bop) {
+            // ---- arithmetic ----
+            case binary_op::add:
+                if (lt->pointer_depth > 0) { need_int(rt, "right"); return lt; }
+                if (rt->pointer_depth > 0) { need_int(lt, "left");  return rt; }
+                need_num(lt, "left"); need_num(rt, "right");
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
+
+            case binary_op::sub:
+                if (lt->pointer_depth > 0 && rt->pointer_depth > 0) {
+                    if (!types_equal(lt, rt))
+                        throw std::runtime_error(err(ln, "Pointer subtraction requires matching pointer types"));
+                    return prim(prim_type_t::arb_int, 64);
+                }
+                if (lt->pointer_depth > 0) { need_int(rt, "right"); return lt; }
+                need_num(lt, "left"); need_num(rt, "right");
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
+
+            case binary_op::mul:
+            case binary_op::div:
+                need_num(lt, "left"); need_num(rt, "right");
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
+
+            case binary_op::mod:
+                need_int(lt, "left"); need_int(rt, "right");
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
+
+            // ---- comparison ----
+            case binary_op::eq:
+            case binary_op::ne:
+                if (!eq_comparable(lt, rt))
+                    throw std::runtime_error(err(ln,
+                        "Cannot compare '" + type_to_str(lt) + "' with '" + type_to_str(rt) + "'"));
+                return prim(prim_type_t::arb_bool, 1);
+
+            case binary_op::lt:
+            case binary_op::gt:
+            case binary_op::lte:
+            case binary_op::gte:
+                if (!ord_comparable(lt, rt))
+                    throw std::runtime_error(err(ln,
+                        "Cannot order-compare '" + type_to_str(lt) +
+                        "' with '" + type_to_str(rt) + "'"));
+                return prim(prim_type_t::arb_bool, 1);
+
+            // ---- logical ----
+            case binary_op::log_and:
+            case binary_op::log_or:
+                if (!is_truthy(lt) || !is_truthy(rt))
+                    throw std::runtime_error(err(ln,
+                        "Logical operator requires truthy (numeric/bool/pointer) operands"));
+                return prim(prim_type_t::arb_bool, 1);
+
+            // ---- bitwise ----
+            case binary_op::bit_and:
+            case binary_op::bit_or:
+            case binary_op::bit_xor:
+                need_int(lt, "left"); need_int(rt, "right");
+                { auto [pp, pw] = promote_pair(lt->prim.value(), lt->bit_width, rt->prim.value(), rt->bit_width); return prim(pp, pw); }
+
+            case binary_op::shl:
+            case binary_op::shr:
+                need_int(lt, "left"); need_int(rt, "right");
+                return lt; // result has the type of the left operand
+
+            default:
+                throw std::runtime_error(err(ln, "Unknown binary operator in binary expression"));
+        }
+    }
+
+    type_node* visit_assign(expr_node* e) {
+        if (!is_lvalue(e->lhs))
+            throw std::runtime_error(err(e->line, "Left-hand side of assignment is not an lvalue"));
+
+        type_node* lt = visit_expr(e->lhs);
+        type_node* rt = visit_expr(e->rhs);
+        uint64_t   ln = e->line;
+
+        if (lt->is_const)
+            throw std::runtime_error(err(ln, "Cannot assign to a const-qualified variable"));
+
+        if (e->bop == binary_op::assign) {
+            if (!assignable_td(lt, rt))
+                throw std::runtime_error(err(ln,
+                    "Cannot assign '" + type_to_str(rt) + "' to '" + type_to_str(lt) + "'"));
+            return lt;
+        }
+
+        // Compound assignments: validate operand constraints
+        bool lnum = lt->is_primitive && is_numeric_prim(lt->prim.value());
+        bool rnum = rt->is_primitive && is_numeric_prim(rt->prim.value());
+        bool lint = lt->is_primitive && is_int_prim(lt->prim.value());
+        bool rint = rt->is_primitive && is_int_prim(rt->prim.value());
+        bool lptr = lt->pointer_depth > 0;
+
+        switch (e->bop) {
+            case binary_op::add_assign:
+            case binary_op::sub_assign:
+                if (!(lnum && rnum) && !(lptr && rint))
+                    throw std::runtime_error(err(ln,
+                        "+= / -= requires numeric types or pointer += integer"));
+                break;
+            case binary_op::mul_assign:
+            case binary_op::div_assign:
+                if (!lnum || !rnum)
+                    throw std::runtime_error(err(ln, "*= / /= requires numeric types"));
+                break;
+            case binary_op::mod_assign:
+            case binary_op::and_assign:
+            case binary_op::or_assign:
+            case binary_op::xor_assign:
+            case binary_op::shl_assign:
+            case binary_op::shr_assign:
+                if (!lint || !rint)
+                    throw std::runtime_error(err(ln,
+                        "%= / &= / |= / ^= / <<= / >>= requires integer types"));
+                break;
+            default:
+                throw std::runtime_error(err(ln, "Unknown compound assignment operator"));
+        }
+        return lt;
+    }
+
+    type_node* visit_call(expr_node* e) {
+        uint64_t ln = e->line;
+
+        // Static method call via dot: ClassName.method(args) or Namespace.func(args).
+        // Rewrite callee in-place so the rest of visit_call sees it as an identifier call.
+        if (e->callee->kind == expr_kind::member &&
+            e->callee->object &&
+            e->callee->object->kind == expr_kind::identifier) {
+            const std::string& maybe_ns = e->callee->object->str_val;
+            if (!scope.lookup_var(maybe_ns)) {
+                if (scope.enums.count(maybe_ns)) {
+                    // ADT enum variant constructor call: EnumName::VariantName(args...)
+                    // Type-check args and return the enum type.
+                    for (auto* arg : e->args) visit_expr(arg);
+                    auto* t = make_type(type_node{});
+                    t->is_primitive = false;
+                    t->name = maybe_ns;
+                    return t;
+                } else if (scope.classes.count(maybe_ns)) {
+                    e->callee->kind    = expr_kind::identifier;
+                    e->callee->str_val = maybe_ns + "__MT_" + e->callee->member_name;
+                } else if (!current_namespace.empty() && scope.classes.count(current_namespace + "__NS_" + maybe_ns)) {
+                    // Intra-namespace static method call: mat4.identity() inside namespace math
+                    std::string ns_cls = current_namespace + "__NS_" + maybe_ns;
+                    e->callee->object->str_val = ns_cls;
+                    e->callee->kind    = expr_kind::identifier;
+                    e->callee->str_val = ns_cls + "__MT_" + e->callee->member_name;
+                } else if (scope.is_namespace(maybe_ns)) {
+                    e->callee->kind    = expr_kind::identifier;
+                    e->callee->str_val = maybe_ns + "__NS_" + e->callee->member_name;
+                }
+            }
+        }
+        // Multi-level namespace call: ns1::ns2::func(args) — callee's object is itself a member chain
+        if (e->callee->kind == expr_kind::member &&
+            e->callee->object &&
+            e->callee->object->kind == expr_kind::member) {
+            std::string chain = collect_ns_chain(e->callee->object);
+            if (!chain.empty()) {
+                // Rewrite to a direct function call: chain__NS_func(args)
+                e->callee->kind    = expr_kind::identifier;
+                e->callee->str_val = chain + "__NS_" + e->callee->member_name;
+            }
+        }
+
+        // Resolve callee: identifier → function name lookup with overload resolution
+        if (e->callee->kind != expr_kind::identifier) {
+            // Check for explicit obj.__construct__() or obj->__construct__() call:
+            // only allowed on variables declared with the 'consteval' keyword.
+            if (e->callee->kind == expr_kind::member &&
+                e->callee->member_name == "__construct__" &&
+                e->callee->object) {
+                // Support both dot access (object is identifier) and arrow access
+                // (object is deref of identifier, because -> desugars to (*ptr).field).
+                expr_node* obj_expr = e->callee->object;
+                if (obj_expr->kind == expr_kind::unary && obj_expr->uop == unary_op::deref)
+                    obj_expr = obj_expr->operand;
+                if (obj_expr && obj_expr->kind == expr_kind::identifier) {
+                    const std::string& obj_name = obj_expr->str_val;
+                    var_decl* vd = scope.lookup_var(obj_name);
+                    if (vd && !vd->is_consteval)
+                        throw std::runtime_error(err(ln,
+                            "Cannot call '__construct__' explicitly on '" + obj_name +
+                            "': declare it with 'consteval' to enable manual construction, "
+                            "or use '" + obj_name + "(args)' implicit-constructor syntax"));
+                }
+            }
+
+            // Expression callee (function pointer or method).
+            type_node* ct = visit_expr(e->callee);
+            for (auto* arg : e->args) visit_expr(arg);
+            if (ct && ct->is_func_ptr && ct->fp_ret) return ct->fp_ret;
+            return prim(prim_type_t::void_t);
+        }
+
+        const std::string& fname = e->callee->str_val;
+
+        // Generic function call: type-check arguments leniently and infer the return type.
+        // The concrete instantiation is produced later by the IR (monomorphization).
+        {
+            auto git = generic_templates.find(fname);
+            if (git != generic_templates.end()) {
+                func_decl* tmpl = git->second;
+                std::vector<type_node*> arg_types;
+                for (auto* arg : e->args) arg_types.push_back(visit_expr(arg));
+                // If the return type is a bare type parameter, infer it from the matching argument.
+                if (tmpl->ret_type && !tmpl->ret_type->is_primitive
+                    && tmpl->ret_type->name && tmpl->ret_type->pointer_depth == 0) {
+                    const std::string& rname = *tmpl->ret_type->name;
+                    for (size_t i = 0; i < tmpl->params.size() && i < arg_types.size(); ++i) {
+                        auto* pt = tmpl->params[i].type;
+                        if (pt && !pt->is_primitive && pt->name && *pt->name == rname && arg_types[i])
+                            return arg_types[i];
+                    }
+                }
+                return tmpl->ret_type ? tmpl->ret_type : prim(prim_type_t::void_t);
+            }
+        }
+
+        // Function pointer variable call: fp(args)
+        var_decl* fp_vd = scope.lookup_var(fname);
+        if (fp_vd && fp_vd->type && fp_vd->type->is_func_ptr) {
+            for (auto* arg : e->args) visit_expr(arg);
+            return fp_vd->type->fp_ret ? fp_vd->type->fp_ret : prim(prim_type_t::void_t);
+        }
+
+        const std::vector<func_decl*>* overloads = scope.lookup_overloads(fname);
+        // Intra-namespace bare-name call fallback: try ns__NS_fname
+        if ((!overloads || overloads->empty()) && !current_namespace.empty()) {
+            std::string ns_qual = current_namespace + "__NS_" + fname;
+            overloads = scope.lookup_overloads(ns_qual);
+            if (overloads && !overloads->empty()) {
+                e->callee->str_val = ns_qual; // rewrite callee name for IR
+            }
+        }
+        if (!overloads || overloads->empty())
+            throw std::runtime_error(err(ln, "Call to undeclared function '" + fname + "'"));
+
+        // Type-check arguments first
+        std::vector<type_node*> arg_types;
+        arg_types.reserve(e->args.size());
+        for (auto* arg : e->args) arg_types.push_back(visit_expr(arg));
+
+        // Find best matching overload
+        func_decl* fd = resolve_overload(fname, overloads, arg_types, ln);
+        e->resolved_overload = fd;
+
+
+
+        size_t expected = fd->params.size();
+        size_t got      = e->args.size();
+
+        if (fd->is_variadic) {
+            if (got < expected)
+                throw std::runtime_error(err(ln,
+                    "Too few arguments to '" + fname + "': expected at least " +
+                    std::to_string(expected) + ", got " + std::to_string(got)));
+        } else {
+            if (got != expected)
+                throw std::runtime_error(err(ln,
+                    "Wrong number of arguments to '" + fname + "': expected " +
+                    std::to_string(expected) + ", got " + std::to_string(got)));
+        }
+
+        // Check that &memstr parameters receive a memstr-typed argument (not an istruc)
+        for (size_t i = 0; i < std::min(arg_types.size(), fd->params.size()); ++i) {
+            if (!fd->params[i].type || !fd->params[i].type->is_memstr_ref) continue;
+            type_node* at = arg_types[i];
+            bool ok = at && !at->is_primitive && at->name.has_value()
+                   && scope.is_memstr_type(*at->name);
+            if (!ok)
+                throw std::runtime_error(err(ln,
+                    "Argument " + std::to_string(i + 1) + " to '" + fname +
+                    "' must be a memstr allocator type; got '" +
+                    (at ? type_to_str(at) : "?") + "' (declare it with 'memstr', not 'istruc')"));
+        }
+
+        // Nullable mismatch: passing ?T to a non-nullable T parameter is an error
+        for (size_t i = 0; i < std::min(arg_types.size(), fd->params.size()); ++i) {
+            type_node* pt = fd->params[i].type;
+            type_node* at = arg_types[i];
+            if (!pt || !at) continue;
+            if (at->is_nullable && !pt->is_nullable)
+                throw std::runtime_error(err(ln,
+                    "Cannot pass nullable '?' to non-nullable parameter"));
+        }
+
+        return fd->ret_type;
+    }
+
+    func_decl* resolve_overload(const std::string& fname,
+                                const std::vector<func_decl*>* overloads,
+                                const std::vector<type_node*>& /*arg_types*/,
+                                uint64_t ln) {
+        // Overloading is not supported; there is at most one registered function per name.
+        if (!overloads || overloads->empty())
+            throw std::runtime_error(err(ln, "Undefined function '" + fname + "'"));
+        return (*overloads)[0];
+    }
+
+    type_node* visit_subscript(expr_node* e) {
+        type_node* ot = visit_expr(e->object);
+        uint64_t   ln = e->line;
+
+        // ADT enum tuple payload access: (*x)[N] where x is an ADT enum variable.
+        // ot is the enum's named type (pointer_depth == 0).
+        if (ot && !ot->is_primitive && ot->pointer_depth == 0 && ot->name.has_value()) {
+            auto eit = scope.enums.find(*ot->name);
+            if (eit != scope.enums.end() && eit->second->is_adt) {
+                // Index must be a compile-time integer literal to determine field type.
+                // For semantic checking just return void* (actual type resolved in IR).
+                if (e->index->kind == expr_kind::int_lit) {
+                    unsigned idx = static_cast<unsigned>(e->index->int_val);
+                    // Find first tuple variant and return its Nth type.
+                    for (auto* ev : eit->second->variants) {
+                        if (ev->kind == enum_variant_kind::tuple && idx < ev->tuple_types.size())
+                            return ev->tuple_types[idx];
+                    }
+                }
+                visit_expr(e->index);
+                return prim(prim_type_t::void_t); // fallback
+            }
+        }
+
+        type_node* it = visit_expr(e->index);
+        if (ot->pointer_depth < 1 && !ot->array_size.has_value())
+            throw std::runtime_error(err(ln,
+                "Subscript operator requires a pointer or array type, got '" +
+                type_to_str(ot) + "'"));
+        if (!it->is_primitive || !is_int_prim(it->prim.value()))
+            throw std::runtime_error(err(ln,
+                "Array index must be an integer type, got '" + type_to_str(it) + "'"));
+
+        type_node elem = *ot;
+        if (ot->array_size.has_value()) elem.array_size.reset();
+        else                            elem.pointer_depth--;
+        return make_type(elem);
+    }
+
+    // Walk a member-chain that represents a namespace path (ns1::ns2::...::name) and
+    // return the mangled prefix (e.g. "std__NS_hash") if every segment is a namespace.
+    // Returns "" if the chain is not a pure namespace path.
+    std::string collect_ns_chain(expr_node* e) {
+        if (e->kind == expr_kind::identifier)
+            return scope.is_namespace(e->str_val) ? e->str_val : "";
+        if (e->kind != expr_kind::member) return "";
+        std::string parent = collect_ns_chain(e->object);
+        if (parent.empty()) return "";
+        std::string full = parent + "__NS_" + e->member_name;
+        return scope.is_namespace(full) ? full : "";
+    }
+
+    type_node* visit_member(expr_node* e) {
+        // Namespace-qualified variable/constant: ns::name — rewrite to plain identifier
+        // Single-level: ns::name where object is an identifier
+        if (e->object->kind == expr_kind::identifier) {
+            const std::string& obj = e->object->str_val;
+            if (scope.is_namespace(obj) && !scope.lookup_var(obj)
+                && !scope.enums.count(obj) && !scope.classes.count(obj)) {
+                // Rewrite member(ns, name) → identifier(ns__NS_name)
+                e->kind = expr_kind::identifier;
+                e->str_val = obj + "__NS_" + e->member_name;
+                return visit_identifier(e);
+            }
+        }
+        // Multi-level: ns1::ns2::name where object is itself a member chain of namespaces
+        if (e->object->kind == expr_kind::member) {
+            std::string chain = collect_ns_chain(e->object);
+            if (!chain.empty()) {
+                e->kind = expr_kind::identifier;
+                e->str_val = chain + "__NS_" + e->member_name;
+                return visit_identifier(e);
+            }
+        }
+        // Enum scope resolution: short-circuit before visiting object as an expression.
+        // For plain enums, returns i32. For ADT enums, returns the enum type itself.
+        if (e->object->kind == expr_kind::identifier) {
+            const std::string& obj = e->object->str_val;
+            auto eit = scope.enums.find(obj);
+            if (eit != scope.enums.end() && !scope.lookup_var(obj)) {
+                enum_decl* ed = eit->second;
+                for (auto* ev : ed->variants) {
+                    if (ev->name == e->member_name) {
+                        if (ed->is_adt) {
+                            // ADT variant used without a call — return the enum type
+                            auto* t = make_type(type_node{});
+                            t->is_primitive = false;
+                            t->name = ed->name;
+                            return t;
+                        }
+                        return prim(prim_type_t::arb_int, 32);
+                    }
+                }
+                throw std::runtime_error(err(e->line,
+                    "No variant '" + e->member_name + "' in enum '" + obj + "'"));
+            }
+        }
+
+        type_node* ot = visit_expr(e->object);
+        uint64_t   ln = e->line;
+
+        if (ot->pointer_depth > 1)
+            throw std::runtime_error(err(ln,
+                "Member access on multi-level pointer is not allowed; dereference first"));
+        if (ot->is_primitive)
+            throw std::runtime_error(err(ln,
+                "Cannot access member '" + e->member_name + "' of primitive type '" +
+                type_to_str(ot) + "'"));
+
+        // Resolve typedefs to find the underlying struct/union
+        type_node* resolved = resolve_typedef(ot, ln);
+        if (!resolved || resolved->is_primitive)
+            throw std::runtime_error(err(ln,
+                "Cannot access member '" + e->member_name + "': type is not a struct or union"));
+
+        // &memstr virtual dispatch: return void so the call type-checks without error.
+        // The IR handles the actual vtable dispatch.
+        if (resolved->is_memstr_ref) return prim(prim_type_t::void_t);
+
+        const std::string tname = resolved->name.value_or("");
+
+        if (scope.structs.count(tname)) {
+            for (auto* f : scope.structs[tname]->fields)
+                if (f->name == e->member_name) return f->type;
+            throw std::runtime_error(err(ln,
+                "No field '" + e->member_name + "' in struct '" + tname + "'"));
+        }
+        if (scope.unions.count(tname)) {
+            for (auto* f : scope.unions[tname]->fields)
+                if (f->name == e->member_name) return f->type;
+            throw std::runtime_error(err(ln,
+                "No field '" + e->member_name + "' in union '" + tname + "'"));
+        }
+        if (scope.classes.count(tname)) {
+            class_decl* cd = scope.classes[tname];
+            for (auto* f : cd->fields)
+                if (f->name == e->member_name) return f->type;
+            for (auto* m : cd->methods) {
+                if (m->name == e->member_name) {
+                    auto* fpt = make_type(type_node{});
+                    fpt->is_func_ptr = true; fpt->fp_ret = m->ret_type;
+                    for (auto& p : m->params) fpt->fp_params.push_back(p.type);
+                    fpt->pointer_depth = 1;
+                    return fpt;
+                }
+            }
+            // Walk the base class chain for fields and methods
+            std::string base_name = cd->base_name;
+            while (!base_name.empty() && scope.classes.count(base_name)) {
+                class_decl* base = scope.classes[base_name];
+                for (auto* f : base->fields)
+                    if (f->name == e->member_name) return f->type;
+                for (auto* m : base->methods) {
+                    if (m->name == e->member_name) {
+                        auto* fpt = make_type(type_node{});
+                        fpt->is_func_ptr = true; fpt->fp_ret = m->ret_type;
+                        for (auto& p : m->params) fpt->fp_params.push_back(p.type);
+                        fpt->pointer_depth = 1;
+                        return fpt;
+                    }
+                }
+                base_name = base->base_name;
+            }
+            throw std::runtime_error(err(ln,
+                "No member '" + e->member_name + "' in class '" + tname + "'"));
+        }
+        // Enum member access: either scope resolution (non-ADT) or payload field (ADT).
+        if (scope.enums.count(tname)) {
+            auto* ed = scope.enums[tname];
+            // Check plain variant name first (scope resolution for non-ADT or tag access)
+            for (auto* ev : ed->variants)
+                if (ev->name == e->member_name) return prim(prim_type_t::arb_int, 32);
+            // For ADT enums: search all variant payload fields
+            if (ed->is_adt) {
+                for (auto* ev : ed->variants) {
+                    for (auto* f : ev->struct_fields)
+                        if (f->name == e->member_name) return f->type;
+                    if (ev->istruc_body) {
+                        for (auto* cf : ev->istruc_body->fields)
+                            if (cf->name == e->member_name) return cf->type;
+                        for (auto* m : ev->istruc_body->methods)
+                            if (m->name == e->member_name) {
+                                auto* fpt = make_type(type_node{});
+                                fpt->is_func_ptr = true; fpt->fp_ret = m->ret_type;
+                                for (auto& p : m->params) fpt->fp_params.push_back(p.type);
+                                fpt->pointer_depth = 1;
+                                return fpt;
+                            }
+                    }
+                }
+            }
+            throw std::runtime_error(err(ln,
+                "No variant or field '" + e->member_name + "' in enum '" + tname + "'"));
+        }
+
+        throw std::runtime_error(err(ln,
+            "Type '" + tname + "' is not a struct, union, or class"));
+    }
+
+    type_node* visit_cast(expr_node* e) {
+        visit_expr(e->operand); // type-check the expression being cast
+        if (!e->cast_type)
+            throw std::runtime_error(err(e->line, "Cast has no target type"));
+        check_type_known(e->cast_type, e->line);
+        return e->cast_type;
+    }
+
+    type_node* visit_sizeof(expr_node* e) {
+        // sizeof always yields u64
+        // sizeof(TypeName): the parser produces an identifier operand when the name is
+        // not a variable. If it names a known type (struct/union/enum/typedef) and not a
+        // variable, rewrite it into a type operand so analysis and IR treat it uniformly.
+        if (!e->cast_type && e->operand &&
+            e->operand->kind == expr_kind::identifier &&
+            !scope.lookup_var(e->operand->str_val) &&
+            scope.is_known_type(e->operand->str_val)) {
+            // Allocate in the AST (persistent) arena, not the analyzer's owned_types,
+            // since this node must outlive analysis and be read during IR generation.
+            auto* t = new type_node();
+            t->is_primitive = false;
+            t->name = e->operand->str_val;
+            e->cast_type = t;
+            e->operand = nullptr;
+        }
+        if (e->cast_type)  check_type_known(e->cast_type, e->line);
+        else if (e->operand) visit_expr(e->operand);
+        return prim(prim_type_t::arb_uint, 64);
+    }
+
+    type_node* visit_ternary(expr_node* e) {
+        type_node* ct = visit_expr(e->cond);
+        if (!is_truthy(ct))
+            throw std::runtime_error(err(e->line,
+                "Ternary condition must be numeric, bool, or pointer, got '" +
+                type_to_str(ct) + "'"));
+
+        type_node* tt = visit_expr(e->then_e);
+        type_node* et = visit_expr(e->else_e);
+
+        // Both branches must have compatible types; return the wider one.
+        if (assignable_td(tt, et)) return tt;
+        if (assignable_td(et, tt)) return et;
+
+        throw std::runtime_error(err(e->line,
+            "Ternary branches have incompatible types: '" +
+            type_to_str(tt) + "' vs '" + type_to_str(et) + "'"));
+    }
+
+    void visit_using_decl(using_decl* d) {
+        if (!d->alias.empty() && d->type_alias) {
+            using_aliases[d->alias] = d->type_alias;
+        }
+    }
+
+    void visit_proc_macro_decl(proc_macro_decl* d) {
+        // Proc macro bodies are compile-time token transformers.
+        // Full analysis is deferred, but validate that the declaration is well-formed.
+        if (!d) return;
+        // At minimum: ensure the macro has a name
+        if (d->name.empty())
+            throw std::runtime_error("proc_macro declaration missing name");
+        // Body analysis deferred: proc macros execute at compile time (planned feature)
+    }
+
+    void visit_for_range(for_range_stmt* n) {
+        // Type-check the range expression and declare the loop variable in the body scope.
+        type_node* range_t = visit_expr(n->range);
+        // Determine element type: if range is array, elem = element type; if pointer, use pointer base.
+        type_node* elem_t = n->var_type;
+        if (!elem_t || elem_t->is_auto) {
+            // Infer element type from range type.
+            if (range_t->pointer_depth > 0) {
+                owned_types.push_back(std::make_unique<type_node>(*range_t));
+                auto* et = owned_types.back().get();
+                et->pointer_depth--;
+                et->array_size = std::nullopt;
+                elem_t = et;
+            } else {
+                elem_t = range_t; // fallback
+            }
+            n->var_type = elem_t;
+        }
+        scope.push();
+        auto* loop_var = new var_decl();
+        loop_var->type = elem_t;
+        loop_var->name = n->var_name;
+        loop_var->line = n->line;
+        scope.declare_var(n->var_name, loop_var);
+        visit_stmt(n->body);
+        scope.pop();
+    }
+};

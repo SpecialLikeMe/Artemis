@@ -1,9 +1,9 @@
-// FAIL: 'try' inside a noexcept function is forbidden
+// FAIL: 'try' inside a  function is forbidden
 auto maybe_fail() !i32 {
     return error.Oops;
 }
 
-i32 run() noexcept {
+i32 run()  {
     i32 v = try maybe_fail();  // must error
     return v;
 }

@@ -52,23 +52,23 @@ MAX_CONNECTIONS = 200;   // COMPILE ERROR
 
 ---
 
-## `constexpr` — Compile-Time Constants
+## `comptime` — Compile-Time Constants
 
-`constexpr` marks a value as a compile-time constant. The value must be evaluable at compile time (literal, arithmetic on other constexprs, `sizeof`):
+`comptime` marks a value as a compile-time constant. The value must be evaluable at compile time (literal, arithmetic on other `comptime` values, `sizeof`):
 
 ```arc
-constexpr i32 MAX_SIZE  = 256;
-constexpr f64 TAU       = 6.28318;
-constexpr i32 BUF_WORDS = MAX_SIZE / sizeof(i32);
+comptime i32 MAX_SIZE  = 256;
+comptime f64 TAU       = 6.28318;
+comptime i32 BUF_WORDS = MAX_SIZE / sizeof(i32);
 
-i32 arr[MAX_SIZE];   // constexpr as array size
+i32 arr[MAX_SIZE];   // comptime as array size
 ```
 
 ---
 
-## `consteval` — Manual Construction
+## `comptime` — Manual Construction
 
-`consteval` declares a variable without invoking its constructor. You call `__construct__` manually:
+`comptime` declares a variable without invoking its constructor. You call `__construct__` manually:
 
 ```arc
 istruc Buffer {
@@ -77,7 +77,7 @@ istruc Buffer {
     void __construct__(Buffer* self, i32 n) { /* allocate n ints */ }
 }
 
-consteval Buffer buf;    // declared — NOT constructed yet
+comptime Buffer buf;    // declared — NOT constructed yet
 buf.__construct__(100);  // you construct it yourself
 ```
 
@@ -113,16 +113,6 @@ Inside an `istruc`, `static` declares a class-level variable (one copy shared ac
 volatile i32 status_reg = 0;
 
 while (status_reg == 0) { }   // compiler must re-read each iteration
-```
-
----
-
-## `register` Hint
-
-`register` hints the compiler to keep a variable in a CPU register. This is a non-binding hint — the compiler may ignore it:
-
-```arc
-register i32 hot_counter = 0;
 ```
 
 ---

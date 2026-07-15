@@ -70,11 +70,11 @@ Unions may contain any type, including structs.
 
 ## Typedefs
 
-`typedef` creates a transparent alias for a type:
+`using` creates a transparent alias for a type:
 
 ```arc
-typedef i32   ErrorCode;
-typedef Point Vec2;
+using i32   ErrorCode;
+using Point Vec2;
 
 ErrorCode err = 0;
 Vec2      pos = .{ .x = 0.0, .y = 0.0 };

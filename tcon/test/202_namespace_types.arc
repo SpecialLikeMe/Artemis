@@ -3,8 +3,8 @@ namespace geom {
     struct Point { i32 x; i32 y; }
     struct Rect  { i32 x; i32 y; i32 w; i32 h; }
 
-    constexpr i32 ORIGIN_X = 0;
-    constexpr i32 ORIGIN_Y = 0;
+    comptime i32 ORIGIN_X = 0;
+    comptime i32 ORIGIN_Y = 0;
 
     Point make_point(i32 x, i32 y) {
         Point p;

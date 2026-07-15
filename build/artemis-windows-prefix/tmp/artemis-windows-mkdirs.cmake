@@ -18,7 +18,7 @@ file(MAKE_DIRECTORY
   "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp"
 )
 
-set(configSubDirs )
+set(configSubDirs Debug;Release;MinSizeRel;RelWithDebInfo)
 foreach(subDir IN LISTS configSubDirs)
     file(MAKE_DIRECTORY "C:/Users/devon/Artemis/build/artemis-windows-prefix/src/artemis-windows-stamp/${subDir}")
 endforeach()

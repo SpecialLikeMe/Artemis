@@ -13,7 +13,7 @@ i32 main() {
 
 Save as `hello.arc`, then:
 ```
-arc run hello.arc
+artemis hello.arc -o hello && ./hello
 ```
 
 ## A More Complete Example

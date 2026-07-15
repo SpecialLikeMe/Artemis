@@ -15,10 +15,10 @@ extern i8*  getenv(i8* name);
 namespace std {
 namespace process {
 
-constexpr i32 STDIN_FD  = 0;
-constexpr i32 STDOUT_FD = 1;
-constexpr i32 STDERR_FD = 2;
-constexpr i32 WNOHANG   = 1;
+comptime i32 STDIN_FD  = 0;
+comptime i32 STDOUT_FD = 1;
+comptime i32 STDERR_FD = 2;
+comptime i32 WNOHANG   = 1;
 
 // --- exit status helpers ---
 

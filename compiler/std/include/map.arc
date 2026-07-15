@@ -3,8 +3,8 @@
 namespace std {
 
 // Red-black tree colors
-constexpr i32 MAP_RED   = 0;
-constexpr i32 MAP_BLACK = 1;
+comptime i32 MAP_RED   = 0;
+comptime i32 MAP_BLACK = 1;
 
 istruc map_node<K, V> {
     K           key;

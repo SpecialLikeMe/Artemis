@@ -28,18 +28,18 @@ extern i32    poll(void* fds, u32 nfds, i32 timeout);
 namespace std {
 namespace net {
 
-constexpr i32 AF_INET   = 2;
-constexpr i32 AF_INET6  = 10;
-constexpr i32 SOCK_STREAM = 1;
-constexpr i32 SOCK_DGRAM  = 2;
-constexpr i32 IPPROTO_TCP = 6;
-constexpr i32 IPPROTO_UDP = 17;
-constexpr i32 SOL_SOCKET  = 1;
-constexpr i32 SO_REUSEADDR = 2;
-constexpr i32 SO_KEEPALIVE = 9;
-constexpr i32 SHUT_RD  = 0;
-constexpr i32 SHUT_WR  = 1;
-constexpr i32 SHUT_RDWR = 2;
+comptime i32 AF_INET   = 2;
+comptime i32 AF_INET6  = 10;
+comptime i32 SOCK_STREAM = 1;
+comptime i32 SOCK_DGRAM  = 2;
+comptime i32 IPPROTO_TCP = 6;
+comptime i32 IPPROTO_UDP = 17;
+comptime i32 SOL_SOCKET  = 1;
+comptime i32 SO_REUSEADDR = 2;
+comptime i32 SO_KEEPALIVE = 9;
+comptime i32 SHUT_RD  = 0;
+comptime i32 SHUT_WR  = 1;
+comptime i32 SHUT_RDWR = 2;
 
 // IPv4 socket address (mirrors struct sockaddr_in)
 struct addr_v4 {

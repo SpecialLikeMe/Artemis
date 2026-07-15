@@ -2,21 +2,21 @@
 
 ---
 
-## `typedef` — Named Type Aliases
+## `using` — Named Type Aliases
 
-`typedef` creates a transparent alias for any type. The alias and the underlying type are identical to the compiler:
+`using` creates a transparent alias for any type. The alias and the underlying type are identical to the compiler:
 
 ```arc
-typedef i32   ErrorCode;
-typedef i8*   CStr;
-typedef i32*  IntPtr;
+using i32   ErrorCode;
+using i8*   CStr;
+using i32*  IntPtr;
 ```
 
 ### Struct / istruc Typedefs
 
 ```arc
 istruc Vec2 { i32 x; i32 y; }
-typedef Vec2 Point;
+using Vec2 Point;
 
 Point p;
 p.x = 3;
@@ -26,7 +26,7 @@ p.y = 4;
 ### Function Pointer Typedefs
 
 ```arc
-typedef i32(i32, i32)* BinOp;
+using i32(i32, i32)* BinOp;
 
 BinOp op = &add;
 i32 result = op(3, 4);

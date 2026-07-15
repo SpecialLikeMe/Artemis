@@ -144,21 +144,21 @@ Cases do not fall through automatically. Always end a case with `break` (or `ret
 
 ---
 
-## `constexpr if`
+## `comptime if`
 
 The condition is evaluated at compile time; the dead branch is not compiled at all:
 
 ```arc
-constexpr i32 MODE = 1;
+comptime i32 MODE = 1;
 
-if constexpr (MODE == 1) {
+if comptime (MODE == 1) {
     // compiled in
 } else {
     // completely eliminated — not type-checked or emitted
 }
 ```
 
-Both `constexpr if` (prefix) and `if constexpr` (infix) forms are accepted. This is the primary tool for zero-cost platform or configuration branches. Any `constexpr` variable, `sizeof` expression, or literal arithmetic is valid in the condition.
+Both `comptime if` (prefix) and `if comptime` (infix) forms are accepted. This is the primary tool for zero-cost platform or configuration branches. Any `comptime` variable, `sizeof` expression, or literal arithmetic is valid in the condition.
 
 ---
 

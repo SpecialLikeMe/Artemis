@@ -1,6 +1,6 @@
 # The Artemis Programming Guide
 
-**Version:** 0.2.0 | **Status:** Active Development
+**Version:** 0.3.0 | **Status:** Active Development
 
 This guide covers every corner of the Artemis language, build system, and package manager.
 
@@ -23,13 +23,14 @@ This guide covers every corner of the Artemis language, build system, and packag
 15. [Inline Assembly](15_asm.md)
 16. [C Interoperability](16_c_interop.md)
 17. [Preprocessor](17_preprocessor.md)
-18. [Compile-Time Features](18_comptime.md)
+18. [Compile-Time Features (`comptime`, `comptime type`)](18_comptime.md)
 19. [Function Pointers](19_function_pointers.md)
 20. [The `defer` Statement](20_defer.md)
-21. [Error Handling (`!T`, `try`, `except`)](24_error_handling.md)
+21. [Error Handling (`!T`, `try`, `catch`)](24_error_handling.md)
 22. [Interfaces](26_interfaces.md)
 23. [Type Aliases and `auto`](28_typedef_auto.md)
 24. [Macros (`const_resolve` and proc macros)](29_macros.md)
+25. [Type Reflection (`@typeinfo`)](25_typeinfo.md)
 
 ## Reference (Unnumbered)
 

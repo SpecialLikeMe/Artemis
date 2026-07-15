@@ -3,7 +3,7 @@ istruc Base {
     virtual i32 f(const Base* self) { return self.v; }
 }
 istruc Sub : Base {
-    public final i32 f(const Sub* self) noexcept const override { return self.v + 1; }
+    public final i32 f(const Sub* self)  const override { return self.v + 1; }
 }
 i32 main() {
     Sub s;

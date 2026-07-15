@@ -3,6 +3,7 @@ C:/Users/devon/Artemis/build/CMakeFiles/vt_gen.dir
 C:/Users/devon/Artemis/build/CMakeFiles/omp_gen.dir
 C:/Users/devon/Artemis/build/CMakeFiles/acc_gen.dir
 C:/Users/devon/Artemis/build/CMakeFiles/target_parser_gen.dir
+C:/Users/devon/Artemis/build/CMakeFiles/artemis_bootstrap.dir
 C:/Users/devon/Artemis/build/CMakeFiles/artemis.dir
 C:/Users/devon/Artemis/build/CMakeFiles/aciso.dir
 C:/Users/devon/Artemis/build/CMakeFiles/artemis_tests.dir
@@ -13,12 +14,8 @@ C:/Users/devon/Artemis/build/CMakeFiles/artemis-windows-build.dir
 C:/Users/devon/Artemis/build/CMakeFiles/artemis-macos.dir
 C:/Users/devon/Artemis/build/CMakeFiles/artemis-macos-build.dir
 C:/Users/devon/Artemis/build/CMakeFiles/cross-all.dir
-C:/Users/devon/Artemis/build/CMakeFiles/package.dir
-C:/Users/devon/Artemis/build/CMakeFiles/package_source.dir
-C:/Users/devon/Artemis/build/CMakeFiles/test.dir
-C:/Users/devon/Artemis/build/CMakeFiles/edit_cache.dir
-C:/Users/devon/Artemis/build/CMakeFiles/rebuild_cache.dir
-C:/Users/devon/Artemis/build/CMakeFiles/list_install_components.dir
-C:/Users/devon/Artemis/build/CMakeFiles/install.dir
-C:/Users/devon/Artemis/build/CMakeFiles/install/local.dir
-C:/Users/devon/Artemis/build/CMakeFiles/install/strip.dir
+C:/Users/devon/Artemis/build/CMakeFiles/PACKAGE.dir
+C:/Users/devon/Artemis/build/CMakeFiles/RUN_TESTS.dir
+C:/Users/devon/Artemis/build/CMakeFiles/INSTALL.dir
+C:/Users/devon/Artemis/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/devon/Artemis/build/CMakeFiles/ZERO_CHECK.dir
