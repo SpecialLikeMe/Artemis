@@ -9,7 +9,7 @@ extern "C" {
     fn arc_negate(x: i32) i32 { return -x; }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     if (abs(-9)            != 9)   { return 1; }
     if (llabs((i64)-100)   != (i64)100) { return 2; }
     if (arc_double(5)      != 10)  { return 3; }

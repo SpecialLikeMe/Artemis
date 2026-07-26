@@ -1,9 +1,9 @@
 // Test the `ref` operator — context-aware address-of
 // PASS PASS PASS PASS
-fn puts(s: *i8) int;
-fn printf(fmt: *i8, ...) int;
+@unsafe extern fn puts(s: *i8) int;
+@unsafe extern fn printf(fmt: *i8, ...) int;
 
-pub fn main() int {
+pub @unsafe fn main() int {
     // ref on lvalue: p = &x
     let mut x: int= 42;
     let mut p: *int= ref x;

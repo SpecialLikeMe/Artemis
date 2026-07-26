@@ -17,7 +17,7 @@ memstr Bump {
     fn deinit(self: *Bump) void { free(self.base); }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut a: Bump(65536);
 
     // Parse integer

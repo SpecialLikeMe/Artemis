@@ -10,7 +10,7 @@ fn do_access(arr: *i32, idx: i32, len: i32) i32 {
     return arr[idx];
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut arr: [5]i32;
     arr[0] = 1; arr[1] = 2; arr[2] = 3; arr[3] = 4; arr[4] = 5;
 

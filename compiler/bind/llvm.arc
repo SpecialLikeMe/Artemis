@@ -1,7 +1,11 @@
 // LLVM C API bindings for the Artemis self-hosting compiler.
 // All LLVM handle types are represented as i8* (opaque pointers).
+//
+// @unsafe: every declaration here is defined by libLLVM, outside this program, so
+// the compiler can verify nothing about its behaviour or its handling of the opaque
+// pointers we hand it.
 
-extern "C" {
+@unsafe extern "C" {
 
 // ---- Context / Module / Builder ----
 fn LLVMContextCreate() *i8;
@@ -261,7 +265,8 @@ fn LLVMInitializeAllAsmParsers_shim() void;
 } // extern "C"
 
 // ---- C stdlib ----
-extern "C" {
+// @unsafe: defined by libc, outside this program.
+@unsafe extern "C" {
 fn malloc(size: u64) *i8;
 fn realloc(ptr: *i8, size: u64) *i8;
 fn free(ptr: *i8) void;

@@ -2,7 +2,7 @@
 extern  std.hash;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // wyhash is deterministic with same seed
     let mut h1: u64= std.hash.wyhash_hash_str("artemis", (u64)0);
     let mut h2: u64= std.hash.wyhash_hash_str("artemis", (u64)0);

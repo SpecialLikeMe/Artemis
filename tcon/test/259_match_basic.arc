@@ -1,6 +1,6 @@
 // Basic match with literal patterns and wildcard
 // PASS PASS PASS
-fn puts(s: *i8) i32;
+@unsafe extern fn puts(s: *i8) i32;
 
 fn describe(x: i32) i32 {
     match (x) {
@@ -10,7 +10,7 @@ fn describe(x: i32) i32 {
     }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     if (describe(1) != 10) { return 1; }
     if (describe(2) != 20) { return 2; }
     if (describe(7) != 99) { return 3; }

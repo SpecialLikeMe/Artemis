@@ -2,7 +2,7 @@
 extern  std.test;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // Test the runner istruc
     let mut r: std.test.runner;
     r.begin("basic true");

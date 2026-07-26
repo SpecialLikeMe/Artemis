@@ -411,7 +411,8 @@ fn lsp_describe_symbol(text: *i8, name: *i8, out: *i8, cap: i32) void {
                     while (s2 < le && (text[s2] == ' ' || text[s2] == '	')) { s2 = s2 + 1; }
                     let mut e2: i32= le;
                     while (e2 > s2 && (text[e2 - 1] == ' ' || text[e2 - 1] == '	' ||
-                                       text[e2 - 1] == '{' || text[e2 - 1] == '')) { e2 = e2 - 1; }
+                                       text[e2 - 1] == '{' || text[e2 - 1] == '
+')) { e2 = e2 - 1; }
                     let mut n2: i32= e2 - s2;
                     if (n2 > 0 && n2 < cap) {
                         let mut c2: i32= 0;

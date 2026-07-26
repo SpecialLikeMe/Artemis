@@ -70,7 +70,7 @@ fn xor_swap(a: *i32, b: *i32) void {
     (*a) = (*a) ^ (*b);
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // A: raw pointer sum
     let mut data: [6]i32; data[0]=1; data[1]=2; data[2]=3; data[3]=4; data[4]=5; data[5]=6;
     if (ptr_sum(data, 6) != 21) { printf("FAIL ptr_sum\n"); return 1; }

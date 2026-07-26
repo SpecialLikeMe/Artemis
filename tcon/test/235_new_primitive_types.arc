@@ -1,9 +1,9 @@
 // Test new primitive type prefixes: n, z, ch, c (complex), q (rational)
 // PASS PASS PASS PASS PASS PASS
-fn puts(s: *i8) int;
-fn printf(fmt: *i8, ...) int;
+@unsafe extern fn puts(s: *i8) int;
+@unsafe extern fn printf(fmt: *i8, ...) int;
 
-pub fn main() int {
+pub @unsafe fn main() int {
     // nN = natural (alias for uN)
     let mut a: n8= 200u;
     if (a == 200u) { puts("PASS"); } else { puts("FAIL n8"); }

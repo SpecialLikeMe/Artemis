@@ -72,7 +72,7 @@ fn prefix_sum(src: *i32, dst: *i32, n: i32) void {
     }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // matmul: 3×3 worst-case — 3³×5 = 135 UNKNOWN checks per call
     let mut A: [9]i32; let mut B: [9]i32; let mut C: [9]i32;
     A[0]=1; A[1]=2; A[2]=0;

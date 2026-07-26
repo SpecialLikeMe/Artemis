@@ -2,7 +2,7 @@
 // Taking &local gives abs_ptr{non_null} → no null-deref check emitted on dereference.
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut val: i32= 42;
     let mut ptr: *i32= &val;
 

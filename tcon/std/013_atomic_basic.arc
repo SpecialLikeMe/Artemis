@@ -2,7 +2,7 @@
 extern  std.atomic;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // i32_t default construct (val = 0)
     let mut a: std.atomic.i32_t;
     if (a.val != 0) { printf("FAIL i32_t default val\n"); return 1; }

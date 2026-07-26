@@ -41,28 +41,36 @@ istruc file {
     fn __construct__(self: *file) void { self.fp = (void*)0; self.open_flag = false; }
 
     fn open(self: *file, path: *i8, mode: *i8) bool {
-        self.fp       = fopen(path, mode);
-        self.open_flag = self.fp != (void*)0;
-        return self.open_flag;
+        @unsafe {
+            self.fp       = fopen(path, mode);
+            self.open_flag = self.fp != (void*)0;
+            return self.open_flag;
+        }
     }
 
     fn close(self: *file) void {
-        if (self.open_flag) { fclose(self.fp); self.open_flag = false; }
+        @unsafe {
+            if (self.open_flag) { fclose(self.fp); self.open_flag = false; }
+        }
     }
 
-    fn read_bytes(self: *file, buf: *void, n: u64) u64  { return fread(buf, (u64)1, n, self.fp); }
-    fn write_bytes(self: *file, buf: *void, n: u64) u64 { return fwrite(buf, (u64)1, n, self.fp); }
+    fn read_bytes(self: *file, buf: *void, n: u64) u64  { @unsafe { return fread(buf, (u64)1, n, self.fp); } }
+    fn write_bytes(self: *file, buf: *void, n: u64) u64 { @unsafe { return fwrite(buf, (u64)1, n, self.fp); } }
 
     fn write_str(self: *file, s: *i8) bool {
-        let mut n: i32= 0;
-        while (s[n] != 0) { n = n + 1; }
-        return fwrite(s, (u64)1, (u64)n, self.fp) == (u64)n;
+        @unsafe {
+            let mut n: i32= 0;
+            while (s[n] != 0) { n = n + 1; }
+            return fwrite(s, (u64)1, (u64)n, self.fp) == (u64)n;
+        }
     }
 
     fn read_char(self: *file) i32 {
-        let mut c: i8= 0;
-        if (fread(&c, (u64)1, (u64)1, self.fp) == (u64)1) { return (i32)c; }
-        return -1;
+        @unsafe {
+            let mut c: i8= 0;
+            if (fread(&c, (u64)1, (u64)1, self.fp) == (u64)1) { return (i32)c; }
+            return -1;
+        }
     }
 
     fn read_line(self: *file, buf: *i8, cap: i32) bool {
@@ -78,23 +86,25 @@ istruc file {
         return true;
     }
 
-    fn seek_start(self: *file, off: i64) void { fseek(self.fp, off, 0); }
-    fn seek_cur(self: *file, off: i64) void   { fseek(self.fp, off, 1); }
-    fn seek_end(self: *file, off: i64) void   { fseek(self.fp, off, 2); }
-    fn tell(self: *file) i64                { return ftell(self.fp); }
+    fn seek_start(self: *file, off: i64) void { @unsafe { fseek(self.fp, off, 0); } }
+    fn seek_cur(self: *file, off: i64) void   { @unsafe { fseek(self.fp, off, 1); } }
+    fn seek_end(self: *file, off: i64) void   { @unsafe { fseek(self.fp, off, 2); } }
+    fn tell(self: *file) i64                { @unsafe { return ftell(self.fp); } }
 
     fn size(self: *file) i64 {
-        let mut cur: i64= self.tell();
-        fseek(self.fp, (i64)0, 2);
-        let mut sz: i64= self.tell();
-        fseek(self.fp, cur, 0);
-        return sz;
+        @unsafe {
+            let mut cur: i64= self.tell();
+            fseek(self.fp, (i64)0, 2);
+            let mut sz: i64= self.tell();
+            fseek(self.fp, cur, 0);
+            return sz;
+        }
     }
 
-    fn at_eof(self: *file) bool    { return feof(self.fp) != 0; }
-    fn has_error(self: *file) bool { return ferror(self.fp) != 0; }
+    fn at_eof(self: *file) bool    { @unsafe { return feof(self.fp) != 0; } }
+    fn has_error(self: *file) bool { @unsafe { return ferror(self.fp) != 0; } }
     fn is_open(self: *file) bool   { return self.open_flag; }
-    fn flush(self: *file) void           { fflush(self.fp); }
+    fn flush(self: *file) void           { @unsafe { fflush(self.fp); } }
 
     // Read entire file into a caller-provided buffer
     fn read_all(self: *file, buf: *i8, cap: u64) i64 {
@@ -111,9 +121,9 @@ istruc file {
 
 namespace path {
 
-fn exists(p: *i8) bool { return access(p, std.fs.F_OK) == 0; }
-fn is_readable(p: *i8) bool { return access(p, std.fs.R_OK) == 0; }
-fn is_writable(p: *i8) bool { return access(p, std.fs.W_OK) == 0; }
+fn exists(p: *i8) bool { @unsafe { return access(p, std.fs.F_OK) == 0; } }
+fn is_readable(p: *i8) bool { @unsafe { return access(p, std.fs.R_OK) == 0; } }
+fn is_writable(p: *i8) bool { @unsafe { return access(p, std.fs.W_OK) == 0; } }
 
 fn basename_start(path: *i8) i32 {
     let mut i: i32= 0; let mut last_sep: i32= -1;
@@ -150,13 +160,13 @@ fn join(out: *i8, cap: u64, dir: *i8, name: *i8) void {
 
 // --- directory ---
 
-fn make_dir(path: *i8) bool         { return mkdir(path, 0755) == 0; }
-fn remove_file(path: *i8) bool      { return unlink(path) == 0; }
-fn remove_dir(path: *i8) bool       { return rmdir(path) == 0; }
-fn rename_path(o: *i8, n: *i8) bool  { return rename(o, n) == 0; }
+fn make_dir(path: *i8) bool         { @unsafe { return mkdir(path, 0755) == 0; } }
+fn remove_file(path: *i8) bool      { @unsafe { return unlink(path) == 0; } }
+fn remove_dir(path: *i8) bool       { @unsafe { return rmdir(path) == 0; } }
+fn rename_path(o: *i8, n: *i8) bool  { @unsafe { return rename(o, n) == 0; } }
 
-fn cwd(buf: *i8, cap: u64) *i8 { return getcwd(buf, cap); }
-fn cd(path: *i8) bool          { return chdir(path) == 0; }
+fn cwd(buf: *i8, cap: u64) *i8 { @unsafe { return getcwd(buf, cap); } }
+fn cd(path: *i8) bool          { @unsafe { return chdir(path) == 0; } }
 
 } // fs
 } // std

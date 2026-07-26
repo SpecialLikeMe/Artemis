@@ -12,7 +12,7 @@
     free((void*)p);
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut p: *i32 = alloc_int(42);
     if (p == (i32*)0) { return 1; }
     let mut v: i32 = *p;

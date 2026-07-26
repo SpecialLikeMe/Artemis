@@ -99,11 +99,13 @@ istruc pcg_state {
 // --- Gaussian (Box-Muller) ---
 
 fn gaussian(rng: *xoshiro_state, mean: f64, std_dev: f64) f64 {
-    let mut uu1: f64= (*rng).next_f64();
-    let mut uu2: f64= (*rng).next_f64();
-    if (uu1 <= 0.0) { uu1 = 1e-300; }
-    let mut z: f64= sqrt(-2.0 * log(uu1)) * cos(6.28318530717958647 * uu2);
-    return mean + z * std_dev;
+    @unsafe {
+        let mut uu1: f64= (*rng).next_f64();
+        let mut uu2: f64= (*rng).next_f64();
+        if (uu1 <= 0.0) { uu1 = 1e-300; }
+        let mut z: f64= sqrt(-2.0 * log(uu1)) * cos(6.28318530717958647 * uu2);
+        return mean + z * std_dev;
+    }
 }
 
 } // rand

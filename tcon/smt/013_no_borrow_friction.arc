@@ -64,7 +64,7 @@ fn reborrow(arr: *i32) i32 {
     return (*p1) + (*p2);  // 7 + 13 = 20
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // A: simultaneous aliases
     let mut x: i32= 0;
     if (alias_sum(&x) != 15) { printf("FAIL alias_sum\n"); return 1; }

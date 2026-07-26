@@ -48,7 +48,7 @@ fn safe_sum(arr: *i32, n: i32, limit: i32) !i32 {
     return s;
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut table: [4]i32; table[0]=10; table[1]=20; table[2]=30; table[3]=40;
 
     // Pattern 1: successful lookup — no error, value returned

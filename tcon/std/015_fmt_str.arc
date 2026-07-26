@@ -2,7 +2,7 @@
 extern  std.fmt;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // std.fmt.str_len
     let mut l: i32= std.fmt.str_len("hello");
     if (l != 5) { printf("FAIL std.fmt.str_len\n"); return 1; }

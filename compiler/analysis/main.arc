@@ -30,6 +30,7 @@ struct ana_ctx {
     let enum_names: [256]*i8;
     let enum_decls: [256]*parser.enum_decl;
     let enum_count: i32;
+    let unsafe_depth: i32;  // nesting depth of enclosing `@unsafe { ... }` blocks
 }
 
 fn ana_enum_reg(ctx: *ana_ctx, name: *i8, ed: *parser.enum_decl) void {
@@ -196,8 +197,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                     }
                     // Enforce allocator discipline: raw heap operations only inside memstr-declared types
                     // or @unsafe-annotated functions.
-                    if (!ctx.in_generic && ctx.in_func && !ctx.is_unsafe &&
-                        !ctx.cur_func_in_memstr_istruc && !ctx.cur_func_is_unsafe) {
+                    if (!ctx.in_generic && ctx.in_func && !ana_in_unsafe_ctx(ctx)) {
                         let mut is_heap_op: bool= (strcmp(fname, "malloc")  == 0 ||
                                            strcmp(fname, "realloc") == 0 ||
                                            strcmp(fname, "calloc")  == 0 ||
@@ -206,6 +206,25 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                             let mut msg: [256]i8;
                             snprintf(msg, (u64)256, "direct heap operation ('%s') not allowed outside a 'memstr' allocator type", fname);
                             ana_error(ctx, e.line, msg);
+                        }
+                    }
+
+                    // Calling an @unsafe function requires an unsafe context. The
+                    // callee's body is unverifiable, so the obligation to justify the
+                    // call sits with the caller — that is what makes the marker mean
+                    // something beyond documentation.
+                    if (!ctx.in_generic && ctx.in_func && !ana_in_unsafe_ctx(ctx)) {
+                        let mut ufd_ptr: *i8= ctx.scope.lookup(fname);
+                        if (ufd_ptr != (i8*)0 && ufd_ptr != (i8*)1 && ufd_ptr != (i8*)2 &&
+                                ctx.scope.lookup_kind(fname) == (i32)sym_func) {
+                            let mut ufd: *parser.func_decl= (parser.func_decl*)ufd_ptr;
+                            if (ufd.is_unsafe) {
+                                let mut msg: [256]i8;
+                                snprintf(msg, (u64)256,
+                                    "call to '@unsafe' function '%s' requires an unsafe context: wrap it in '@unsafe { ... }', or mark the caller '@unsafe fn'",
+                                    fname);
+                                ana_error(ctx, e.line, msg);
+                            }
                         }
                     }
                     // Check nullable arg to non-nullable param, and non-memstr arg to &memstr param
@@ -757,6 +776,20 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
         return;
     }
 
+    // Inline assembly is opaque to every analysis in the compiler — it can touch any
+    // register or address, so SMT reasoning about the surrounding code stops being
+    // sound. It belongs behind the same marker as a foreign declaration; requiring it
+    // on the enclosing function keeps @unsafe greppable at declaration level.
+    if (kind == nd_asm_stmt) {
+        if (!ana_in_unsafe_ctx(ctx)) {
+            let mut msg: [256]i8;
+            snprintf(msg, (u64)256,
+                "'__asm__' requires an unsafe context: wrap it in '@unsafe { ... }', or mark the enclosing function '@unsafe fn'");
+            ana_error(ctx, node.line, msg);
+        }
+        return;
+    }
+
     if (kind == nd_while_stmt) {
         let mut ws: *parser.while_stmt= (parser.while_stmt*)node;
         if (ws.cond != (parser.expr_node*)0) { ana_expr(ws.cond, ctx); }
@@ -930,11 +963,22 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
 
 fn ana_block(blk: *parser.block_stmt, ctx: *ana_ctx) void {
     if (blk == (parser.block_stmt*)0) { return; }
+    // `@unsafe { ... }` opens an unsafe region covering the statements it contains.
+    if (blk.is_unsafe) { ctx.unsafe_depth = ctx.unsafe_depth + 1; }
     let mut i: i32= 0;
     while (i < blk.stmts_len) {
         if (blk.stmts != (parser.ast_node**)0) { ana_stmt(blk.stmts[i], ctx); }
         i = i + 1;
     }
+    if (blk.is_unsafe) { ctx.unsafe_depth = ctx.unsafe_depth - 1; }
+}
+
+// True when unsafe operations are permitted at the current point: inside an
+// `@unsafe { }` region, inside an `@unsafe fn` body, inside a memstr allocator type
+// (which exists precisely to hold raw memory operations), or under --unsafe.
+fn ana_in_unsafe_ctx(ctx: *ana_ctx) bool {
+    return ctx.unsafe_depth > 0 || ctx.cur_func_is_unsafe ||
+           ctx.cur_func_in_memstr_istruc || ctx.is_unsafe;
 }
 
 // ---- Function analysis ----
@@ -1052,13 +1096,9 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
 
     if (kind == nd_func_decl) {
         let mut fd: *parser.func_decl= (parser.func_decl*)node;
-        // extern fn without @unsafe is a compiler error (only for `extern fn` keyword form)
-        if (!fd.has_body && fd.is_extern_kw && !fd.is_unsafe) {
-            let mut msg: [256]i8;
-            let mut fn_name2: *i8= fd.name != (i8*)0 ? fd.name : "?";
-            snprintf(msg, (u64)256, "extern fn '%s' requires '@unsafe' prefix: '@unsafe extern fn %s(...)'", fn_name2, fn_name2);
-            ana_error(ctx, fd.line, msg);
-        }
+        // The @unsafe requirement for bodyless declarations is checked in
+        // ana_check_foreign_decls, after every definition in the program is known —
+        // a prototype paired with a later definition is not a foreign declaration.
         if (fd.name != (i8*)0) {
             let mut fd_is_void: bool= (fd.ret_type == (parser.type_node*)0) ||
                               (fd.ret_type.is_primitive && fd.ret_type.prim == (i32)void_t);
@@ -1489,6 +1529,72 @@ fn analyze(prog: *parser.program_node) i32 {
     return analyze_unsafe(prog, false);
 }
 
+// A function declaration with no body is a *foreign* declaration: its definition
+// comes from outside this program, so nothing about it can be verified and it must
+// carry @unsafe. This covers all three spellings — `extern fn f();`, a member of an
+// `extern "C" { ... }` block, and a bare prototype `fn f();` — because the marker is
+// only worth anything as a complete inventory of the trust boundary. A spelling that
+// can skip it makes @unsafe misleading rather than merely incomplete.
+//
+// A prototype paired with a definition elsewhere in the program is not foreign, so
+// this runs after every definition has been collected.
+fn ana_check_foreign_decls(node: *parser.ast_node, ctx: *ana_ctx) void {
+    if (node == (parser.ast_node*)0) { return; }
+    let mut kind: i32= node.kind;
+
+    if (kind == nd_func_decl) {
+        let mut fd: *parser.func_decl= (parser.func_decl*)node;
+        if (fd.has_body || fd.is_unsafe || fd.name == (i8*)0) { return; }
+        // Resolved definition elsewhere in the program → a forward declaration.
+        let mut resolved: *i8= ctx.scope.lookup(fd.name);
+        if (resolved != (i8*)0 && resolved != (i8*)1 && resolved != (i8*)2) {
+            let mut rfd: *parser.func_decl= (parser.func_decl*)resolved;
+            if (rfd.has_body) { return; }
+        }
+        let mut fn_name2: *i8= fd.name;
+        let mut msg: [256]i8;
+        if (fd.is_extern_c && !fd.is_extern_kw) {
+            snprintf(msg, (u64)256,
+                "'%s' is declared in an extern \"C\" block and requires '@unsafe': write '@unsafe extern \"C\" { ... }'",
+                fn_name2);
+        } else if (fd.is_extern_kw) {
+            snprintf(msg, (u64)256,
+                "extern fn '%s' requires '@unsafe' prefix: '@unsafe extern fn %s(...)'",
+                fn_name2, fn_name2);
+        } else {
+            snprintf(msg, (u64)256,
+                "'%s' is declared without a body and requires '@unsafe': write '@unsafe extern fn %s(...)', or give it a body",
+                fn_name2, fn_name2);
+        }
+        ana_error(ctx, fd.line, msg);
+        return;
+    }
+
+    if (kind == nd_extern_c_block) {
+        let mut ecb: *parser.extern_c_block= (parser.extern_c_block*)node;
+        let mut i: i32= 0;
+        while (i < ecb.decls_len) {
+            if (ecb.decls != (parser.ast_node**)0) { ana_check_foreign_decls(ecb.decls[i], ctx); }
+            i = i + 1;
+        }
+        return;
+    }
+
+    if (kind == nd_namespace_decl) {
+        let mut nd: *parser.namespace_decl= (parser.namespace_decl*)node;
+        // An interface's methods are bodyless by definition — they are a contract for
+        // implementors, not foreign declarations, and the implementations are checked
+        // where they are written.
+        if (nd.is_interface) { return; }
+        let mut i: i32= 0;
+        while (i < nd.decls_len) {
+            if (nd.decls != (parser.ast_node**)0) { ana_check_foreign_decls(nd.decls[i], ctx); }
+            i = i + 1;
+        }
+        return;
+    }
+}
+
 fn analyze_unsafe(prog: *parser.program_node, unsafe_mode: bool) i32 {
     if (prog == (parser.program_node*)0) { return 0; }
 
@@ -1508,12 +1614,21 @@ fn analyze_unsafe(prog: *parser.program_node, unsafe_mode: bool) i32 {
     ctx.in_generic                = false;
     ctx.is_unsafe                 = unsafe_mode;
     ctx.enum_count                = 0;
+    ctx.unsafe_depth              = 0;
 
     // Pass 1: collect all top-level symbol names
     let mut i: i32= 0;
     while (i < prog.decls_len) {
         if (prog.decls != (parser.ast_node**)0) { collect_toplevel(prog.decls[i], &ctx); }
         i = i + 1;
+    }
+
+    // Pass 1b: now that every definition is known, require @unsafe on declarations
+    // whose body lives outside this program.
+    let mut fi: i32= 0;
+    while (fi < prog.decls_len) {
+        if (prog.decls != (parser.ast_node**)0) { ana_check_foreign_decls(prog.decls[fi], &ctx); }
+        fi = fi + 1;
     }
 
     // Pass 2: analyze function bodies and global initializers

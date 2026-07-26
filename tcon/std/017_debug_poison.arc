@@ -16,7 +16,7 @@ fn zero_buf(b: *u8, n: i32) void {
     while (i < n) { b[i] = 0; i = i + 1; }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut sa: SysAlloc;
 
     // std.debug.poison fills memory with a pattern

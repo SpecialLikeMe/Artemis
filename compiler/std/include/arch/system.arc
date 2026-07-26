@@ -173,7 +173,7 @@ fn sleep_ms(ms: u64) void {
 
 // --- process ---
 fn quit(code: i32) void  { exit(code); }
-fn panic_exit() void    { abort(); }
+fn panic_exit() void    { @unsafe { abort(); } }
 fn pid() i32 {
 @ifdef _WIN32
     return GetCurrentProcessId();

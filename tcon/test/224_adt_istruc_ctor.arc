@@ -11,7 +11,7 @@ enum msg {
     },
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut bar: msg= msg.text("Hello world");
     let mut s: *char= (*bar).rc;
     if (strcmp(s, "Hello world") != 0) { return 1; }

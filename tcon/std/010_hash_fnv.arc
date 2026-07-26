@@ -2,7 +2,7 @@
 extern  std.hash;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // FNV-1a: known hash of empty string = std.hash.FNV_OFFSET
     let mut h0: u64= std.hash.fnv_hash_bytes((u8*)0, (u64)0);
     if (h0 != std.hash.FNV_OFFSET) { printf("FAIL fnv empty\n"); return 1; }

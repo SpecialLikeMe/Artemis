@@ -75,7 +75,7 @@ fn lifetime_stack() i32 {
 }
 
 // ---- main: exercise every safe path ----
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // A1: constant-index access → GOOD
     let mut arr: [4]i32; arr[0]=10; arr[1]=20; arr[2]=30; arr[3]=40;
     let mut s: i32= const_sum(arr);

@@ -51,74 +51,84 @@ fn stream_err() *void {
 @endif
 }
 fn out_print(s: *i8) void {
-    let mut i: i32= 0;
-    while (s[i] != 0) { putchar((i32)s[i]); i = i + 1; }
+    @unsafe {
+        let mut i: i32= 0;
+        while (s[i] != 0) { putchar((i32)s[i]); i = i + 1; }
+    }
 }
 
 fn out_println(s: *i8) void {
-    let mut i: i32= 0;
-    while (s[i] != 0) { putchar((i32)s[i]); i = i + 1; }
-    putchar(10);
+    @unsafe {
+        let mut i: i32= 0;
+        while (s[i] != 0) { putchar((i32)s[i]); i = i + 1; }
+        putchar(10);
+    }
 }
 
-fn out_print_i32(v: i32) void  { printf("%d", v); }
-fn out_print_i64(v: i64) void  { printf("%lld", v); }
-fn out_print_u32(v: u32) void  { printf("%u", v); }
-fn out_print_u64(v: u64) void  { printf("%llu", v); }
-fn out_print_f32(v: f32) void  { printf("%f", (f64)v); }
-fn out_print_f64(v: f64) void  { printf("%f", v); }
-fn out_print_bool(b: bool) void{ puts(b ? "true" : "false"); }
-fn out_print_char(c: i8) void  { putchar((i32)c); }
-fn out_print_hex(v: u64) void  { printf("0x%llx", v); }
-fn out_print_ptr(p: *void) void{ printf("%p", p); }
-fn out_flush() void           { fflush(stream_out()); }
+fn out_print_i32(v: i32) void  { @unsafe { printf("%d", v); } }
+fn out_print_i64(v: i64) void  { @unsafe { printf("%lld", v); } }
+fn out_print_u32(v: u32) void  { @unsafe { printf("%u", v); } }
+fn out_print_u64(v: u64) void  { @unsafe { printf("%llu", v); } }
+fn out_print_f32(v: f32) void  { @unsafe { printf("%f", (f64)v); } }
+fn out_print_f64(v: f64) void  { @unsafe { printf("%f", v); } }
+fn out_print_bool(b: bool) void{ @unsafe { puts(b ? "true" : "false"); } }
+fn out_print_char(c: i8) void  { @unsafe { putchar((i32)c); } }
+fn out_print_hex(v: u64) void  { @unsafe { printf("0x%llx", v); } }
+fn out_print_ptr(p: *void) void{ @unsafe { printf("%p", p); } }
+fn out_flush() void           { @unsafe { fflush(stream_out()); } }
 
 // --- stderr output (fd 2) ---
 
 fn err_print(s: *i8) void {
-    fprintf(stream_err(), "%s", s);
+    @unsafe {
+        fprintf(stream_err(), "%s", s);
+    }
 }
 fn err_println(s: *i8) void {
-    fprintf(stream_err(), "%s\n", s);
+    @unsafe {
+        fprintf(stream_err(), "%s\n", s);
+    }
 }
-fn err_print_i32(v: i32) void  { fprintf(stream_err(), "%d", v); }
-fn err_flush() void           { fflush(stream_err()); }
+fn err_print_i32(v: i32) void  { @unsafe { fprintf(stream_err(), "%d", v); } }
+fn err_flush() void           { @unsafe { fflush(stream_err()); } }
 
 // --- buffer formatting ---
 
-fn fmt_i32(buf: *i8, cap: u64, v: i32) i32  { return snprintf(buf, cap, "%d", v); }
-fn fmt_i64(buf: *i8, cap: u64, v: i64) i32  { return snprintf(buf, cap, "%lld", v); }
-fn fmt_u32(buf: *i8, cap: u64, v: u32) i32  { return snprintf(buf, cap, "%u", v); }
-fn fmt_u64(buf: *i8, cap: u64, v: u64) i32  { return snprintf(buf, cap, "%llu", v); }
-fn fmt_f64(buf: *i8, cap: u64, v: f64) i32  { return snprintf(buf, cap, "%f", v); }
-fn fmt_hex(buf: *i8, cap: u64, v: u64) i32  { return snprintf(buf, cap, "0x%llx", v); }
-fn fmt_ptr(buf: *i8, cap: u64, p: *void) i32{ return snprintf(buf, cap, "%p", p); }
+fn fmt_i32(buf: *i8, cap: u64, v: i32) i32  { @unsafe { return snprintf(buf, cap, "%d", v); } }
+fn fmt_i64(buf: *i8, cap: u64, v: i64) i32  { @unsafe { return snprintf(buf, cap, "%lld", v); } }
+fn fmt_u32(buf: *i8, cap: u64, v: u32) i32  { @unsafe { return snprintf(buf, cap, "%u", v); } }
+fn fmt_u64(buf: *i8, cap: u64, v: u64) i32  { @unsafe { return snprintf(buf, cap, "%llu", v); } }
+fn fmt_f64(buf: *i8, cap: u64, v: f64) i32  { @unsafe { return snprintf(buf, cap, "%f", v); } }
+fn fmt_hex(buf: *i8, cap: u64, v: u64) i32  { @unsafe { return snprintf(buf, cap, "0x%llx", v); } }
+fn fmt_ptr(buf: *i8, cap: u64, p: *void) i32{ @unsafe { return snprintf(buf, cap, "%p", p); } }
 
 // --- file I/O ---
 
-fn file_open(path: *i8, mode: *i8) *void          { return fopen(path, mode); }
-fn file_close(fp: *void) i32                    { return fclose(fp); }
-fn file_read_bytes(fp: *void, buf: *void, n: u64) u64  { return fread(buf, (u64)1, n, fp); }
-fn file_write_bytes(fp: *void, buf: *void, n: u64) u64 { return fwrite(buf, (u64)1, n, fp); }
-fn file_at_eof(fp: *void) bool                   { return feof(fp) != 0; }
-fn file_has_error(fp: *void) bool                { return ferror(fp) != 0; }
-fn file_seek_start(fp: *void, off: i64) void      { fseek(fp, off, 0); }
-fn file_seek_cur(fp: *void, off: i64) void        { fseek(fp, off, 1); }
-fn file_seek_end(fp: *void, off: i64) void        { fseek(fp, off, 2); }
-fn file_tell(fp: *void) i64                     { return ftell(fp); }
-fn file_flush(fp: *void) void                    { fflush(fp); }
+fn file_open(path: *i8, mode: *i8) *void          { @unsafe { return fopen(path, mode); } }
+fn file_close(fp: *void) i32                    { @unsafe { return fclose(fp); } }
+fn file_read_bytes(fp: *void, buf: *void, n: u64) u64  { @unsafe { return fread(buf, (u64)1, n, fp); } }
+fn file_write_bytes(fp: *void, buf: *void, n: u64) u64 { @unsafe { return fwrite(buf, (u64)1, n, fp); } }
+fn file_at_eof(fp: *void) bool                   { @unsafe { return feof(fp) != 0; } }
+fn file_has_error(fp: *void) bool                { @unsafe { return ferror(fp) != 0; } }
+fn file_seek_start(fp: *void, off: i64) void      { @unsafe { fseek(fp, off, 0); } }
+fn file_seek_cur(fp: *void, off: i64) void        { @unsafe { fseek(fp, off, 1); } }
+fn file_seek_end(fp: *void, off: i64) void        { @unsafe { fseek(fp, off, 2); } }
+fn file_tell(fp: *void) i64                     { @unsafe { return ftell(fp); } }
+fn file_flush(fp: *void) void                    { @unsafe { fflush(fp); } }
 
 fn file_read_all(path: *i8, buf: *i8, cap: u64) i64 {
-    let mut fp: *void= fopen(path, "rb");
-    if (fp == (void*)0) { return -1; }
-    fseek(fp, (i64)0, 2);
-    let mut sz: i64= ftell(fp);
-    fseek(fp, (i64)0, 0);
-    if (sz < 0 || (u64)sz >= cap) { fclose(fp); return -1; }
-    let mut n: u64= fread(buf, (u64)1, (u64)sz, fp);
-    buf[n] = 0;
-    fclose(fp);
-    return (i64)n;
+    @unsafe {
+        let mut fp: *void= fopen(path, "rb");
+        if (fp == (void*)0) { return -1; }
+        fseek(fp, (i64)0, 2);
+        let mut sz: i64= ftell(fp);
+        fseek(fp, (i64)0, 0);
+        if (sz < 0 || (u64)sz >= cap) { fclose(fp); return -1; }
+        let mut n: u64= fread(buf, (u64)1, (u64)sz, fp);
+        buf[n] = 0;
+        fclose(fp);
+        return (i64)n;
+    }
 }
 
 // --- string operations ---

@@ -1,5 +1,5 @@
 // Inline ASM: copy a value via register
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut src: i32= 99;
     let mut dst: i32= 0;
     __asm__ {

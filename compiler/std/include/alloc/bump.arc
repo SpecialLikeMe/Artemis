@@ -13,14 +13,18 @@ memstr bump {
     let mut cap: u64;
 
     fn __construct__(self: *bump, capacity: u64) void {
-        self.base = malloc(capacity);
-        if (self.base == (void*)0) {
-            printf("fatal: bump allocator out of memory (requested %llu bytes)\n", capacity);
-            self.cap = 0;
-        } else {
-            self.cap = capacity;
+        @unsafe {
+            @unsafe {
+                self.base = malloc(capacity);
+                if (self.base == (void*)0) {
+                    printf("fatal: bump allocator out of memory (requested %llu bytes)\n", capacity);
+                    self.cap = 0;
+                } else {
+                    self.cap = capacity;
+                }
+                self.used = 0;
+            }
         }
-        self.used = 0;
     }
 
     fn alloc_raw(self: *bump, size: u64, align: u64) *void {

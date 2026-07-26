@@ -46,8 +46,10 @@ memstr test_alloc {
     fn has_leaks(self: *test_alloc) bool { return self.count != self.freed_count; }
     fn leak_count(self: *test_alloc) i32 { return self.count - self.freed_count; }
     fn report_leaks(self: *test_alloc) void {
-        printf("  %d potential leaks (alloc:%d free:%d)\n",
-               self.count - self.freed_count, self.count, self.freed_count);
+        @unsafe {
+            printf("  %d potential leaks (alloc:%d free:%d)\n",
+                   self.count - self.freed_count, self.count, self.freed_count);
+        }
     }
 }
 
@@ -55,62 +57,94 @@ memstr test_alloc {
 
 // Runtime assertion: on failure prints location and aborts.
 fn assert_true(cond: bool, msg: *i8, file: *i8, line: i32) void {
-    if(!cond) {
-        printf("FAIL [%s:%d] assert_true: %s\n", file, line, msg);
-        abort();
+    @unsafe {
+        @unsafe {
+            if(!cond) {
+                printf("FAIL [%s:%d] assert_true: %s\n", file, line, msg);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_false(cond: bool, msg: *i8, file: *i8, line: i32) void {
-    if(cond) {
-        printf("FAIL [%s:%d] assert_false: %s\n", file, line, msg);
-        abort();
+    @unsafe {
+        @unsafe {
+            if(cond) {
+                printf("FAIL [%s:%d] assert_false: %s\n", file, line, msg);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_eq_i32(a: i32, b: i32, msg: *i8, file: *i8, line: i32) void {
-    if(a != b) {
-        printf("FAIL [%s:%d] assert_eq_i32: %s — expected %d, got %d\n", file, line, msg, b, a);
-        abort();
+    @unsafe {
+        @unsafe {
+            if(a != b) {
+                printf("FAIL [%s:%d] assert_eq_i32: %s — expected %d, got %d\n", file, line, msg, b, a);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_eq_i64(a: i64, b: i64, msg: *i8, file: *i8, line: i32) void {
-    if(a != b) {
-        printf("FAIL [%s:%d] assert_eq_i64: %s\n", file, line, msg);
-        abort();
+    @unsafe {
+        @unsafe {
+            if(a != b) {
+                printf("FAIL [%s:%d] assert_eq_i64: %s\n", file, line, msg);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_eq_f64(a: f64, b: f64, eps: f64, msg: *i8, file: *i8, line: i32) void {
-    let mut diff: f64= a - b;
-    if(diff < 0.0) { diff = -diff; }
-    if(diff > eps) {
-        printf("FAIL [%s:%d] assert_eq_f64: %s — delta = %f\n", file, line, msg, diff);
-        abort();
+    @unsafe {
+        @unsafe {
+            let mut diff: f64= a - b;
+            if(diff < 0.0) { diff = -diff; }
+            if(diff > eps) {
+                printf("FAIL [%s:%d] assert_eq_f64: %s — delta = %f\n", file, line, msg, diff);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_eq_str(a: *i8, b: *i8, msg: *i8, file: *i8, line: i32) void {
-    let mut i: i32=0;
-    while(a[i]!=0&&b[i]!=0){if(a[i]!=b[i]) break;i=i+1;}
-    if(a[i]!=b[i]) {
-        printf("FAIL [%s:%d] assert_eq_str: %s — \"%s\" != \"%s\"\n", file, line, msg, a, b);
-        abort();
+    @unsafe {
+        @unsafe {
+            let mut i: i32=0;
+            while(a[i]!=0&&b[i]!=0){if(a[i]!=b[i]) break;i=i+1;}
+            if(a[i]!=b[i]) {
+                printf("FAIL [%s:%d] assert_eq_str: %s — \"%s\" != \"%s\"\n", file, line, msg, a, b);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_null(p: *void, msg: *i8, file: *i8, line: i32) void {
-    if(p != (void*)0) {
-        printf("FAIL [%s:%d] assert_null: %s — expected null\n", file, line, msg);
-        abort();
+    @unsafe {
+        @unsafe {
+            if(p != (void*)0) {
+                printf("FAIL [%s:%d] assert_null: %s — expected null\n", file, line, msg);
+                abort();
+            }
+        }
     }
 }
 
 fn assert_not_null(p: *void, msg: *i8, file: *i8, line: i32) void {
-    if(p == (void*)0) {
-        printf("FAIL [%s:%d] assert_not_null: %s — got null\n", file, line, msg);
-        abort();
+    @unsafe {
+        @unsafe {
+            if(p == (void*)0) {
+                printf("FAIL [%s:%d] assert_not_null: %s — got null\n", file, line, msg);
+                abort();
+            }
+        }
     }
 }
 
@@ -129,12 +163,16 @@ istruc runner {
     fn __construct__(self: *runner) void { self.count=0; self.passed=0; self.failed=0; }
 
     fn begin(self: *runner, name: *i8) void {
-        if(self.count < MAX_TESTS) {
-            self.test_names[self.count]  = name;
-            self.test_passed[self.count] = true;
-            self.test_fails[self.count]  = 0;
-            self.count = self.count + 1;
-            printf("  RUN  %s\n", name);
+        @unsafe {
+            @unsafe {
+                if(self.count < MAX_TESTS) {
+                    self.test_names[self.count]  = name;
+                    self.test_passed[self.count] = true;
+                    self.test_fails[self.count]  = 0;
+                    self.count = self.count + 1;
+                    printf("  RUN  %s\n", name);
+                }
+            }
         }
     }
 
@@ -147,48 +185,74 @@ istruc runner {
     }
 
     fn end(self: *runner) void {
-        let mut i: i32= self.count - 1;
-        if(i < 0) { return; }
-        if(self.test_passed[i]) {
-            self.passed = self.passed + 1;
-            printf("  OK   %s\n", self.test_names[i]);
-        } else {
-            self.failed = self.failed + 1;
-            printf("  FAIL %s (%d failures)\n", self.test_names[i], self.test_fails[i]);
+        @unsafe {
+            @unsafe {
+                let mut i: i32= self.count - 1;
+                if(i < 0) { return; }
+                if(self.test_passed[i]) {
+                    self.passed = self.passed + 1;
+                    printf("  OK   %s\n", self.test_names[i]);
+                } else {
+                    self.failed = self.failed + 1;
+                    printf("  FAIL %s (%d failures)\n", self.test_names[i], self.test_fails[i]);
+                }
+            }
         }
     }
 
     fn finish(self: *runner) i32 {
-        printf("\n=== %d passed, %d failed ===\n", self.passed, self.failed);
-        return self.failed > 0 ? 1 : 0;
+        @unsafe {
+            printf("\n=== %d passed, %d failed ===\n", self.passed, self.failed);
+            return self.failed > 0 ? 1 : 0;
+        }
     }
 }
 
 // ---- Soft assertions (record failure, continue) ----
 
 fn expect_true(r: *runner, cond: bool, msg: *i8) void {
-    if(!cond) { printf("  EXPECT FAIL: %s\n", msg); (*r).record_fail(); }
+    @unsafe {
+        @unsafe {
+            if(!cond) { printf("  EXPECT FAIL: %s\n", msg); (*r).record_fail(); }
+        }
+    }
 }
 
 fn expect_eq_i32(r: *runner, a: i32, b: i32, msg: *i8) void {
-    if(a!=b) {
-        printf("  EXPECT FAIL: %s — expected %d, got %d\n", msg, b, a);
-        (*r).record_fail();
+    @unsafe {
+        @unsafe {
+            if(a!=b) {
+                printf("  EXPECT FAIL: %s — expected %d, got %d\n", msg, b, a);
+                (*r).record_fail();
+            }
+        }
     }
 }
 
 fn expect_eq_str(r: *runner, a: *i8, b: *i8, msg: *i8) void {
-    let mut i: i32=0;
-    while(a[i]!=0&&b[i]!=0){if(a[i]!=b[i])break;i=i+1;}
-    if(a[i]!=b[i]) { printf("  EXPECT FAIL: %s\n", msg); (*r).record_fail(); }
+    @unsafe {
+        @unsafe {
+            let mut i: i32=0;
+            while(a[i]!=0&&b[i]!=0){if(a[i]!=b[i])break;i=i+1;}
+            if(a[i]!=b[i]) { printf("  EXPECT FAIL: %s\n", msg); (*r).record_fail(); }
+        }
+    }
 }
 
 fn expect_null(r: *runner, p: *void, msg: *i8) void {
-    if(p!=(void*)0) { printf("  EXPECT FAIL (not null): %s\n", msg); (*r).record_fail(); }
+    @unsafe {
+        @unsafe {
+            if(p!=(void*)0) { printf("  EXPECT FAIL (not null): %s\n", msg); (*r).record_fail(); }
+        }
+    }
 }
 
 fn expect_not_null(r: *runner, p: *void, msg: *i8) void {
-    if(p==(void*)0) { printf("  EXPECT FAIL (null): %s\n", msg); (*r).record_fail(); }
+    @unsafe {
+        @unsafe {
+            if(p==(void*)0) { printf("  EXPECT FAIL (null): %s\n", msg); (*r).record_fail(); }
+        }
+    }
 }
 
 } // namespace test

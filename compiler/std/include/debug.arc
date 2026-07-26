@@ -8,29 +8,41 @@
 namespace std {
 namespace debug {
 fn panic(msg: *i8) void {
-    printf("\nPANIC: %s\n", msg);
-    abort();
-}
-
-fn panic_fmt(fmt_str: *i8, val: i32) void {
-    printf("\nPANIC: ");
-    printf(fmt_str, val);
-    printf("\n");
-    abort();
-}
-
-fn bounds_check(idx: i32, len: i32, context: *i8) void {
-    if (idx < 0 || idx >= len) {
-        printf("\nPANIC: bounds check failed in %s: index %d out of bounds [0,%d)\n",
-               context, idx, len);
+    @unsafe {
+        printf("\nPANIC: %s\n", msg);
         abort();
     }
 }
 
-fn null_check(p: *void, context: *i8) void {
-    if (p == (void*)0) {
-        printf("\nPANIC: null pointer dereference in %s\n", context);
+fn panic_fmt(fmt_str: *i8, val: i32) void {
+    @unsafe {
+        printf("\nPANIC: ");
+        printf(fmt_str, val);
+        printf("\n");
         abort();
+    }
+}
+
+fn bounds_check(idx: i32, len: i32, context: *i8) void {
+    @unsafe {
+        @unsafe {
+            if (idx < 0 || idx >= len) {
+                printf("\nPANIC: bounds check failed in %s: index %d out of bounds [0,%d)\n",
+                       context, idx, len);
+                abort();
+            }
+        }
+    }
+}
+
+fn null_check(p: *void, context: *i8) void {
+    @unsafe {
+        @unsafe {
+            if (p == (void*)0) {
+                printf("\nPANIC: null pointer dereference in %s\n", context);
+                abort();
+            }
+        }
     }
 }
 

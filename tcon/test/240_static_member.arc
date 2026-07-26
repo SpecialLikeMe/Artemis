@@ -1,6 +1,6 @@
 // Test static istruc member: belongs to the type, not any instance
 // PASS PASS PASS PASS
-fn puts(s: *i8) int;
+@unsafe extern fn puts(s: *i8) int;
 
 istruc Counter {
     let mut count: int;
@@ -11,7 +11,7 @@ istruc Counter {
     }
 }
 
-pub fn main() int {
+pub @unsafe fn main() int {
     let mut a: Counter;
     let mut b: Counter;
     a.count = 0;

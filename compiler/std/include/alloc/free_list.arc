@@ -14,18 +14,22 @@ memstr free_list {
     let mut free_head: *void;  // pointer to first free block (null = no free blocks)
 
     fn __construct__(self: *free_list, capacity: u64) void {
-        self.base = malloc(capacity);
-        if (self.base == (void*)0) {
-            printf("fatal: free_list allocator out of memory (requested %llu bytes)\n", capacity);
-            self.cap = 0;
-            self.free_head = (void*)0;
-            return;
+        @unsafe {
+            @unsafe {
+                self.base = malloc(capacity);
+                if (self.base == (void*)0) {
+                    printf("fatal: free_list allocator out of memory (requested %llu bytes)\n", capacity);
+                    self.cap = 0;
+                    self.free_head = (void*)0;
+                    return;
+                }
+                self.cap  = capacity;
+                // Initialise the single free block covering the whole region.
+                *((u64*)self.base) = capacity;                              // size
+                *((u64*)((u8*)self.base + 8)) = (u64)0;                    // next = null
+                self.free_head = self.base;
+            }
         }
-        self.cap  = capacity;
-        // Initialise the single free block covering the whole region.
-        *((u64*)self.base) = capacity;                              // size
-        *((u64*)((u8*)self.base + 8)) = (u64)0;                    // next = null
-        self.free_head = self.base;
     }
 
     fn alloc_bytes(self: *free_list, n: u64) *void {

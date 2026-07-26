@@ -58,7 +58,7 @@ fn g14(a: *i32, b: *i32) i32 {                                                  
     return s;
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut arr: [8]i32;
     arr[0]=1; arr[1]=2; arr[2]=3; arr[3]=4;
     arr[4]=5; arr[5]=6; arr[6]=7; arr[7]=8;

@@ -1,6 +1,6 @@
 // Test bare declaration vs explicit constructor call
 // PASS PASS PASS PASS
-fn puts(s: *i8) int;
+@unsafe extern fn puts(s: *i8) int;
 
 istruc Counter {
     let mut count: int;
@@ -16,7 +16,7 @@ istruc WithArg {
     }
 }
 
-pub fn main() int {
+pub @unsafe fn main() int {
     // Bare declaration: constructor must NOT be called
     let mut b: Counter;
     if (b.count == 0) { puts("PASS"); } else { puts("FAIL bare no ctor"); }

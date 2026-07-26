@@ -2,7 +2,7 @@
 extern  std.fs;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut path: *i8= "_arc_test_016.tmp";
 
     let mut w: std.fs.file;

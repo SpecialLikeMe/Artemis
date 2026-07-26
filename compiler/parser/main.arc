@@ -70,6 +70,7 @@ struct block_stmt {
     let line: u64;
     let stmts: **ast_node;
     let stmts_len: i32;
+    let is_unsafe: bool;   // `@unsafe { ... }` — scoped opt-in for unsafe calls
 }
 
 struct expr_stmt {
@@ -216,7 +217,8 @@ struct func_decl {
     let body: *i8;        // actually block_stmt*
     let has_body: bool;
     let is_extern_c: bool;
-    let mangled_name: *i8;
+    let mangled_name: *i8;   // overload-mangled name; also the key call sites resolve by
+    let link_name: *i8;      // @link_name("sym") — emitted symbol only, never a lookup key
     let type_params: **i8;
     let type_params_len: i32;
     let is_error_union: bool;
@@ -2440,7 +2442,9 @@ istruc parser_t {
         return nd;
     }
 
-    fn parse_extern_c_block(self: *parser_t) *extern_c_block {
+    // `blk_unsafe` carries a leading `@unsafe` on the block, which marks every
+    // declaration inside it — otherwise each member would need its own annotation.
+    fn parse_extern_c_block(self: *parser_t, blk_unsafe: bool) *extern_c_block {
         let mut ln: u64= (u64)self.peek_line();
         self.advance_tok();  // consume 'extern "C"'
         let mut blk: *extern_c_block= (extern_c_block*)arc_malloc(sizeof(parser__NS_extern_c_block));
@@ -2454,6 +2458,10 @@ istruc parser_t {
             while (!self.check_tok(cbrace) && !self.is_at_end_p()) {
                 let mut decl: *ast_node= self.parse_func_or_var_decl_extern_c();
                 if (decl != (ast_node*)0) {
+                    if (blk_unsafe && decl.kind == nd_func_decl) {
+                        let mut mfd: *func_decl= (func_decl*)decl;
+                        mfd.is_unsafe = true;
+                    }
                     if (blk.decls_len >= blk.decls_cap) {
                         blk.decls_cap = blk.decls_cap * 2;
                         blk.decls = (ast_node**)arc_realloc((i8*)blk.decls, sizeof(i8*) * (u64)blk.decls_cap);
@@ -2465,6 +2473,10 @@ istruc parser_t {
             self.consume_tok(cbrace, "Expected '}' after extern \"C\" block");
         } else {
             let mut decl: *ast_node= self.parse_func_or_var_decl_extern_c();
+            if (blk_unsafe && decl != (ast_node*)0 && decl.kind == nd_func_decl) {
+                let mut sfd: *func_decl= (func_decl*)decl;
+                sfd.is_unsafe = true;
+            }
             blk.decls[0] = decl;
             blk.decls_len = 1;
         }
@@ -2904,24 +2916,50 @@ istruc parser_t {
     }
 
     fn parse_top_level(self: *parser_t) *ast_node {
-        // Optional visibility prefix
+        // Optional visibility and @unsafe prefixes, in either order — writing
+        // `@unsafe pub fn` is as natural as `pub @unsafe fn`, and accepting only one
+        // spelling silently drops the annotation from the other.
         let mut is_pub_tl: bool= false;
-        if (self.check_tok(kw_pub)) { self.advance_tok(); is_pub_tl = true; }
-        else if (self.check_tok(kw_priv)) { self.advance_tok(); }
-        // Optional @unsafe prefix
         let mut is_unsafe_tl: bool= false;
-        if (self.check_tok(at) && self.peek_at_type(1) == id) {
-            let mut next_val2: *i8= self.tokens[self.current + 1].value;
-            if (strcmp(next_val2, "unsafe") == 0) {
+        let mut link_name_tl: *i8= (i8*)0;
+        let mut scanning_prefix: bool= true;
+        while (scanning_prefix) {
+            if (self.check_tok(kw_pub))       { self.advance_tok(); is_pub_tl = true; }
+            else if (self.check_tok(kw_priv)) { self.advance_tok(); }
+            else if (self.check_tok(at) && self.peek_at_type(1) == id &&
+                     self.tokens[self.current + 1].value != (i8*)0 &&
+                     strcmp(self.tokens[self.current + 1].value, "unsafe") == 0) {
                 is_unsafe_tl = true;
                 self.advance_tok(); // consume '@'
                 self.advance_tok(); // consume 'unsafe'
             }
+            // @link_name("sym") — the symbol this declaration binds to, when it differs
+            // from the Arc name. Lets a raw FFI declaration sit alongside a wrapper that
+            // reuses the plain name.
+            else if (self.check_tok(at) && self.peek_at_type(1) == id &&
+                     self.tokens[self.current + 1].value != (i8*)0 &&
+                     strcmp(self.tokens[self.current + 1].value, "link_name") == 0) {
+                self.advance_tok(); // consume '@'
+                self.advance_tok(); // consume 'link_name'
+                self.consume_tok(oparen, "Expected '(' after @link_name");
+                let mut ln_tok: lexer.token_t= self.advance_tok();
+                if (ln_tok.type == string_lit && ln_tok.value != (i8*)0) {
+                    link_name_tl = lexer.str_dup(ln_tok.value);
+                } else {
+                    printf("error at line %d: @link_name expects a string literal\n", (i32)ln_tok.line);
+                    self.had_parse_error = true;
+                }
+                self.consume_tok(cparen, "Expected ')' after @link_name symbol");
+            }
+            else { scanning_prefix = false; }
         }
         // New-style fn declaration
         if (self.check_tok(kw_fn)) {
             let mut tl_fd: *func_decl= self.parse_fn_decl_new(false);
-            if (tl_fd != (func_decl*)0) { tl_fd.is_pub = is_pub_tl; tl_fd.is_unsafe = is_unsafe_tl; }
+            if (tl_fd != (func_decl*)0) {
+                tl_fd.is_pub = is_pub_tl; tl_fd.is_unsafe = is_unsafe_tl;
+                if (link_name_tl != (i8*)0) { tl_fd.link_name = link_name_tl; }
+            }
             return (ast_node*)tl_fd;
         }
         // New-style let/const at top level (global variables)
@@ -2995,7 +3033,7 @@ istruc parser_t {
         if (self.check_tok(kw_enum))       { return self.parse_enum_decl(); }
         if (self.check_tok(kw_istruc))     { return self.parse_istruc_decl(); }
         if (self.check_tok(kw_interface))  { return self.parse_istruc_decl(); }
-        if (self.check_tok(kw_extern_c))   { return (ast_node*)self.parse_extern_c_block(); }
+        if (self.check_tok(kw_extern_c))   { return (ast_node*)self.parse_extern_c_block(is_unsafe_tl); }
         if (self.check_tok(kw_namespace))  { return (ast_node*)self.parse_namespace_decl(); }
         // Proc macro application: #[name] or #[name(args)] or #derive[name] or #![name] (file-level)
         if (self.check_tok(hash)) {
@@ -3331,7 +3369,10 @@ istruc parser_t {
         if (self.check_tok(kw_extern) && self.peek_at_type(1) == kw_fn) {
             self.advance_tok(); // consume 'extern'
             let mut ef: *func_decl= self.parse_fn_decl_new(false);
-            if (ef != (func_decl*)0) { ef.is_extern_c = true; ef.is_unsafe = is_unsafe_tl; ef.is_extern_kw = true; }
+            if (ef != (func_decl*)0) {
+                ef.is_extern_c = true; ef.is_unsafe = is_unsafe_tl; ef.is_extern_kw = true;
+                if (link_name_tl != (i8*)0) { ef.link_name = link_name_tl; }
+            }
             return (ast_node*)ef;
         }
         // New-style: [@unsafe] extern let name: Type;  — a global defined in another
@@ -3380,15 +3421,15 @@ istruc parser_t {
         if (self.check_tok(obrace)) {
             let mut err_ln3: i32= self.peek_line();
             printf("error at line %d: unexpected '{' at top level\n", err_ln3);
-            self.had_parse_error = true;
-            let mut skip_depth: i32= 1; self.advance_tok();
-            while (skip_depth > 0 && !self.is_at_end_p()) {
-                if (self.check_tok(obrace)) { skip_depth = skip_depth + 1; }
-                else if (self.check_tok(cbrace)) { skip_depth = skip_depth - 1; }
-                self.advance_tok();
-            }
-            return (ast_node*)0;
         }
+        self.had_parse_error = true;
+        let mut skip_depth: i32= 1; self.advance_tok();
+        while (skip_depth > 0 && !self.is_at_end_p()) {
+            if (self.check_tok(obrace)) { skip_depth = skip_depth + 1; }
+            else if (self.check_tok(cbrace)) { skip_depth = skip_depth - 1; }
+            self.advance_tok();
+        }
+        return (ast_node*)0;
         if (self.check_tok(cbrace) || self.check_tok(sm)) {
             self.advance_tok();
             return (ast_node*)0;
@@ -4105,6 +4146,20 @@ istruc parser_t {
     }
 
     fn parse_stmt(self: *parser_t) *ast_node {
+        // `@unsafe { ... }` — a scoped unsafe region. Lets a safe function perform
+        // unsafe calls over a bounded span without marking its whole signature unsafe,
+        // which would otherwise propagate up the call graph all the way to main().
+        if (self.check_tok(at) && self.peek_at_type(1) == id &&
+                self.tokens[self.current + 1].value != (i8*)0 &&
+                strcmp(self.tokens[self.current + 1].value, "unsafe") == 0 &&
+                self.peek_at_type(2) == obrace) {
+            self.advance_tok(); // consume '@'
+            self.advance_tok(); // consume 'unsafe'
+            let mut ub: *block_stmt= self.parse_block();
+            if (ub != (block_stmt*)0) { ub.is_unsafe = true; }
+            return (ast_node*)ub;
+        }
+
         // Empty statement
         if (self.check_tok(sm)) {
             let mut blk: *block_stmt= (block_stmt*)arc_malloc(sizeof(parser__NS_block_stmt));

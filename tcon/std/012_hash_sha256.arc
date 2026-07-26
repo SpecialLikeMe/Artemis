@@ -2,7 +2,7 @@
 extern  std.hash;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // SHA-256 of empty string:
     // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     let mut d: std.hash.sha256_digest= std.hash.sha256_hash_str("");

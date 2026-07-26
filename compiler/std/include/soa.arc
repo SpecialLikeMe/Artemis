@@ -274,87 +274,89 @@ istruc soa_layout {
 // the struct metadata (field table, element size) lives in the Struct/Istruc
 // variant payload rather than on type_info itself.
 fn make_soa(src: *void, info: *type_info, count: i32, scratch: &memstr) soa_layout {
-    let mut layout: soa_layout;
-    layout.field_count   = 0;
-    layout.element_count = count;
-    layout.block         = (void*)0;
-    layout.block_size    = 0;
-
-    if (info == (type_info*)0 || count <= 0 || src == (void*)0) {
-        return layout;
-    }
-
-    // Only aggregates have a field table; anything else has no SoA form.
-    let mut fields: *type_info_field= (type_info_field*)0;
-    let mut field_count: i32= 0;
-    let mut elem_size: i64= 0;
-    // ADT variant payloads are flattened into the variant's fields, so each
-    // payload struct member binds as its own name.
-    //   Struct(name, fields, field_count, size_bytes, align_bytes, is_tuple, is_packed)
-    //   Istruc(name, fields, field_count, methods, method_count,
-    //          interfaces, interface_count, size_bytes, align_bytes)
-    match (*info) {
-        type_info::Struct(s_name, s_fields, s_fcount, s_size, s_align, s_tuple, s_packed) => {
-            fields      = s_fields;
-            field_count = (i32)s_fcount;
-            elem_size   = s_size;
-        },
-        type_info::Istruc(i_name, i_fields, i_fcount, i_meths, i_mcount,
-                          i_ifaces, i_icount, i_size, i_align) => {
-            fields      = i_fields;
-            field_count = (i32)i_fcount;
-            elem_size   = i_size;
-        },
-        _ => { return layout; },
-    }
-
-    if (fields == (type_info_field*)0 || field_count <= 0 || elem_size <= 0) {
-        return layout;
-    }
-    if (field_count > SOA_MAX_FIELDS) {
-        return layout;
-    }
-    layout.field_count = field_count;
-
-    // Total allocation: sum of (field_size * count) per field, each row rounded up
-    // to 16 bytes so every field array starts SIMD-aligned.
-    let mut total: u64= 0;
-    for (let mut f: i32 = 0; f < field_count; f = f + 1) {
-        let mut row_bytes: u64= (u64)fields[f].size * (u64)count;
-        row_bytes = (row_bytes + 15u) & ~15u;
-        total = total + row_bytes;
-    }
-
-    let mut block: *u8= (u8*)scratch.mmap(total);
-    if (block == (u8*)0) {
-        layout.field_count = 0;
-        return layout;
-    }
-    layout.block      = (void*)block;
-    layout.block_size = total;
-
-    // Assign field_ptrs[] and zero each row.
-    let mut offset: u64= 0;
-    for (let mut f: i32 = 0; f < field_count; f = f + 1) {
-        layout.field_ptrs[f] = (void*)(block + offset);
-        let mut row_bytes: u64= ((u64)fields[f].size * (u64)count + 15u) & ~15u;
-        for (let mut b: u64 = 0; b < row_bytes; b = b + 1) block[offset + b] = (u8)0;
-        offset = offset + row_bytes;
-    }
-
-    // Scatter: copy each element's fields into the matching flat array.
-    let mut src_bytes: *u8= (u8*)src;
-    for (let mut elem: i32 = 0; elem < count; elem = elem + 1) {
-        let mut elem_ptr: *u8= src_bytes + (i64)elem * elem_size;
-        for (let mut f: i32 = 0; f < field_count; f = f + 1) {
-            let mut fsz: i32= fields[f].size;
-            let mut dst_row: *u8= (u8*)layout.field_ptrs[f];
-            memcpy((void*)(dst_row + (i64)elem * (i64)fsz),
-                   (void*)(elem_ptr + fields[f].offset), (u64)fsz);
+    @unsafe {
+        let mut layout: soa_layout;
+        layout.field_count   = 0;
+        layout.element_count = count;
+        layout.block         = (void*)0;
+        layout.block_size    = 0;
+    
+        if (info == (type_info*)0 || count <= 0 || src == (void*)0) {
+            return layout;
         }
+    
+        // Only aggregates have a field table; anything else has no SoA form.
+        let mut fields: *type_info_field= (type_info_field*)0;
+        let mut field_count: i32= 0;
+        let mut elem_size: i64= 0;
+        // ADT variant payloads are flattened into the variant's fields, so each
+        // payload struct member binds as its own name.
+        //   Struct(name, fields, field_count, size_bytes, align_bytes, is_tuple, is_packed)
+        //   Istruc(name, fields, field_count, methods, method_count,
+        //          interfaces, interface_count, size_bytes, align_bytes)
+        match (*info) {
+            type_info::Struct(s_name, s_fields, s_fcount, s_size, s_align, s_tuple, s_packed) => {
+                fields      = s_fields;
+                field_count = (i32)s_fcount;
+                elem_size   = s_size;
+            },
+            type_info::Istruc(i_name, i_fields, i_fcount, i_meths, i_mcount,
+                              i_ifaces, i_icount, i_size, i_align) => {
+                fields      = i_fields;
+                field_count = (i32)i_fcount;
+                elem_size   = i_size;
+            },
+            _ => { return layout; },
+        }
+    
+        if (fields == (type_info_field*)0 || field_count <= 0 || elem_size <= 0) {
+            return layout;
+        }
+        if (field_count > SOA_MAX_FIELDS) {
+            return layout;
+        }
+        layout.field_count = field_count;
+    
+        // Total allocation: sum of (field_size * count) per field, each row rounded up
+        // to 16 bytes so every field array starts SIMD-aligned.
+        let mut total: u64= 0;
+        for (let mut f: i32 = 0; f < field_count; f = f + 1) {
+            let mut row_bytes: u64= (u64)fields[f].size * (u64)count;
+            row_bytes = (row_bytes + 15u) & ~15u;
+            total = total + row_bytes;
+        }
+    
+        let mut block: *u8= (u8*)scratch.mmap(total);
+        if (block == (u8*)0) {
+            layout.field_count = 0;
+            return layout;
+        }
+        layout.block      = (void*)block;
+        layout.block_size = total;
+    
+        // Assign field_ptrs[] and zero each row.
+        let mut offset: u64= 0;
+        for (let mut f: i32 = 0; f < field_count; f = f + 1) {
+            layout.field_ptrs[f] = (void*)(block + offset);
+            let mut row_bytes: u64= ((u64)fields[f].size * (u64)count + 15u) & ~15u;
+            for (let mut b: u64 = 0; b < row_bytes; b = b + 1) block[offset + b] = (u8)0;
+            offset = offset + row_bytes;
+        }
+    
+        // Scatter: copy each element's fields into the matching flat array.
+        let mut src_bytes: *u8= (u8*)src;
+        for (let mut elem: i32 = 0; elem < count; elem = elem + 1) {
+            let mut elem_ptr: *u8= src_bytes + (i64)elem * elem_size;
+            for (let mut f: i32 = 0; f < field_count; f = f + 1) {
+                let mut fsz: i32= fields[f].size;
+                let mut dst_row: *u8= (u8*)layout.field_ptrs[f];
+                memcpy((void*)(dst_row + (i64)elem * (i64)fsz),
+                       (void*)(elem_ptr + fields[f].offset), (u64)fsz);
+            }
+        }
+    
+        return layout;
     }
-
-    return layout;
 }
 } // soa
 } // std

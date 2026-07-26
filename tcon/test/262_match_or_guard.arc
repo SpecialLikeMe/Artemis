@@ -1,6 +1,6 @@
 // Match with or-patterns and guards
 // PASS PASS PASS
-fn puts(s: *i8) i32;
+@unsafe extern fn puts(s: *i8) i32;
 
 fn check(n: i32) i32 {
     match (n) {
@@ -10,7 +10,7 @@ fn check(n: i32) i32 {
     }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     if (check(1)  != 1) { return 1; }
     if (check(2)  != 1) { return 2; }
     if (check(3)  != 1) { return 3; }

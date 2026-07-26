@@ -184,7 +184,6 @@ fn llvm_type_of_prim(prim: i32, bw: u32, llvm_ctx: *i8) *i8 {
 }
 
 // Forward declarations (defined later in decls.arc / types.arc below).
-fn resolve_typedef_alias(t: *parser.type_node, ctx: *ir_context) *i8;
 // Generic class monomorphization — defined in decls.arc (included after types.arc).
 fn ir_get_or_monomorphize_generic_class(t: *parser.type_node, ctx: *ir_context) *i8;
 // memstr fat-pointer type creation — defined in decls.arc.

@@ -1,8 +1,8 @@
 // Test @typeinfo builtin for primitive types — ADT enum variant check.
 // Uses .__tag for quick checks; Int=2, Uint=3, Float=4.
-fn puts(s: *i8) i32;
+@unsafe extern fn puts(s: *i8) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut ti: *type_info = @typeinfo(i32);
     if (ti != (type_info*)0) { puts("PASS"); } else { puts("FAIL null"); return 1; }
     if (ti.__tag == 2) { puts("PASS"); } else { puts("FAIL kind"); return 2; }  // Int=2

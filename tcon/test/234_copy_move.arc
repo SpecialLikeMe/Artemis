@@ -1,13 +1,13 @@
 // Test @shcopy, @decopy, @move operators
 // PASS PASS PASS PASS PASS PASS
-fn puts(s: *i8) int;
+@unsafe extern fn puts(s: *i8) int;
 
 istruc Vec2 {
     let mut x: int;
     let mut y: int;
 }
 
-pub fn main() int {
+pub @unsafe fn main() int {
     let mut a: Vec2;
     a.x = 3; a.y = 4;
 

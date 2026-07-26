@@ -2,7 +2,7 @@
 // No div-zero runtime check emitted for divisions by integer literals ≠ 0.
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // Division by constant: SMT interval [2,2], 0 not in range → GOOD
     let mut a: i32= 100 / 2;
     if (a != 50) { printf("FAIL div constant a=%d\n", a); return 1; }

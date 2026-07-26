@@ -2,7 +2,7 @@
 // The SMT interval domain knows idx=2 is in [0,4], verdict=GOOD, no check emitted.
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut arr: [5]i32;
     arr[0] = 10;
     arr[1] = 20;

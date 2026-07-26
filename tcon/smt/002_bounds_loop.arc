@@ -2,7 +2,7 @@
 // After widening: interval for i is [0, 9], array size=10 → bounds check proven GOOD.
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut arr: [10]i32;
 
     // Fill: arr[i] = i*i

@@ -1,8 +1,8 @@
 // Test basic lambda expressions
-fn puts(s: *i8) int;
-fn printf(fmt: *i8, x: i32) int;
+@unsafe extern fn puts(s: *i8) int;
+@unsafe extern fn printf(fmt: *i8, x: i32) int;
 
-pub fn main() int {
+pub @unsafe fn main() int {
     // Lambda with no captures — immediate invoke
     let mut result: int= [](int x) int { return x * 2; }(21);
     if (result == 42) { puts("PASS"); } else { puts("FAIL"); }

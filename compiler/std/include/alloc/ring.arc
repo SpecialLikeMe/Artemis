@@ -14,14 +14,18 @@ memstr ring {
     let mut head: u64;
 
     fn __construct__(self: *ring, capacity: u64) void {
-        self.base = malloc(capacity);
-        if (self.base == (void*)0) {
-            printf("fatal: ring allocator out of memory (requested %llu bytes)\n", capacity);
-            self.cap = 0;
-        } else {
-            self.cap = capacity;
+        @unsafe {
+            @unsafe {
+                self.base = malloc(capacity);
+                if (self.base == (void*)0) {
+                    printf("fatal: ring allocator out of memory (requested %llu bytes)\n", capacity);
+                    self.cap = 0;
+                } else {
+                    self.cap = capacity;
+                }
+                self.head = 0;
+            }
         }
-        self.head = 0;
     }
 
     fn alloc_bytes(self: *ring, n: u64) *void {

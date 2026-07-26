@@ -127,7 +127,21 @@ fn mangle_llvm_type(ty: *i8) *i8 {
 }
 
 // Get the IR name for a func_decl.
+// The symbol this function is emitted as. @link_name overrides it, which is how a
+// raw FFI binding and its safe wrapper can coexist under different symbols while the
+// wrapper keeps the plain Arc name that call sites use.
+//
+// This is deliberately *not* the key used for call resolution — see ir_func_key.
 fn ir_func_name(fd: *parser.func_decl) *i8 {
+    if (fd.link_name != (i8*)0) { return fd.link_name; }
+    if (fd.is_extern_c) { return fd.name; }
+    if (fd.mangled_name != (i8*)0) { return fd.mangled_name; }
+    return fd.name;
+}
+
+// The name call sites resolve by. Overload mangling participates (callers resolve to
+// the mangled name), but @link_name must not: it only renames the emitted symbol.
+fn ir_func_key(fd: *parser.func_decl) *i8 {
     if (fd.is_extern_c) { return fd.name; }
     if (fd.mangled_name != (i8*)0) { return fd.mangled_name; }
     return fd.name;

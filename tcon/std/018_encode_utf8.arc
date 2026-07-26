@@ -2,7 +2,7 @@
 extern  std.encode;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     // ASCII decode
     let mut ascii: [3]u8; ascii[0] = 'A'; ascii[1] = 'B'; ascii[2] = 'C';
     let mut pos: u64= 0;

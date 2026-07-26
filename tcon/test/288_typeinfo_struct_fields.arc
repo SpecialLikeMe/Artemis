@@ -5,7 +5,7 @@ struct Vec2 {
     let x: i32;
     let y: i32;
 }
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let t = @typeinfo(Vec2);
     // Struct variant: tag=12
     if (t.__tag != 12) { return 1; }

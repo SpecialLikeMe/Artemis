@@ -67,29 +67,33 @@ memstr slab {
     }
 
     fn alloc_obj(self: *slab) *void {
-        let mut pg: *slab_page= self.head;
-        while (pg != (void*)0) {
-            if ((*pg).has_room()) { return (*pg).alloc_slot(); }
-            pg = (*pg).next;
+        @unsafe {
+            @unsafe {
+                let mut pg: *slab_page= self.head;
+                while (pg != (void*)0) {
+                    if ((*pg).has_room()) { return (*pg).alloc_slot(); }
+                    pg = (*pg).next;
+                }
+                // All pages full — allocate a new slab_page. Both allocations must be
+                // checked: constructing a page over a null buffer hands out pointers
+                // computed from null, which fail far from the actual OOM.
+                let mut new_pg: *slab_page= (slab_page*)malloc(SLAB_PAGE_SIZE);
+                if (new_pg == (slab_page*)0) {
+                    printf("fatal: slab allocator out of memory (page header)\n");
+                    return (void*)0;
+                }
+                let mut new_buf: *void= malloc(self.slot_size * (u64)SLAB_OBJECTS_PER_SLAB);
+                if (new_buf == (void*)0) {
+                    printf("fatal: slab allocator out of memory (page buffer)\n");
+                    free((void*)new_pg);
+                    return (void*)0;
+                }
+                (*new_pg).__construct__(self.slot_size, new_buf);
+                (*new_pg).next = self.head;
+                self.head = new_pg;
+                return (*new_pg).alloc_slot();
+            }
         }
-        // All pages full — allocate a new slab_page. Both allocations must be
-        // checked: constructing a page over a null buffer hands out pointers
-        // computed from null, which fail far from the actual OOM.
-        let mut new_pg: *slab_page= (slab_page*)malloc(SLAB_PAGE_SIZE);
-        if (new_pg == (slab_page*)0) {
-            printf("fatal: slab allocator out of memory (page header)\n");
-            return (void*)0;
-        }
-        let mut new_buf: *void= malloc(self.slot_size * (u64)SLAB_OBJECTS_PER_SLAB);
-        if (new_buf == (void*)0) {
-            printf("fatal: slab allocator out of memory (page buffer)\n");
-            free((void*)new_pg);
-            return (void*)0;
-        }
-        (*new_pg).__construct__(self.slot_size, new_buf);
-        (*new_pg).next = self.head;
-        self.head = new_pg;
-        return (*new_pg).alloc_slot();
     }
 
     fn free_obj(self: *slab, p: *void) void {

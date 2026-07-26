@@ -1,8 +1,8 @@
 // Test anonymous istruc per-instance init: `istruc { ... } x;`
 // PASS PASS PASS PASS
-fn puts(s: *i8) int;
+@unsafe extern fn puts(s: *i8) int;
 
-pub fn main() int {
+pub @unsafe fn main() int {
     istruc { let mut v: int; } x;
     x.v = 42;
     if (x.v == 42) { puts("PASS"); } else { puts("FAIL v"); }

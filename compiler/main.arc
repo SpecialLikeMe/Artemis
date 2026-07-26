@@ -40,6 +40,7 @@ struct cli_opts {
     let no_link: bool;
     let verbose: bool;
     let use_mir: bool;
+    let unsafe_unit: bool;  // --unsafe: whole TU is an unsafe context
     let emit_mir: bool;
     let emit_lir: bool;
     let stdlib_path: *i8;
@@ -58,6 +59,7 @@ fn cli_opts_init(opts: *cli_opts) void {
     opts.no_link     = false;
     opts.verbose     = false;
     opts.use_mir     = false;
+    opts.unsafe_unit = false;
     opts.emit_mir    = false;
     opts.emit_lir    = false;
     opts.stdlib_path = (i8*)0;
@@ -108,7 +110,12 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
         } else if (strcmp(arg, "-v") == 0) {
             opts.verbose = true;
         } else if (strcmp(arg, "--unsafe") == 0) {
-            // no-op: --unsafe is deprecated; all programs are memory-safe via SMT+runtime guards
+            // Treat the whole translation unit as an unsafe context, so calls to
+            // @unsafe functions need no per-site annotation. Intended for low-level
+            // code written directly against C/FFI — the compiler's own source is
+            // built this way, since libc and the LLVM C API are its base vocabulary
+            // and wrapping ~2600 call sites would obscure more than it documents.
+            opts.unsafe_unit = true;
         } else if (strcmp(arg, "--use-mir") == 0) {
             opts.use_mir = true;
         } else if (strcmp(arg, "--emit-mir") == 0) {
@@ -134,11 +141,12 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
             printf("  -O0/-O1/-O2/-O3  Set optimization level\n");
             printf("  -I <path>        Set stdlib include path\n");
             printf("  --no-std         Skip stdlib auto-detection\n");
+            printf("  --unsafe         Treat the whole file as an unsafe context (FFI-heavy code)\n");
             printf("  --target <t>     Set target triple (e.g. x86_64-pc-linux-gnu)\n");
             printf("  -v               Verbose output\n");
-            printf("  --use-mir        Run the MIR/LIR pipeline
-  --emit-mir       Emit MIR text and stop
-  --emit-lir       Emit LIR text and stop\n");
+            printf("  --use-mir        Run the MIR/LIR pipeline\n");
+            printf("  --emit-mir       Emit MIR text and stop\n");
+            printf("  --emit-lir       Emit LIR text and stop\n");
             printf("  --version        Print compiler version\n");
             printf("  --help           Print this help\n");
             return false;
@@ -393,7 +401,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
     arc_free((i8*)macro_new_decls);
 
     // Analysis (runs after macro expansion so injected decls are visible)
-    let mut ana_errs: i32= analysis.analyze(prog);
+    let mut ana_errs: i32= analysis.analyze_unsafe(prog, opts.unsafe_unit);
     let mut smt_errs: i32= smt.smt_analyze(prog);
     if (ana_errs > 0 || smt_errs > 0) {
         arc_free(src);

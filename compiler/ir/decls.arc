@@ -352,7 +352,8 @@ fn visit_func_decl_prototype(fd: *parser.func_decl, ctx: *ir_context) void {
         return;
     }
 
-    let mut fn_name: *i8= ir_func_name(fd);
+    let mut fn_name: *i8= ir_func_name(fd);   // emitted symbol
+    let mut fn_key: *i8= ir_func_key(fd);     // name call sites resolve by
 
     // Build return type
     let mut ret_t: *i8= (i8*)0;
@@ -421,8 +422,8 @@ fn visit_func_decl_prototype(fd: *parser.func_decl, ctx: *ir_context) void {
         }
     }
 
-    sv_map_set(&ctx.global_funcs,           fn_name, fn_ref);
-    st_map_set(&ctx.global_func_types,      fn_name, fn_type);
+    sv_map_set(&ctx.global_funcs,           fn_key, fn_ref);
+    st_map_set(&ctx.global_func_types,      fn_key, fn_type);
     let mut ret_uns: bool= is_unsigned_type_node(fd.ret_type);
     sb_map_set(&ctx.global_func_ret_unsigned, fn_name, ret_uns);
     sv_map_set(&ctx.global_func_decls, fn_name, (i8*)fd);
@@ -442,8 +443,8 @@ fn visit_func_decl(fd: *parser.func_decl, ctx: *ir_context) void {
         }
         atdi = atdi + 1;
     }
-    if (has_anytype_decl && !ctx.in_anytype_mono && sv_map_get(&ctx.anytype_funcs, ir_func_name(fd)) != (i8*)0) { return; }
-    let mut fn_name: *i8= ir_func_name(fd);
+    if (has_anytype_decl && !ctx.in_anytype_mono && sv_map_get(&ctx.anytype_funcs, ir_func_key(fd)) != (i8*)0) { return; }
+    let mut fn_name: *i8= ir_func_key(fd);
     let mut fn_ref: *i8= sv_map_get(&ctx.global_funcs, fn_name);
     let mut fn_type: *i8= st_map_get(&ctx.global_func_types, fn_name);
     if (fn_ref == (i8*)0 || fn_type == (i8*)0) { return; }

@@ -656,67 +656,43 @@ fn mir_print_instr(ins: *mir_instr, fp: *void) void {
     let mut a: [64]i8;  mir_val_str(ins.src1, a, 64u);
     let mut b: [64]i8;  mir_val_str(ins.src2, b, 64u);
     let mut k: i32= ins.kind;
-    if      (k == 1)  { fprintf(fp, "    %s = copy %s
-", d, a); }
-    else if (k == 2)  { fprintf(fp, "    %s = load %s
-", d, a); }
-    else if (k == 3)  { fprintf(fp, "    store %s, %s
-", a, b); }
-    else if (k == 4)  { fprintf(fp, "    %s = gep %s, .%s
-", d, a, ins.label != (i8*)0 ? ins.label : "?"); }
-    else if (k == 5)  { fprintf(fp, "    %s = binop.%s %s, %s
-", d, ins.fn_name != (i8*)0 ? ins.fn_name : "?", a, b); }
-    else if (k == 6)  { fprintf(fp, "    %s = unop.%s %s
-", d, ins.fn_name != (i8*)0 ? ins.fn_name : "?", a); }
-    else if (k == 7)  {
-        fprintf(fp, "    %s = call %s(", d, ins.fn_name != (i8*)0 ? ins.fn_name : "?");
-        let mut i: i32= 0;
-        while (i < ins.args_len) {
-            let mut ab: [64]i8; mir_val_str(ins.args[i], ab, 64u);
-            fprintf(fp, "%s%s", i > 0 ? ", " : "", ab);
-            i = i + 1;
-        }
-        fprintf(fp, ")
-");
+    let mut op: *i8= ins.fn_name != (i8*)0 ? ins.fn_name : "?";
+    let mut lb: *i8= ins.label != (i8*)0 ? ins.label : "?";
+    @unsafe {
+        if      (k == 1)  { fprintf(fp, "    %s = copy %s\n", d, a); }
+        else if (k == 2)  { fprintf(fp, "    %s = load %s\n", d, a); }
+        else if (k == 3)  { fprintf(fp, "    store %s, %s\n", a, b); }
+        else if (k == 4)  { fprintf(fp, "    %s = gep %s, .%s\n", d, a, lb); }
+        else if (k == 5)  { fprintf(fp, "    %s = binop.%s %s, %s\n", d, op, a, b); }
+        else if (k == 6)  { fprintf(fp, "    %s = unop.%s %s\n", d, op, a); }
+        else if (k == 7)  { fprintf(fp, "    %s = call %s/%d\n", d, op, ins.args_len); }
+        else if (k == 8)  { fprintf(fp, "    br %s\n", lb); }
+        else if (k == 9)  { fprintf(fp, "    cbr %s, %s, %s\n", a, lb, op); }
+        else if (k == 10) { if (ins.src1 != (mir_val*)0) { fprintf(fp, "    ret %s\n", a); } else { fprintf(fp, "    ret\n"); } }
+        else if (k == 12) { fprintf(fp, "    %s = alloca\n", d); }
+        else if (k == 13) { fprintf(fp, "    %s = cast %s\n", d, a); }
+        else              { fprintf(fp, "    nop\n"); }
     }
-    else if (k == 8)  { fprintf(fp, "    br %s
-", ins.label != (i8*)0 ? ins.label : "?"); }
-    else if (k == 9)  { fprintf(fp, "    cbr %s, %s, %s
-", a,
-                                ins.label != (i8*)0 ? ins.label : "?",
-                                ins.fn_name != (i8*)0 ? ins.fn_name : "?"); }
-    else if (k == 10) { if (ins.src1 != (mir_val*)0) { fprintf(fp, "    ret %s
-", a); } else { fprintf(fp, "    ret
-"); } }
-    else if (k == 12) { fprintf(fp, "    %s = alloca
-", d); }
-    else if (k == 13) { fprintf(fp, "    %s = cast %s
-", d, a); }
-    else              { fprintf(fp, "    nop
-"); }
 }
 
 fn mir_print_module(m: *mir_module, fp: *void) void {
     if (m == (mir_module*)0 || fp == (void*)0) { return; }
-    fprintf(fp, "; Artemis MIR
-");
+    @unsafe { fprintf(fp, "; Artemis MIR\n"); }
     let mut fi: i32= 0;
     while (fi < m.funcs_len) {
         let mut f: *mir_func= m.funcs[fi];
-        fprintf(fp, "
-func %s {
-", f.name != (i8*)0 ? f.name : "<anon>");
+        let mut fname: *i8= f.name != (i8*)0 ? f.name : "<anon>";
+        @unsafe { fprintf(fp, "\nfunc %s {\n", fname); }
         let mut bi: i32= 0;
         while (bi < f.blocks_len) {
             let mut b: *mir_block= f.blocks[bi];
-            fprintf(fp, "  %s:
-", b.name != (i8*)0 ? b.name : "?");
+            let mut bname: *i8= b.name != (i8*)0 ? b.name : "?";
+            @unsafe { fprintf(fp, "  %s:\n", bname); }
             let mut ii: i32= 0;
             while (ii < b.instrs_len) { mir_print_instr(b.instrs[ii], fp); ii = ii + 1; }
             bi = bi + 1;
         }
-        fprintf(fp, "}
-");
+        @unsafe { fprintf(fp, "}\n"); }
         fi = fi + 1;
     }
 }

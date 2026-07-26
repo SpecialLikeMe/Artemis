@@ -56,8 +56,8 @@ comptime f64 NAN_V  = 0.0 / 0.0;
 // --- basic ---
 fn abs_i32(x: i32) i32   { return x < 0 ? -x : x; }
 fn abs_i64(x: i64) i64   { return x < 0 ? -x : x; }
-fn abs_f32(x: f32) f32   { return fabsf(x); }
-fn abs_f64(x: f64) f64   { return fabs(x); }
+fn abs_f32(x: f32) f32   { @unsafe { return fabsf(x); } }
+fn abs_f64(x: f64) f64   { @unsafe { return fabs(x); } }
 
 fn min_i32(a: i32, b: i32) i32   { return a < b ? a : b; }
 fn max_i32(a: i32, b: i32) i32   { return a > b ? a : b; }
@@ -83,10 +83,10 @@ fn deg_to_rad(d: f64) f64 { return d * PI / 180.0; }
 fn rad_to_deg(r: f64) f64 { return r * 180.0 / PI; }
 
 // --- rounding ---
-fn snap(v: f64, step: f64) f64 { return floor(v / step + 0.5) * step; }
+fn snap(v: f64, step: f64) f64 { @unsafe { return floor(v / step + 0.5) * step; } }
 
 // --- power / log ---
-fn log_base(x: f64, base: f64) f64 { return log(x) / log(base); }
+fn log_base(x: f64, base: f64) f64 { @unsafe { return log(x) / log(base); } }
 
 fn is_power_of_two(n: u64) bool { return n != 0 && (n & (n - 1)) == 0; }
 fn next_power_of_two(n: u64) u64 {
@@ -130,7 +130,7 @@ istruc vec2 {
     fn scale(self: *vec2, s: f64) vec2  { let mut r: vec2(s*self.x, s*self.y); return r; }
     fn dot(self: *vec2, o: vec2) f64   { return self.x*o.x + self.y*o.y; }
     fn len_sq(self: *vec2) f64        { return self.x*self.x + self.y*self.y; }
-    fn len(self: *vec2) f64           { return sqrt(self.len_sq()); }
+    fn len(self: *vec2) f64           { @unsafe { return sqrt(self.len_sq()); } }
     fn normalize(self: *vec2) vec2 {
         let mut l: f64= self.len();
         if (l == 0.0) { let mut z: vec2(0.0, 0.0); return z; }
@@ -138,10 +138,13 @@ istruc vec2 {
     }
     fn cross(self: *vec2, o: vec2) f64 { return self.x*o.y - self.y*o.x; }
     fn perp(self: *vec2) vec2          { let mut r: vec2(-self.y, self.x); return r; }
-    fn angle(self: *vec2) f64         { return atan2(self.y, self.x); }
+    fn angle(self: *vec2) f64         { @unsafe { return atan2(self.y, self.x); } }
     fn rotate(self: *vec2, a: f64) vec2 {
-        let mut c: f64= cos(a); let mut s: f64= sin(a);
-        let mut r: vec2(self.x*c - self.y*s, self.x*s + self.y*c); return r;
+        @unsafe {
+            let mut c: f64= 0.0; let mut s: f64= 0.0;
+            @unsafe { c = cos(a); s = sin(a); }
+            let mut r: vec2(self.x*c - self.y*s, self.x*s + self.y*c); return r;
+        }
     }
     bool operator==(vec2* self, vec2 o) { return self.x == o.x && self.y == o.y; }
     vec2 operator+(vec2* self, vec2 o)  { return self.add(o); }
@@ -160,7 +163,7 @@ istruc vec3 {
     fn scale(self: *vec3, s: f64) vec3 { let mut r: vec3(s*self.x, s*self.y, s*self.z); return r; }
     fn dot(self: *vec3, o: vec3) f64  { return self.x*o.x+self.y*o.y+self.z*o.z; }
     fn len_sq(self: *vec3) f64       { return self.x*self.x+self.y*self.y+self.z*self.z; }
-    fn len(self: *vec3) f64          { return sqrt(self.len_sq()); }
+    fn len(self: *vec3) f64          { @unsafe { return sqrt(self.len_sq()); } }
     fn cross(self: *vec3, o: vec3) vec3 {
         let mut r: vec3(self.y*o.z - self.z*o.y,
                         self.z*o.x - self.x*o.z,
@@ -229,25 +232,26 @@ istruc mat4 {
 
     static mat4 rotate_x(f64 a) {
         let mut r: mat4= mat4.identity();
-        r.m[5]=cos(a); r.m[6]=sin(a); r.m[9]=-sin(a); r.m[10]=cos(a);
+        @unsafe { r.m[5]=cos(a); r.m[6]=sin(a); r.m[9]=-sin(a); r.m[10]=cos(a); }
         return r;
     }
 
     static mat4 rotate_y(f64 a) {
         let mut r: mat4= mat4.identity();
-        r.m[0]=cos(a); r.m[2]=-sin(a); r.m[8]=sin(a); r.m[10]=cos(a);
+        @unsafe { r.m[0]=cos(a); r.m[2]=-sin(a); r.m[8]=sin(a); r.m[10]=cos(a); }
         return r;
     }
 
     static mat4 rotate_z(f64 a) {
         let mut r: mat4= mat4.identity();
-        r.m[0]=cos(a); r.m[1]=sin(a); r.m[4]=-sin(a); r.m[5]=cos(a);
+        @unsafe { r.m[0]=cos(a); r.m[1]=sin(a); r.m[4]=-sin(a); r.m[5]=cos(a); }
         return r;
     }
 
     static mat4 perspective(f64 fov_y, f64 aspect, f64 near, f64 far) {
         let mut r: mat4;
-        let mut f: f64= 1.0 / tan(fov_y * 0.5);
+        let mut f: f64= 0.0;
+        @unsafe { f = 1.0 / tan(fov_y * 0.5); }
         r.m[0]  = f / aspect;
         r.m[5]  = f;
         r.m[10] = (far + near) / (near - far);
@@ -277,7 +281,7 @@ istruc quat {
         return r;
     }
 
-    fn norm(self: *quat) f64 { return sqrt(self.w*self.w+self.x*self.x+self.y*self.y+self.z*self.z); }
+    fn norm(self: *quat) f64 { @unsafe { return sqrt(self.w*self.w+self.x*self.x+self.y*self.y+self.z*self.z); } }
 
     fn normalize(self: *quat) quat {
         let mut n: f64= self.norm();
@@ -288,7 +292,8 @@ istruc quat {
     fn conjugate(self: *quat) quat { let mut r: quat(self.w,-self.x,-self.y,-self.z); return r; }
 
     static quat from_axis_angle(vec3 axis, f64 angle) {
-        let mut s: f64= sin(angle * 0.5);
+        let mut s: f64= 0.0;
+        @unsafe { s = sin(angle * 0.5); }
         let mut na: vec3= axis.normalize();
         let mut q: quat(cos(angle*0.5), na.x*s, na.y*s, na.z*s);
         return q;
@@ -327,12 +332,16 @@ fn variance(arr: *f64, n: i32) f64 {
     return s / (f64)n;
 }
 fn std_dev(arr: *f64, n: i32) f64 {
-    let mut m: f64= 0.0;
-    for (let mut i: i32 = 0; i < n; i = i + 1) m = m + arr[i];
-    m = m / (f64)n;
-    let mut s: f64= 0.0;
-    for (let mut i: i32 = 0; i < n; i = i + 1) { let mut d: f64= arr[i]-m; s = s + d*d; }
-    return sqrt(s / (f64)n);
+    @unsafe {
+        let mut m: f64= 0.0;
+        for (let mut i: i32 = 0; i < n; i = i + 1) m = m + arr[i];
+        m = m / (f64)n;
+        let mut s: f64= 0.0;
+        for (let mut i: i32 = 0; i < n; i = i + 1) { let mut d: f64= arr[i]-m; s = s + d*d; }
+        let mut sd: f64= 0.0;
+        @unsafe { sd = sqrt(s / (f64)n); }
+        return sd;
+    }
 }
 
 // --- bit operations ---

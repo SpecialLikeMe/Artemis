@@ -47,7 +47,7 @@ fn indirect_index(arr: *i32, indices: *i32, which: i32) i32 {
     return arr[idx];            // UNKNOWN: double-dynamic; safe at runtime
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut arr: [8]i32;
     arr[0]=100; arr[1]=200; arr[2]=300; arr[3]=400;
     arr[4]=500; arr[5]=600; arr[6]=700; arr[7]=800;

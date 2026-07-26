@@ -1,5 +1,5 @@
 // Inline ASM: add two integers using Intel-syntax asm with constraints
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     let mut a: i32= 7;
     let mut b: i32= 5;
     let mut result: i32= 0;

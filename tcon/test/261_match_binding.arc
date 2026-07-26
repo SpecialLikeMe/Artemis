@@ -1,6 +1,6 @@
 // Match with binding patterns (name @ range)
 // PASS PASS PASS
-fn puts(s: *i8) i32;
+@unsafe extern fn puts(s: *i8) i32;
 
 fn double_if_in_range(n: i32) i32 {
     match (n) {
@@ -9,7 +9,7 @@ fn double_if_in_range(n: i32) i32 {
     }
 }
 
-pub fn main() i32 {
+pub @unsafe fn main() i32 {
     if (double_if_in_range(5)  != 10) { return 1; }
     if (double_if_in_range(10) != 20) { return 2; }
     if (double_if_in_range(11) != 0)  { return 3; }

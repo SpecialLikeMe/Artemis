@@ -153,115 +153,115 @@ fn print_stmt(node: *parser.ast_node, depth: i32) void {
         print_block((parser.block_stmt*)node, depth + 1);
         print_indent(depth); printf(")\n");
     } else if (k == 13) { // var_decl
-        let mut vd: *parser.var_decl= (parser.var_decl*)node;
-        printf("(var %s : ", vd.name != (i8*)0 ? vd.name : "_");
-        print_type(vd.type);
-        if (vd.has_init && vd.init != (parser.expr_node*)0) {
-            printf(" = ");
-            print_expr(vd.init, depth);
-        }
-        if (vd.attributes_len > 0) {
-            let mut ai: i32= 0;
-            while (ai < vd.attributes_len) {
-                printf(" #[%s]", vd.attributes[ai].name != (i8*)0 ? vd.attributes[ai].name : "");
-                ai = ai + 1;
-            }
-        }
-        printf(")\n");
-    } else if (k == 14) { // func_decl
-        let mut fd: *parser.func_decl= (parser.func_decl*)node;
-        if (fd.attributes_len > 0) {
-            let mut ai: i32= 0;
-            while (ai < fd.attributes_len) {
-                print_indent(depth);
-                printf("#[%s]\n", fd.attributes[ai].name != (i8*)0 ? fd.attributes[ai].name : "");
-                ai = ai + 1;
-            }
-        }
-        printf("(fn %s(", fd.name != (i8*)0 ? fd.name : "_");
-        let mut pi: i32= 0;
-        while (pi < fd.params_len) {
-            if (pi > 0) { printf(", "); }
-            printf("%s: ", fd.params[pi].name != (i8*)0 ? fd.params[pi].name : "_");
-            print_type(fd.params[pi].type);
-            pi = pi + 1;
-        }
-        if (fd.is_variadic) { if (fd.params_len > 0) { printf(", "); } printf("..."); }
-        printf(") -> ");
-        print_type(fd.ret_type);
-        if (fd.has_body) {
-            printf("\n");
-            print_block((parser.block_stmt*)fd.body, depth + 1);
-            print_indent(depth); printf(")\n");
-        } else {
-            printf(")  // extern\n");
-        }
-    } else if (k == 20) { // namespace_decl
-        let mut nd: *parser.namespace_decl= (parser.namespace_decl*)node;
-        printf("(namespace %s\n", nd.name != (i8*)0 ? nd.name : "_");
-        let mut di: i32= 0;
-        while (di < nd.decls_len) {
-            print_stmt(nd.decls[di], depth + 1);
-            di = di + 1;
-        }
-        print_indent(depth); printf(")\n");
-    } else if (k == 15) { // struct_decl
-        let mut sd: *parser.struct_decl= (parser.struct_decl*)node;
-        printf("(struct %s\n", sd.name != (i8*)0 ? sd.name : "_");
-        let mut fi: i32= 0;
-        while (fi < sd.fields_len) {
-            print_indent(depth + 1);
-            let mut _f: *parser.var_decl= sd.fields[fi];
-            printf("%s: ", _f.name != (i8*)0 ? _f.name : "_");
-            print_type(_f.type);
-            printf("\n");
-            fi = fi + 1;
-        }
-        print_indent(depth); printf(")\n");
-    } else if (k == 17) { // enum_decl
-        let mut ed: *parser.enum_decl= (parser.enum_decl*)node;
-        printf("(enum %s\n", ed.name != (i8*)0 ? ed.name : "_");
-        let mut vi: i32= 0;
-        while (vi < ed.variants_len) {
-            print_indent(depth + 1);
-            printf("%s", ed.variant_names[vi] != (i8*)0 ? ed.variant_names[vi] : "_");
-            if (ed.variant_has_val[vi]) { printf(" = %ld", ed.variant_vals[vi]); }
-            printf("\n");
-            vi = vi + 1;
-        }
-        print_indent(depth); printf(")\n");
-    } else if (k == 19) { // typedef_decl
-        let mut td: *parser.typedef_decl= (parser.typedef_decl*)node;
-        printf("(typedef %s = ", td.name != (i8*)0 ? td.name : "_");
-        print_type(td.target);
-        printf(")\n");
-    } else {
-        // Treat as expression statement
-        let mut ne: *parser.expr_node= (parser.expr_node*)node;
-        printf("(expr-stmt ");
-        print_expr(ne, depth);
-        printf(")\n");
+    let mut vd: *parser.var_decl= (parser.var_decl*)node;
+    printf("(var %s : ", vd.name != (i8*)0 ? vd.name : "_");
+    print_type(vd.type);
+    if (vd.has_init && vd.init != (parser.expr_node*)0) {
+        printf(" = ");
+        print_expr(vd.init, depth);
     }
+    if (vd.attributes_len > 0) {
+        let mut ai: i32= 0;
+        while (ai < vd.attributes_len) {
+            printf(" #[%s]", vd.attributes[ai].name != (i8*)0 ? vd.attributes[ai].name : "");
+            ai = ai + 1;
+        }
+    }
+    printf(")\n");
+} else if (k == 14) { // func_decl
+    let mut fd: *parser.func_decl= (parser.func_decl*)node;
+    if (fd.attributes_len > 0) {
+        let mut ai: i32= 0;
+        while (ai < fd.attributes_len) {
+            print_indent(depth);
+            printf("#[%s]\n", fd.attributes[ai].name != (i8*)0 ? fd.attributes[ai].name : "");
+            ai = ai + 1;
+        }
+    }
+    printf("(fn %s(", fd.name != (i8*)0 ? fd.name : "_");
+    let mut pi: i32= 0;
+    while (pi < fd.params_len) {
+        if (pi > 0) { printf(", "); }
+        printf("%s: ", fd.params[pi].name != (i8*)0 ? fd.params[pi].name : "_");
+        print_type(fd.params[pi].type);
+        pi = pi + 1;
+    }
+    if (fd.is_variadic) { if (fd.params_len > 0) { printf(", "); } printf("..."); }
+    printf(") -> ");
+    print_type(fd.ret_type);
+    if (fd.has_body) {
+        printf("\n");
+        print_block((parser.block_stmt*)fd.body, depth + 1);
+        print_indent(depth); printf(")\n");
+    } else {
+        printf(")  // extern\n");
+    }
+} else if (k == 20) { // namespace_decl
+    let mut nd: *parser.namespace_decl= (parser.namespace_decl*)node;
+    printf("(namespace %s\n", nd.name != (i8*)0 ? nd.name : "_");
+    let mut di: i32= 0;
+    while (di < nd.decls_len) {
+        print_stmt(nd.decls[di], depth + 1);
+        di = di + 1;
+    }
+    print_indent(depth); printf(")\n");
+} else if (k == 15) { // struct_decl
+    let mut sd: *parser.struct_decl= (parser.struct_decl*)node;
+    printf("(struct %s\n", sd.name != (i8*)0 ? sd.name : "_");
+    let mut fi: i32= 0;
+    while (fi < sd.fields_len) {
+        print_indent(depth + 1);
+        let mut _f: *parser.var_decl= sd.fields[fi];
+        printf("%s: ", _f.name != (i8*)0 ? _f.name : "_");
+        print_type(_f.type);
+        printf("\n");
+        fi = fi + 1;
+    }
+    print_indent(depth); printf(")\n");
+} else if (k == 17) { // enum_decl
+    let mut ed: *parser.enum_decl= (parser.enum_decl*)node;
+    printf("(enum %s\n", ed.name != (i8*)0 ? ed.name : "_");
+    let mut vi: i32= 0;
+    while (vi < ed.variants_len) {
+        print_indent(depth + 1);
+        printf("%s", ed.variant_names[vi] != (i8*)0 ? ed.variant_names[vi] : "_");
+        if (ed.variant_has_val[vi]) { printf(" = %ld", ed.variant_vals[vi]); }
+        printf("\n");
+        vi = vi + 1;
+    }
+    print_indent(depth); printf(")\n");
+} else if (k == 19) { // typedef_decl
+    let mut td: *parser.typedef_decl= (parser.typedef_decl*)node;
+    printf("(typedef %s = ", td.name != (i8*)0 ? td.name : "_");
+    print_type(td.target);
+    printf(")\n");
+} else {
+        // Treat as expression statement
+    let mut ne: *parser.expr_node= (parser.expr_node*)node;
+    printf("(expr-stmt ");
+    print_expr(ne, depth);
+    printf(")\n");
+}
 }
 
 fn print_program(prog: *parser.program_node, out_path: *i8) void {
-    let mut fp: *void= (void*)0;
-    if (out_path != (i8*)0) {
-        fp = fopen(out_path, "w");
-    }
+let mut fp: *void= (void*)0;
+if (out_path != (i8*)0) {
+    fp = fopen(out_path, "w");
+}
     // Use stdout if no output file or open failed
-    let mut use_stdout: bool= (fp == (void*)0);
-    if (!use_stdout) { fclose(fp); } // Close and reuse printf for simplicity
+let mut use_stdout: bool= (fp == (void*)0);
+if (!use_stdout) { fclose(fp); } // Close and reuse printf for simplicity
 
     // Note: we always write to stdout; file redirect can be done via shell.
-    printf("; Artemis AST dump\n");
-    printf("(program\n");
-    let mut i: i32= 0;
-    while (i < prog.decls_len) {
-        print_stmt(prog.decls[i], 1);
-        i = i + 1;
-    }
-    printf(")\n");
+printf("; Artemis AST dump\n");
+printf("(program\n");
+let mut i: i32= 0;
+while (i < prog.decls_len) {
+    print_stmt(prog.decls[i], 1);
+    i = i + 1;
+}
+printf(")\n");
 }
 
 } // namespace ast

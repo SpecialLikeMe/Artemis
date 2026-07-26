@@ -15,22 +15,26 @@ memstr pool {
     let mut slot_size: u64;
 
     fn __construct__(self: *pool, n: i32, object_size: u64) void {
-        // Round up to 8-byte alignment
-        let mut rem: u64= object_size % (u64)8;
-        if (rem != 0) { self.slot_size = object_size + ((u64)8 - rem); }
-        else { self.slot_size = object_size; }
-        self.capacity  = n;
-        self.base      = malloc(self.slot_size * (u64)n);
-        self.free_list = (void**)malloc((u64)8 * (u64)n);
-        if (self.base == (void*)0 || self.free_list == (void**)0) {
-            printf("fatal: pool allocator out of memory\n");
-            self.capacity   = 0;
-            self.free_count = 0;
-            return;
-        }
-        self.free_count = n;
-        for (let mut i: i32 = 0; i < n; i = i + 1) {
-            self.free_list[i] = (void*)((u8*)self.base + (u64)i * self.slot_size);
+        @unsafe {
+            @unsafe {
+                // Round up to 8-byte alignment
+                let mut rem: u64= object_size % (u64)8;
+                if (rem != 0) { self.slot_size = object_size + ((u64)8 - rem); }
+                else { self.slot_size = object_size; }
+                self.capacity  = n;
+                self.base      = malloc(self.slot_size * (u64)n);
+                self.free_list = (void**)malloc((u64)8 * (u64)n);
+                if (self.base == (void*)0 || self.free_list == (void**)0) {
+                    printf("fatal: pool allocator out of memory\n");
+                    self.capacity   = 0;
+                    self.free_count = 0;
+                    return;
+                }
+                self.free_count = n;
+                for (let mut i: i32 = 0; i < n; i = i + 1) {
+                    self.free_list[i] = (void*)((u8*)self.base + (u64)i * self.slot_size);
+                }
+            }
         }
     }
 

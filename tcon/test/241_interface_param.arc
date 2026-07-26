@@ -1,6 +1,6 @@
 // Test: interface as function parameter type (parsed as void*)
 // PASS PASS PASS
-fn puts(s: *i8) int;
+@unsafe extern fn puts(s: *i8) int;
 
 interface Animal {
     fn speak(self: *Animal) void;
@@ -8,12 +8,12 @@ interface Animal {
 
 istruc Dog : Animal {
     let mut id: int;
-    fn speak(self: *Dog) void { puts("Dog"); }
+    @unsafe fn speak(self: *Dog) void { puts("Dog"); }
 }
 
 istruc Cat : Animal {
     let mut id: int;
-    fn speak(self: *Cat) void { puts("Cat"); }
+    @unsafe fn speak(self: *Cat) void { puts("Cat"); }
 }
 
 // Function accepting interface Animal* as void*
@@ -22,7 +22,7 @@ fn dispatch_dog(a: interface Animal*) void {
     d.speak();
 }
 
-pub fn main() int {
+pub @unsafe fn main() int {
     let mut d: Dog;
     d.id = 1;
 
