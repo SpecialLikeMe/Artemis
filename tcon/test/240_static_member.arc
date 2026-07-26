@@ -1,19 +1,19 @@
 // Test static istruc member: belongs to the type, not any instance
 // PASS PASS PASS PASS
-int puts(i8* s);
+fn puts(s: *i8) int;
 
 istruc Counter {
-    int count;
-    static int total;
-    void add(Counter* self, int n) {
+    let mut count: int;
+    static let mut total: int;
+    fn add(self: *Counter, n: int) void {
         self.count = self.count + n;
         Counter__static_total = Counter__static_total + n;
     }
 }
 
-int main() {
-    Counter a;
-    Counter b;
+pub fn main() int {
+    let mut a: Counter;
+    let mut b: Counter;
     a.count = 0;
     b.count = 0;
     Counter__static_total = 0;

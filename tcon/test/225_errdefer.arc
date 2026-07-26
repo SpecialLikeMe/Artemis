@@ -1,8 +1,8 @@
 // Test: errdefer — executes only on error exit, not on success.
 
-i32 fired = 0;
+let mut fired: i32= 0;
 
-auto maybe_fail(i32 should_fail) !i32 {
+fn maybe_fail(should_fail: i32) !i32 {
     errdefer fired = 1;
     if (should_fail) {
         return error.Fail;
@@ -10,7 +10,7 @@ auto maybe_fail(i32 should_fail) !i32 {
     return 42;
 }
 
-i32 main() {
+pub fn main() i32 {
     // Success path: errdefer must NOT fire
     fired = 0;
     maybe_fail(0);

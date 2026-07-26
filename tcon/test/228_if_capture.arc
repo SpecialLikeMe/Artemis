@@ -1,11 +1,11 @@
 // Test: if/else capture syntax: if (cond) |var| {}
 
-i32 g_cap = 0;
+let mut g_cap: i32= 0;
 
-i32 main() {
+pub fn main() i32 {
     // Capture the pointer in then-branch
-    i32 val = 99;
-    i32* ptr = &val;
+    let mut val: i32= 99;
+    let mut ptr: *i32= &val;
 
     // Non-null: capture binds the pointer, dereference it
     if (ptr) |p| {
@@ -14,7 +14,7 @@ i32 main() {
     if (g_cap != 99) { return 1; }
 
     // Null: then-branch should not execute
-    i32* null_ptr = (i32*)0;
+    let mut null_ptr: *i32= (i32*)0;
     g_cap = 0;
     if (null_ptr) |p| {
         g_cap = *p;
@@ -23,7 +23,7 @@ i32 main() {
 
     // else capture: fires when condition is false (zero/null)
     g_cap = 0;
-    i32 zero = 0;
+    let mut zero: i32= 0;
     if (zero) |x| {
         g_cap = x + 1;
     } else |y| {

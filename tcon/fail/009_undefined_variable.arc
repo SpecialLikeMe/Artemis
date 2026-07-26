@@ -1,5 +1,5 @@
 // FAIL: using an undeclared variable must be rejected
-i32 main() {
-    i32 y = x + 1;  // ERROR: 'x' undeclared
+fn main() i32 {
+    let mut y: i32= x + 1;  // ERROR: 'x' undeclared
     return y;
 }

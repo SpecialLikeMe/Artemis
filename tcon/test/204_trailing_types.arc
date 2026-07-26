@@ -1,33 +1,33 @@
 // Test: trailing-type syntax and using aliases
-// Verifies: auto x: T, auto fn() T, using alias = type, all work correctly.
+// Verifies: let x: T, fn() T, using alias = type, all work correctly.
 
 // Trailing-type global variable declarations
-auto x: i32 = 10;
-auto y: i32 = 20;
+let x: i32 = 10;
+let y: i32 = 20;
 
 // using alias: var = auto (type inference placeholder)
 using var = auto;
 
-i32 add(i32 a, i32 b) { return a + b; }
+fn add(a: i32, b: i32) i32 { return a + b; }
 
 // Function with trailing return type
-auto compute() i32 {
-    auto result: i32 = add(x, y);
+fn compute() i32 {
+    let mut result: i32= add(x, y);
     return result;
 }
 
-i32 main() {
+pub fn main() i32 {
     // Trailing type local vars
-    auto b: i32 = 7;
-    auto c: i32 = b * 6;
+    let mut b: i32= 7;
+    let mut c: i32= b * 6;
     if (c != 42) { return 2; }
 
     // Function with trailing return type
-    auto v: i32 = compute();
+    let mut v: i32= compute();
     if (v != 30) { return 3; }
 
     // using alias: var (= auto) with type inferred from initializer
-    var d = 99;
+    let mut d: var= 99;
     if (d != 99) { return 4; }
 
     return 0;

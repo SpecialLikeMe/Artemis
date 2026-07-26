@@ -1,17 +1,17 @@
 // Nested namespace access
 namespace math {
-    i32 base;
+    let mut base: i32;
 
-    i32 double_base() { return math.base * 2; }
+    fn double_base() i32 { return math.base * 2; }
 
     namespace consts {
-        i32 pi_approx;
-        i32 e_approx;
-        i32 sum() { return math.consts.pi_approx + math.consts.e_approx; }
+        let mut pi_approx: i32;
+        let mut e_approx: i32;
+        fn sum() i32 { return math.consts.pi_approx + math.consts.e_approx; }
     }
 }
 
-i32 main() {
+pub fn main() i32 {
     math.base         = 7;
     math.consts.pi_approx = 3;
     math.consts.e_approx  = 2;

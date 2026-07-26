@@ -1,12 +1,12 @@
 // ?T nullable: null is assignable to ?T and to pointer types
-extern void* malloc(u64 n);
-extern void  free(void* p);
+@unsafe extern fn malloc(n: u64) *void;
+@unsafe extern fn free(p: *void) void;
 
-i32 main() {
-    ?i32 a = null;
+pub fn main() i32 {
+    let mut a: ?i32= null;
     if (a != null) { return 1; }
 
-    i32* p = null;
+    let mut p: *i32= null;
     if (p != null) { return 2; }
 
     return 0;

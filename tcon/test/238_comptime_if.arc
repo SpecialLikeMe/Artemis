@@ -1,11 +1,11 @@
 // Test comptime if: compile-time branch selection with dead code elimination
 // PASS PASS PASS PASS
-int puts(i8* s);
+fn puts(s: *i8) int;
 
-comptime int DEBUG = 0;
-comptime int VERSION = 3;
+const DEBUG: int= 0;
+const VERSION: int= 3;
 
-int main() {
+pub fn main() int {
     comptime if (DEBUG) {
         puts("FAIL debug should be off");
     } else {

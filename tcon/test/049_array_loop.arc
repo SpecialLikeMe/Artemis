@@ -1,10 +1,10 @@
-i32 main() {
-    i32 arr[10];
-    for (i32 i = 0; i < 10; i++) {
+pub fn main() i32 {
+    let mut arr: [10]i32;
+    for (let mut i: i32 = 0; i < 10; i++) {
         arr[i] = i * i;
     }
-    i32 sum = 0;
-    for (i32 i = 0; i < 10; i++) {
+    let mut sum: i32= 0;
+    for (let mut i: i32 = 0; i < 10; i++) {
         sum = sum + arr[i];
     }
     if (sum != 285) { return 1; }

@@ -1,9 +1,9 @@
 // EXPECT_FAIL
 // Non-void function missing return → compiler must emit error
-i32 bad_func() {
-    i32 x = 5;
+fn bad_func() i32 {
+    let mut x: i32= 5;
 }
 
-i32 main() {
+pub fn main() i32 {
     return bad_func();
 }

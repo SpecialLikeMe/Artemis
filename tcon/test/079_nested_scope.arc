@@ -1,9 +1,9 @@
-i32 main() {
-    i32 a = 1;
+pub fn main() i32 {
+    let mut a: i32= 1;
     {
-        i32 b = 2;
+        let mut b: i32= 2;
         {
-            i32 c = 3;
+            let mut c: i32= 3;
             a = a + b + c;
         }
         a = a + b;

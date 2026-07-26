@@ -1,5 +1,5 @@
 // FAIL: free function overloading is not supported
-i32 compute(i32 a) { return a; }
-i32 compute(i32 a, i32 b) { return a + b; }  // must error: same name, different sig
+fn compute(a: i32) i32 { return a; }
+fn compute(a: i32, b: i32) i32 { return a + b; }  // must error: same name, different sig
 
-i32 main() { return compute(1); }
+fn main() i32 { return compute(1); }

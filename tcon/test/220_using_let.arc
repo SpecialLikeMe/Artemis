@@ -2,9 +2,9 @@
 using let = const auto;
 using var = auto;
 
-i32 main() {
+pub fn main() i32 {
     let x = 42;
-    var y = x + 8;
+    let mut y: var= x + 8;
     if (y != 50) { return 1; }
     return 0;
 }

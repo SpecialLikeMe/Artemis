@@ -1,10 +1,10 @@
 @define <HAS_FEATURE> <>
 
 @ifdef HAS_FEATURE
-i32 value() { return 7; }
+fn value() i32 { return 7; }
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (value() != 7) { return 1; }
     return 0;
 }

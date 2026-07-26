@@ -1,10 +1,10 @@
-using i32* IntPtr;
+using IntPtr = *i32;
 
-void zero(IntPtr p) { *p = 0; }
+fn zero(p: IntPtr) void { *p = 0; }
 
-i32 main() {
-    i32 x = 55;
-    IntPtr p = &x;
+pub fn main() i32 {
+    let mut x: i32= 55;
+    let mut p: IntPtr= &x;
     if (*p != 55) { return 1; }
     zero(p);
     if (x != 0)   { return 2; }

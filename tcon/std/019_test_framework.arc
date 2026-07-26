@@ -1,10 +1,10 @@
 // Test: std.test — runner istruc, debug.assert helpers, test_alloc
-extern std.test;
-extern i32 printf(i8* fmt, ...);
+extern  std.test;
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
-i32 main() {
+pub fn main() i32 {
     // Test the runner istruc
-    std.test.runner r;
+    let mut r: std.test.runner;
     r.begin("basic true");
     std.test.expect_true(&r, true, "true is true");
     r.end();
@@ -17,15 +17,15 @@ i32 main() {
     std.test.expect_eq_str(&r, "hello", "hello", "hello eq");
     r.end();
 
-    i32 result = r.finish();
+    let mut result: i32= r.finish();
     if (result != 0) { return 1; }
 
     // Test test_alloc
-    std.test.test_alloc ta;
+    let mut ta: std.test.test_alloc;
     if (ta.count != 0)       { printf("FAIL initial count\n"); return 2; }
     if (ta.has_leaks())      { printf("FAIL initial leaks\n"); return 3; }
 
-    void* p1 = ta.alloc((u64)16);
+    let mut p1: *void= ta.alloc((u64)16);
     if (p1 == (void*)0)      { printf("FAIL alloc\n"); return 4; }
     if (ta.count != 1)       { printf("FAIL count after alloc\n"); return 5; }
     if (!ta.has_leaks())     { printf("FAIL should have leak before free\n"); return 6; }

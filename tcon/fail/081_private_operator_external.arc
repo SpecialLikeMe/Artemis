@@ -1,16 +1,16 @@
 // FAIL: using a private operator overload from outside the class
 istruc Val {
-    i32 n;
+    let mut n: i32;
     public void __construct__(Val* self, i32 x) { self.n = x; }
     private Val operator+(const Val* self, Val other) {
-        Val r;
+        let mut r: Val;
         r.n = self.n + other.n;
         return r;
     }
 }
-i32 main() {
-    Val a(1);
-    Val b(2);
-    Val c = a + b;  // ERROR: operator+ is private
+fn main() i32 {
+    fn a(1) Val;
+    fn b(2) Val;
+    let mut c: Val= a + b;  // ERROR: operator+ is private
     return c.n;
 }

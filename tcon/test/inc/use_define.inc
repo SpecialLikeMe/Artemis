@@ -1,1 +1,1 @@
-i32 triple(i32 x) { return x * MULT; }
+fn triple(x: i32) i32 { return x * MULT; }

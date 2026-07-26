@@ -1,14 +1,14 @@
-i32 g_val = 0;
+let mut g_val: i32= 0;
 
-void set_val(i32 v) {
+fn set_val(v: i32) void {
     g_val = v;
 }
 
-void add_to_val(i32 v) {
+fn add_to_val(v: i32) void {
     g_val = g_val + v;
 }
 
-i32 main() {
+pub fn main() i32 {
     set_val(10);
     if (g_val != 10) { return 1; }
     add_to_val(5);

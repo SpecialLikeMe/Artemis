@@ -1,12 +1,12 @@
-i32 add(i32 a, i32 b) { return a + b; }
-i32 mul(i32 a, i32 b) { return a * b; }
+fn add(a: i32, b: i32) i32 { return a + b; }
+fn mul(a: i32, b: i32) i32 { return a * b; }
 
-i32 apply_twice(i32(i32, i32)* op, i32 x, i32 y) {
+fn apply_twice(op: *(i32, i32)i32, x: i32, y: i32) i32 {
     return op(op(x, y), y);
 }
 
-i32 dispatch(i32 choice, i32 a, i32 b) {
-    i32(i32, i32)* op;
+fn dispatch(choice: i32, a: i32, b: i32) i32 {
+    let mut op: *(i32, i32)i32;
     if (choice == 0) {
         op = &add;
     } else {
@@ -15,8 +15,8 @@ i32 dispatch(i32 choice, i32 a, i32 b) {
     return op(a, b);
 }
 
-i32 main() {
-    i32(i32, i32)* f = &add;
+pub fn main() i32 {
+    let mut f: *(i32, i32)i32 = &add;
     if (f(2, 3)  != 5)  { return 1; }
 
     f = &mul;

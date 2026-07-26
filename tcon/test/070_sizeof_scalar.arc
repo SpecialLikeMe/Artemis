@@ -1,4 +1,4 @@
-i32 main() {
+pub fn main() i32 {
     if (sizeof(i8)  != 1) { return 1; }
     if (sizeof(i16) != 2) { return 2; }
     if (sizeof(i32) != 4) { return 3; }

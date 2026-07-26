@@ -8,7 +8,7 @@ const_resolve create {
     }
 }
 
-int main() {
+pub fn main() int {
     create(4+1);
     let y = 4-4;
     return y;

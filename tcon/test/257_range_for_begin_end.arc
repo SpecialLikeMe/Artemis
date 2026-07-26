@@ -1,32 +1,32 @@
 // Range-for with istruc begin()/end() protocol
 istruc IntArray {
-    i32 data[8];
-    i32 size;
-    void __construct__(IntArray* self) { self.size = 0; }
-    void push(IntArray* self, i32 v) {
+    let mut data: [8]i32;
+    let mut size: i32;
+    fn __construct__(self: *IntArray) void { self.size = 0; }
+    fn push(self: *IntArray, v: i32) void {
         self.data[self.size] = v;
         self.size = self.size + 1;
     }
-    i32* begin(IntArray* self) { return &self.data[0]; }
-    i32* end(IntArray* self)   { return &self.data[self.size]; }
+    fn begin(self: *IntArray) *i32 { return &self.data[0]; }
+    fn end(self: *IntArray) *i32   { return &self.data[self.size]; }
 }
 
-i32 main() {
-    IntArray arr;
+pub fn main() i32 {
+    let mut arr: IntArray;
     arr.push(10);
     arr.push(20);
     arr.push(30);
     arr.push(40);
 
-    i32 sum = 0;
-    for (i32 x : arr) {
+    let mut sum: i32= 0;
+    for (let x: i32 : arr) {
         sum = sum + x;
     }
     if (sum != 100) { return 1; }
 
     // Count elements
-    i32 count = 0;
-    for (i32 x : arr) {
+    let mut count: i32= 0;
+    for (let x: i32 : arr) {
         count = count + 1;
     }
     if (count != 4) { return 2; }

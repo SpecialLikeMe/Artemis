@@ -1,33 +1,33 @@
 istruc Animal {
-    i32 legs;
+    let mut legs: i32;
 
-    void __construct__(Animal* self, i32 n) {
+    fn __construct__(self: *Animal, n: i32) void {
         self.legs = n;
     }
 
-    i32 get_legs(const Animal* self) {
+    fn get_legs(self: *const Animal) i32 {
         return self.legs;
     }
 }
 
 istruc Dog : Animal {
-    i32 tail;
+    let mut tail: i32;
 
-    void __construct__(Dog* self, i32 t) {
+    fn __construct__(self: *Dog, t: i32) void {
         self.legs = 4;
         self.tail = t;
     }
 
-    i32 describe(const Dog* self) {
+    fn describe(self: *const Dog) i32 {
         return self.legs * 10 + self.tail;
     }
 }
 
-i32 main() {
-    Animal a(6);
+fn main() i32 {
+    fn a(6) Animal;
     if (a.get_legs() != 6) { return 1; }
 
-    Dog d(1);
+    fn d(1) Dog;
     if (d.legs != 4)       { return 2; }
     if (d.tail != 1)       { return 3; }
     if (d.get_legs() != 4) { return 4; }

@@ -18,51 +18,59 @@ enum prim_type_t {
     arb_zint     = 11,  // zN  — integer ring ℤ (distinct signed int)
     arb_real     = 12,  // rN  — real number ℝ (distinct float)
     arb_alg      = 13,  // aN  — algebraic number (always f64 at runtime) (ptr to chN)
+    arb_usize    = 14,  // usize — pointer-sized unsigned integer (u64 on x64)
+    arb_isize    = 15,  // isize — pointer-sized signed integer (i64 on x64)
+    arb_iofs     = 16,  // iofs  — signed offset type (i65 on x64 = arch_bits + 1)
 }
 
 // ---- Type node ----
 struct type_node {
-    bool is_primitive;
-    bool is_const;
-    bool is_volatile;
-    bool is_signed;
-    bool is_extern;
-    bool is_inline;
-    bool is_extern_c;
-    bool has_prim;
-    i32  prim;          // prim_type_t value
-    i8*  name;          // user-defined type name (null for primitives)
-    i32  pointer_depth;
+    let is_primitive: bool;
+    let is_const: bool;
+    let is_volatile: bool;
+    let is_signed: bool;
+    let is_extern: bool;
+    let is_inline: bool;
+    let is_extern_c: bool;
+    let has_prim: bool;
+    let prim: i32;          // prim_type_t value
+    let name: *i8;          // user-defined type name (null for primitives)
+    let pointer_depth: i32;
     // array_size: if non-null, this is an array type
     // We use a forward-declared pointer - defined later
-    i8*  array_size_ptr;   // actually expr_node* but using i8* for forward ref
+    let array_size_ptr: *i8;   // actually expr_node* but using i8* for forward ref
     // type_args for generics
-    i8** type_args;         // actually type_node**
-    i32  type_args_len;
+    let type_args: **i8;         // actually type_node**
+    let type_args_len: i32;
     // function pointer
-    bool is_func_ptr;
-    i8*  fp_ret;            // actually type_node*
-    i8** fp_params;         // actually type_node**
-    i32  fp_params_len;
-    i8** fp_param_names;    // i8** (string array)
-    i32  fp_param_names_len;
-    bool fp_variadic;
+    let is_func_ptr: bool;
+    let fp_ret: *i8;            // actually type_node*
+    let fp_params: **i8;         // actually type_node**
+    let fp_params_len: i32;
+    let fp_param_names: **i8;    // i8** (string array)
+    let fp_param_names_len: i32;
+    let fp_variadic: bool;
     // misc flags
-    bool is_self_ref;
-    bool is_self_ref_const;
-    bool is_self_type;
-    bool ptr_data_const;
-    bool is_memstr_ref;
-    bool is_auto;
-    bool is_nullable;
-    bool is_null_literal;
-    bool is_sta;
-    bool is_interface;  // `interface NAME` parameter type — fat pointer dispatch
-    u32  bit_width;
+    let is_self_ref: bool;
+    let is_self_ref_const: bool;
+    let is_self_type: bool;
+    let ptr_data_const: bool;
+    let is_memstr_ref: bool;
+    let is_auto: bool;
+    let is_nullable: bool;
+    let is_null_literal: bool;
+    let is_sta: bool;
+    let is_static_kw: bool;  // `static` qualifier in type position: `let x: static T`
+    let is_interface: bool;  // `interface NAME` parameter type — fat pointer dispatch
+    let bit_width: u32;
+    let is_anytype: bool;  // `anytype` — accept any type (generic parameter)
+    let is_typeof: bool;   // `@typeof(expr)` used as a type — inferred from expr type
+    let typeof_expr: *i8;  // expr_node* for @typeof in type position
+    let is_error_union: bool;  // `!T` error union type prefix
 }
 
-type_node* alloc_type_node() {
-    type_node* t = (type_node*)arc_malloc(sizeof(parser__NS_type_node));
+fn alloc_type_node() *type_node {
+    let mut t: *type_node= (type_node*)arc_malloc(sizeof(parser__NS_type_node));
     memset((i8*)t, 0, sizeof(parser__NS_type_node));
     t.is_signed = true;
     return t;
@@ -93,14 +101,24 @@ enum expr_kind {
     ek_except_expr  = 20,
     ek_null_lit     = 21,
     ek_null_coal    = 22,
-    ek_import_expr  = 23,
-    ek_sta_type_expr= 24,
+    // 23 was ek_import_expr and 24 ek_sta_type_expr — both from an earlier design
+    // where @import and `type` variables were expressions. Neither is produced by the
+    // parser: @import splices at declaration level and type variables are resolved in
+    // type position. The values stay unused so later discriminants keep their numbers.
     ek_ref_expr     = 25,  // ref T — context-aware address-of
     ek_shcopy       = 26,  // @shcopy(x) — explicit shallow copy
     ek_decopy       = 27,  // @decopy(x) — deep copy
     ek_move_expr    = 28,  // @move(x)   — move (transfer ownership)
     ek_quote        = 29,  // quote{} — tokenstream literal for proc macros
     ek_lambda       = 30,  // [captures](params) RetType { body }
+    ek_cast_as      = 31,  // expr as Type — safe explicit type conversion
+    ek_match_expr   = 32,  // match(v) { ... } used as an expression
+    ek_range        = 33,  // lo..hi or lo..=hi — integer range literal
+    ek_cstype       = 34,  // @cstype(T) — first-class type value
+    ek_self_builtin = 35,  // @self()    — ptr to enclosing container
+    ek_ifield       = 36,  // @ifield()  — metadata of enclosing container
+    ek_typeof_e     = 37,  // @typeof(x) — comptime type of expression
+    ek_anon_struct  = 38,  // .{ .f=v }  — anonymous struct literal
 }
 
 // ---- Unary operator enumeration ----
@@ -152,96 +170,99 @@ enum binary_op {
 
 // ---- Expression node ----
 struct expr_node {
-    i32  kind;          // expr_kind value
-    u64  line;
+    let kind: i32;          // expr_kind value
+    let line: u64;
 
     // literals
-    i8*  str_val;
-    i64  int_val;
-    f64  flt_val;
-    bool bool_val;
+    let str_val: *i8;
+    let int_val: i64;
+    let flt_val: f64;
+    let bool_val: bool;
 
     // unary
-    i32        uop;
-    expr_node* operand;
+    let uop: i32;
+    let operand: *expr_node;
 
     // binary / assign
-    i32        bop;
-    expr_node* lhs;
-    expr_node* rhs;
+    let bop: i32;
+    let lhs: *expr_node;
+    let rhs: *expr_node;
 
     // call
-    expr_node*  callee;
-    expr_node** args;
-    i32         args_len;
-    i8*         func_resolved_name;
+    let callee: *expr_node;
+    let args: **expr_node;
+    let args_len: i32;
+    let func_resolved_name: *i8;
 
     // subscript / member
-    expr_node*  object;
-    expr_node*  index;
-    i8*         member_name;
+    let object: *expr_node;
+    let index: *expr_node;
+    let member_name: *i8;
 
     // cast / sizeof
-    type_node*  cast_type;
+    let cast_type: *type_node;
 
     // ternary
-    expr_node*  cond;
-    expr_node*  then_e;
-    expr_node*  else_e;
+    let cond: *expr_node;
+    let then_e: *expr_node;
+    let else_e: *expr_node;
 
     // class_init
-    type_node*  init_type;
-    i8**        field_names;
-    expr_node** field_vals;
-    i32         field_count;
-    bool        is_implicit_init;
+    let init_type: *type_node;
+    let field_names: **i8;
+    let field_vals: **expr_node;
+    let field_count: i32;
+    let is_implicit_init: bool;
 
     // generic type args for calls
-    type_node** type_args;
-    i32         type_args_len;
+    let type_args: **type_node;
+    let type_args_len: i32;
 
-    bool is_constexpr;
+    let is_constexpr: bool;
 
     // except handler block
-    i8*  handler_block;  // actually block_stmt*
+    let handler_block: *i8;  // actually block_stmt*
 
     // SMT: set to true when the SMT cannot prove safety — IR emits a runtime null-guard
-    bool needs_rtcheck;
+    let needs_rtcheck: bool;
 
     // lambda: ek_lambda
-    i8**       lambda_cap_names;   // captured variable names
-    i32*       lambda_cap_byref;   // 1 = captured by reference, 0 = by value
-    i32        lambda_cap_len;
-    type_node** lambda_param_types;
-    i8**       lambda_param_names;
-    i32        lambda_param_len;
-    type_node* lambda_ret_type;    // null = infer
-    i8*        lambda_body;        // actually block_stmt*
-    i8*        lambda_synth_name;  // generated function name in IR
+    let lambda_cap_names: **i8;   // captured variable names
+    let lambda_cap_byref: *i32;   // 1 = captured by reference, 0 = by value
+    let lambda_cap_len: i32;
+    let lambda_param_types: **type_node;
+    let lambda_param_names: **i8;
+    let lambda_param_len: i32;
+    let lambda_ret_type: *type_node;    // null = infer
+    let lambda_body: *i8;        // actually block_stmt*
+    let lambda_synth_name: *i8;  // generated function name in IR
+
+    // ek_match_expr: match(...){} used as expression
+    let match_stmt_ptr: *i8;    // actually match_stmt*
 }
 
-expr_node* alloc_expr_node() {
-    expr_node* e = (expr_node*)arc_malloc(sizeof(parser__NS_expr_node));
+fn alloc_expr_node() *expr_node {
+    let mut e: *expr_node= (expr_node*)arc_malloc(sizeof(parser__NS_expr_node));
     memset((i8*)e, 0, sizeof(parser__NS_expr_node));
     return e;
 }
 
 // Dynamic array of expr_node pointers
 struct expr_ptr_vec {
-    expr_node** data;
-    i32         len;
-    i32         cap;
+    let data: **expr_node;
+    let len: i32;
+    let cap: i32;
 }
 
-void expr_ptr_vec_init(expr_ptr_vec* v) {
+fn expr_ptr_vec_init(v: *expr_ptr_vec) void {
     v.data = (expr_node**)0;
     v.len  = 0;
     v.cap  = 0;
 }
 
-void expr_ptr_vec_push(expr_ptr_vec* v, expr_node* e) {
+fn expr_ptr_vec_push(v: *expr_ptr_vec, e: *expr_node) void {
     if (v.len >= v.cap) {
-        i32 nc = v.cap == 0 ? 8 : v.cap * 2;
+        let mut nc: i32= v.cap == 0 ? 8 : v.cap * 2;
         v.data = (expr_node**)arc_realloc((i8*)v.data, (u64)(nc * (i32)sizeof(i8*)));
         v.cap  = nc;
     }
@@ -251,20 +272,20 @@ void expr_ptr_vec_push(expr_ptr_vec* v, expr_node* e) {
 
 // Dynamic array of type_node pointers
 struct type_ptr_vec {
-    type_node** data;
-    i32         len;
-    i32         cap;
+    let data: **type_node;
+    let len: i32;
+    let cap: i32;
 }
 
-void type_ptr_vec_init(type_ptr_vec* v) {
+fn type_ptr_vec_init(v: *type_ptr_vec) void {
     v.data = (type_node**)0;
     v.len  = 0;
     v.cap  = 0;
 }
 
-void type_ptr_vec_push(type_ptr_vec* v, type_node* t) {
+fn type_ptr_vec_push(v: *type_ptr_vec, t: *type_node) void {
     if (v.len >= v.cap) {
-        i32 nc = v.cap == 0 ? 8 : v.cap * 2;
+        let mut nc: i32= v.cap == 0 ? 8 : v.cap * 2;
         v.data = (type_node**)arc_realloc((i8*)v.data, (u64)(nc * (i32)sizeof(i8*)));
         v.cap  = nc;
     }
@@ -274,20 +295,20 @@ void type_ptr_vec_push(type_ptr_vec* v, type_node* t) {
 
 // Dynamic array of strings
 struct str_vec {
-    i8** data;
-    i32  len;
-    i32  cap;
+    let data: **i8;
+    let len: i32;
+    let cap: i32;
 }
 
-void str_vec_init(str_vec* v) {
+fn str_vec_init(v: *str_vec) void {
     v.data = (i8**)0;
     v.len  = 0;
     v.cap  = 0;
 }
 
-void str_vec_push(str_vec* v, i8* s) {
+fn str_vec_push(v: *str_vec, s: *i8) void {
     if (v.len >= v.cap) {
-        i32 nc = v.cap == 0 ? 8 : v.cap * 2;
+        let mut nc: i32= v.cap == 0 ? 8 : v.cap * 2;
         v.data = (i8**)arc_realloc((i8*)v.data, (u64)(nc * (i32)sizeof(i8*)));
         v.cap  = nc;
     }

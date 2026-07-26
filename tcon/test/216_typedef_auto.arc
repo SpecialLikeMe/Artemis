@@ -1,14 +1,14 @@
 // PASS: using auto creates a type alias that works like the underlying type.
 
-using auto Meter = i32;
-using auto Speed = i32;
+using Meter = i32;
+using Speed = i32;
 
-Speed velocity(Meter dist, i32 time) {
+fn velocity(dist: Meter, time: i32) Speed {
     return dist / time;
 }
 
-i32 main() {
-    Meter d = 100;
-    Speed v = velocity(d, 10);
+pub fn main() i32 {
+    let mut d: Meter= 100;
+    let mut v: Speed= velocity(d, 10);
     return v - 10;  // expect 0
 }

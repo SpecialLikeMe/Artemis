@@ -5,9 +5,11 @@
 ## Local Variables
 
 ```arc
-i32 x = 10;
-i32 y;        // zero-initialized (integers default to 0)
+let mut x: i32 = 10;
+let mut y: i32;        // zero-initialized (integers default to 0)
 ```
+
+`let` declares a variable. Add `mut` to allow reassignment. Omit `mut` for an immutable binding.
 
 ### Default Initialization Rules
 
@@ -16,8 +18,8 @@ i32 y;        // zero-initialized (integers default to 0)
 | Integer (`iN`, `uN`) | `0` |
 | Float (`fN`) | `0.0` |
 | `bool` / `bN` | `false` |
-| Pointer (`T*`) | `null` (0) |
-| `char*` / `i8*` / `u8*` | writable stack-allocated `""` |
+| Pointer (`*T`) | `null` (0) |
+| `*i8` / `*u8` | `null` |
 | `?T` | `null` |
 | `istruc` with zero-arg `__construct__` | constructor called automatically |
 | `istruc` with no constructor | zeroed memory |
@@ -28,60 +30,60 @@ i32 y;        // zero-initialized (integers default to 0)
 ## Global Variables
 
 ```arc
-i32 global_counter = 0;
+let mut global_counter: i32 = 0;
 
-void increment() { global_counter = global_counter + 1; }
+fn increment() void { global_counter = global_counter + 1; }
 ```
 
 Global variables are zero-initialized if no explicit initializer is given.
 
 ---
 
-## `const` — Immutable Variables
+## Immutable Bindings
 
-`const` prevents reassignment after initialization:
+Declaring with `let` (no `mut`) prevents reassignment after initialization:
 
 ```arc
-const i32 MAX_CONNECTIONS = 100;
-const i8* greeting        = "hello";
+let MAX_CONNECTIONS: i32 = 100;
+let greeting: *i8 = "hello";
 
 MAX_CONNECTIONS = 200;   // COMPILE ERROR
 ```
 
-`const` applies to the variable binding — it does not make the pointed-to data immutable for pointer types. See [Pointer Const Semantics](27_pointer_const.md) for `const T*` vs `T* const`.
+`let` applies to the variable binding — it does not make the pointed-to data immutable for pointer types.
 
 ---
 
 ## `comptime` — Compile-Time Constants
 
-`comptime` marks a value as a compile-time constant. The value must be evaluable at compile time (literal, arithmetic on other `comptime` values, `sizeof`):
+`comptime` marks a value as a compile-time constant. The value must be evaluable at compile time:
 
 ```arc
-comptime i32 MAX_SIZE  = 256;
-comptime f64 TAU       = 6.28318;
-comptime i32 BUF_WORDS = MAX_SIZE / sizeof(i32);
+comptime MAX_SIZE: i32 = 256;
+comptime TAU: f64 = 6.28318;
+comptime BUF_WORDS: i32 = MAX_SIZE / @csizeof(i32);
 
-i32 arr[MAX_SIZE];   // comptime as array size
+let mut arr: [MAX_SIZE]i32;   // comptime as array size
 ```
 
 ---
 
 ## `comptime` — Manual Construction
 
-`comptime` declares a variable without invoking its constructor. You call `__construct__` manually:
+`comptime` can also declare a variable without invoking its constructor. You call `__construct__` manually:
 
 ```arc
 istruc Buffer {
-    i32* data;
-    i32  len;
-    void __construct__(Buffer* self, i32 n) { /* allocate n ints */ }
+    let mut data: *i32;
+    let mut len: i32;
+    fn __construct__(self: *Buffer, n: i32) void { /* allocate n ints */ }
 }
 
-comptime Buffer buf;    // declared — NOT constructed yet
-buf.__construct__(100);  // you construct it yourself
+comptime buf: Buffer;      // declared — NOT constructed yet
+buf.__construct__(100);    // you construct it yourself
 ```
 
-Useful for placement-new patterns, lazy initialization, or careful construction ordering. See [Chapter 18](18_comptime.md).
+Useful for placement-new patterns or lazy initialization. See [Chapter 18](18_comptime.md).
 
 ---
 
@@ -90,8 +92,8 @@ Useful for placement-new patterns, lazy initialization, or careful construction 
 Inside a function, `static` gives a variable process-lifetime storage initialized once:
 
 ```arc
-i32 call_count() {
-    static i32 n = 0;
+fn call_count() i32 {
+    static n: i32 = 0;
     n = n + 1;
     return n;
 }
@@ -110,49 +112,34 @@ Inside an `istruc`, `static` declares a class-level variable (one copy shared ac
 `volatile` prevents the compiler from caching or reordering reads/writes to the variable. Use it for memory-mapped I/O or variables modified by external hardware:
 
 ```arc
-volatile i32 status_reg = 0;
+volatile status_reg: i32 = 0;
 
 while (status_reg == 0) { }   // compiler must re-read each iteration
 ```
 
 ---
 
-## `using` — Type Alias
+## Type Inference
 
-`using` creates a contextual alias, typically used with `const auto`:
+Omitting the type annotation infers it from the initializer:
 
 ```arc
-using let = const auto;
-
-let x = 42;      // equivalent to: const auto x = 42;  →  const i32 x = 42
-let y = "hi";    // const i8* y = "hi"
+let x = 42;        // x : i32
+let y = 3.14;      // y : f64
+let s = "hello";   // s : *i8
 ```
 
 ---
 
-## `auto` — Type Inference
-
-`auto` infers the variable's type from the initializer:
+## `@csizeof` and `@srsizeof`
 
 ```arc
-auto x = 42;       // x : i32
-auto y = 3.14;     // y : f64
-auto s = "hello";  // s : i8*
+let sz: u64 = @csizeof(i32);           // 4 — compile-time size
+let sz2: u64 = @csizeof(MyStruct);
+let sz3: u64 = @srsizeof(my_array);    // runtime shallow size
 ```
 
-`auto` is also used in function signatures for error-union return types (`auto fn() !T`). See [Chapter 24](24_error_handling.md).
-
----
-
-## `sizeof`
-
-```arc
-u64 sz  = sizeof(i32);          // 4
-u64 sz2 = sizeof(MyStruct);
-u64 sz3 = sizeof(arr[0]);       // element size from expression
-```
-
-`sizeof` returns a `u64` byte count evaluated at compile time.
+See [Chapter 18](18_comptime.md) for full coverage of compile-time builtins.
 
 ---
 

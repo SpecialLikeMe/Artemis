@@ -1,5 +1,21 @@
-// std.atomic — Atomic-style primitives (lock-prefixed asm unsupported in current
-// Artemis backend; implemented as direct field ops — not thread-safe but API-compatible).
+// std.atomic — Atomic primitives using GCC/Clang __sync built-ins.
+// These map directly to atomic machine instructions on x86/ARM.
+
+// GCC/Clang __sync built-ins for 32-bit integers
+@unsafe extern fn __sync_fetch_and_add_4(ptr: *i32, val: i32) i32;
+@unsafe extern fn __sync_fetch_and_sub_4(ptr: *i32, val: i32) i32;
+@unsafe extern fn __sync_fetch_and_and_4(ptr: *i32, val: i32) i32;
+@unsafe extern fn __sync_fetch_and_or_4(ptr: *i32, val: i32) i32;
+@unsafe extern fn __sync_fetch_and_xor_4(ptr: *i32, val: i32) i32;
+@unsafe extern fn __sync_val_compare_and_swap_4(ptr: *i32, expected: i32, desired: i32) i32;
+@unsafe extern fn __sync_lock_test_and_set_4(ptr: *i32, val: i32) i32;
+@unsafe extern fn __sync_lock_release_4(ptr: *i32) void;
+@unsafe extern fn __sync_synchronize() void;
+
+// GCC/Clang __sync built-ins for 64-bit integers
+@unsafe extern fn __sync_fetch_and_add_8(ptr: *i64, val: i64) i64;
+@unsafe extern fn __sync_fetch_and_sub_8(ptr: *i64, val: i64) i64;
+@unsafe extern fn __sync_val_compare_and_swap_8(ptr: *i64, expected: i64, desired: i64) i64;
 
 namespace std {
 namespace atomic {
@@ -10,47 +26,45 @@ comptime i32 RELEASE = 2;
 comptime i32 ACQ_REL = 3;
 comptime i32 SEQ_CST = 4;
 
-void fence_acquire() { }
-void fence_release() { }
-void fence_seq_cst() { }
+fn fence_acquire() void { __sync_synchronize(); }
+fn fence_release() void { __sync_synchronize(); }
+fn fence_seq_cst() void { __sync_synchronize(); }
 
 // --- atomic i32 ---
 
 istruc i32_t {
     volatile i32 val;
 
-    void __construct__(i32_t* self) { self.val = 0; }
+    fn __construct__(self: *i32_t) void { self.val = 0; }
 
-    i32  load(i32_t* self)           { return self.val; }
-    void store(i32_t* self, i32 v)   { self.val = v; }
+    fn load(self: *i32_t) i32           { return self.val; }
+    fn store(self: *i32_t, v: i32) void   { self.val = v; }
 
-    i32 fetch_add(i32_t* self, i32 delta) {
-        i32 old = self.val; self.val = self.val + delta; return old;
+    fn fetch_add(self: *i32_t, delta: i32) i32 {
+        return __sync_fetch_and_add_4(&self.val, delta);
     }
-    i32 fetch_sub(i32_t* self, i32 delta) {
-        i32 old = self.val; self.val = self.val - delta; return old;
+    fn fetch_sub(self: *i32_t, delta: i32) i32 {
+        return __sync_fetch_and_sub_4(&self.val, delta);
     }
-    i32 fetch_and(i32_t* self, i32 mask) {
-        i32 old = self.val; self.val = self.val & mask; return old;
+    fn fetch_and(self: *i32_t, mask: i32) i32 {
+        return __sync_fetch_and_and_4(&self.val, mask);
     }
-    i32 fetch_or(i32_t* self, i32 mask) {
-        i32 old = self.val; self.val = self.val | mask; return old;
+    fn fetch_or(self: *i32_t, mask: i32) i32 {
+        return __sync_fetch_and_or_4(&self.val, mask);
     }
-    i32 fetch_xor(i32_t* self, i32 mask) {
-        i32 old = self.val; self.val = self.val ^ mask; return old;
+    fn fetch_xor(self: *i32_t, mask: i32) i32 {
+        return __sync_fetch_and_xor_4(&self.val, mask);
     }
 
-    i32 compare_exchange(i32_t* self, i32 expected, i32 desired) {
-        i32 old = self.val;
-        if (self.val == expected) { self.val = desired; }
-        return old;
+    fn compare_exchange(self: *i32_t, expected: i32, desired: i32) i32 {
+        return __sync_val_compare_and_swap_4(&self.val, expected, desired);
     }
-    bool cas(i32_t* self, i32 expected, i32 desired) {
+    fn cas(self: *i32_t, expected: i32, desired: i32) bool {
         return self.compare_exchange(expected, desired) == expected;
     }
 
-    i32 inc(i32_t* self) { self.val = self.val + 1; return self.val; }
-    i32 dec(i32_t* self) { self.val = self.val - 1; return self.val; }
+    fn inc(self: *i32_t) i32 { return __sync_fetch_and_add_4(&self.val, 1) + 1; }
+    fn dec(self: *i32_t) i32 { return __sync_fetch_and_sub_4(&self.val, 1) - 1; }
 }
 
 // --- atomic i64 ---
@@ -58,24 +72,22 @@ istruc i32_t {
 istruc i64_t {
     volatile i64 val;
 
-    void __construct__(i64_t* self) { self.val = 0; }
+    fn __construct__(self: *i64_t) void { self.val = 0; }
 
-    i64  load(i64_t* self)           { return self.val; }
-    void store(i64_t* self, i64 v)   { self.val = v; }
+    fn load(self: *i64_t) i64           { return self.val; }
+    fn store(self: *i64_t, v: i64) void   { self.val = v; }
 
-    i64 fetch_add(i64_t* self, i64 delta) {
-        i64 old = self.val; self.val = self.val + delta; return old;
+    fn fetch_add(self: *i64_t, delta: i64) i64 {
+        return __sync_fetch_and_add_8(&self.val, delta);
     }
-    i64 fetch_sub(i64_t* self, i64 delta) {
-        i64 old = self.val; self.val = self.val - delta; return old;
+    fn fetch_sub(self: *i64_t, delta: i64) i64 {
+        return __sync_fetch_and_sub_8(&self.val, delta);
     }
 
-    i64 compare_exchange(i64_t* self, i64 expected, i64 desired) {
-        i64 old = self.val;
-        if (self.val == expected) { self.val = desired; }
-        return old;
+    fn compare_exchange(self: *i64_t, expected: i64, desired: i64) i64 {
+        return __sync_val_compare_and_swap_8(&self.val, expected, desired);
     }
-    bool cas(i64_t* self, i64 expected, i64 desired) {
+    fn cas(self: *i64_t, expected: i64, desired: i64) bool {
         return self.compare_exchange(expected, desired) == expected;
     }
 }
@@ -85,15 +97,15 @@ istruc i64_t {
 istruc bool_t {
     volatile i32 val;
 
-    void __construct__(bool_t* self) { self.val = 0; }
+    fn __construct__(self: *bool_t) void { self.val = 0; }
 
-    bool load(bool_t* self)          { return self.val != 0; }
-    void store(bool_t* self, bool v) { self.val = v ? 1 : 0; }
+    fn load(self: *bool_t) bool          { return self.val != 0; }
+    fn store(self: *bool_t, v: bool) void { self.val = v ? 1 : 0; }
 
-    bool test_and_set(bool_t* self) {
-        i32 old = self.val; self.val = 1; return old != 0;
+    fn test_and_set(self: *bool_t) bool {
+        return __sync_lock_test_and_set_4(&self.val, 1) != 0;
     }
-    void clear(bool_t* self) { self.val = 0; }
+    fn clear(self: *bool_t) void { __sync_lock_release_4(&self.val); }
 }
 
 // --- atomic pointer ---
@@ -101,17 +113,17 @@ istruc bool_t {
 istruc ptr_t {
     volatile void* val;
 
-    void __construct__(ptr_t* self) { self.val = (void*)0; }
+    fn __construct__(self: *ptr_t) void { self.val = (void*)0; }
 
-    void* load(ptr_t* self)           { return self.val; }
-    void  store(ptr_t* self, void* p) { self.val = p; }
+    fn load(self: *ptr_t) *void           { return self.val; }
+    fn store(self: *ptr_t, p: *void) void { self.val = p; }
 
-    void* compare_exchange(ptr_t* self, void* expected, void* desired) {
-        void* old = self.val;
+    fn compare_exchange(self: *ptr_t, expected: *void, desired: *void) *void {
+        let mut old: *void= self.val;
         if (self.val == expected) { self.val = desired; }
         return old;
     }
-    bool cas(ptr_t* self, void* expected, void* desired) {
+    fn cas(self: *ptr_t, expected: *void, desired: *void) bool {
         return self.compare_exchange(expected, desired) == expected;
     }
 }
@@ -119,21 +131,25 @@ istruc ptr_t {
 // --- spin lock ---
 
 istruc spin_lock {
-    bool_t locked;
+    let mut locked: bool_t;
 
-    void __construct__(spin_lock* self) { self.locked.val = 0; }
+    fn __construct__(self: *spin_lock) void { self.locked.val = 0; }
 
-    void lock(spin_lock* self) {
-        while (true) {
-            i32 old = self.locked.val;
-            if (old == 0) { self.locked.val = 1; break; }
-        }
+    fn lock(self: *spin_lock) void {
+        // Atomic test-and-set: spin until we acquire the lock
+        while (__sync_lock_test_and_set_4(&self.locked.val, 1) != 0) { }
+        __sync_synchronize(); // acquire fence
     }
 
-    void unlock(spin_lock* self)   { self.locked.val = 0; }
-    bool try_lock(spin_lock* self) {
-        i32 old = self.locked.val;
-        if (old == 0) { self.locked.val = 1; return true; }
+    fn unlock(self: *spin_lock) void {
+        __sync_synchronize(); // release fence
+        __sync_lock_release_4(&self.locked.val);
+    }
+    fn try_lock(self: *spin_lock) bool {
+        if (__sync_lock_test_and_set_4(&self.locked.val, 1) == 0) {
+            __sync_synchronize();
+            return true;
+        }
         return false;
     }
 }
@@ -141,13 +157,13 @@ istruc spin_lock {
 // --- reference counter ---
 
 istruc ref_count {
-    i32_t count;
+    let mut count: i32_t;
 
-    void __construct__(ref_count* self) { self.count.val = 1; }
+    fn __construct__(self: *ref_count) void { self.count.val = 1; }
 
-    void retain(ref_count* self)  { self.count.val = self.count.val + 1; }
-    bool release(ref_count* self) { self.count.val = self.count.val - 1; return self.count.val == 0; }
-    i32  get(ref_count* self)     { return self.count.val; }
+    fn retain(self: *ref_count) void  { __sync_fetch_and_add_4(&self.count.val, 1); }
+    fn release(self: *ref_count) bool { return __sync_fetch_and_sub_4(&self.count.val, 1) == 1; }
+    fn get(self: *ref_count) i32     { return self.count.val; }
 }
 
 } // atomic

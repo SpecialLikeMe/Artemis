@@ -5,20 +5,20 @@
 
 namespace std {
 namespace encode {
-u32 utf8_decode_one(u8* buf, u64 len, u64* pos) {
-    u64 i = (*pos);
+fn utf8_decode_one(buf: *u8, len: u64, pos: *u64) u32 {
+    let mut i: u64= (*pos);
     if (i >= len) { return 0xFFFDu; }
-    u8 byte0 = buf[i];
+    let mut byte0: u8= buf[i];
     if (byte0 < 0x80u) { (*pos) = i + 1; return (u32)byte0; }
     if (byte0 < 0xC0u) { (*pos) = i + 1; return 0xFFFDu; }
-    u32 cp; u32 extra;
+    let mut cp: u32; let mut extra: u32;
     if (byte0 < 0xE0u)      { cp = (u32)(byte0 & 0x1Fu); extra = 1u; }
     else if (byte0 < 0xF0u) { cp = (u32)(byte0 & 0x0Fu); extra = 2u; }
     else                  { cp = (u32)(byte0 & 0x07u); extra = 3u; }
-    for (u32 j = 0u; j < extra; j = j + 1u) {
+    for (let mut j: u32 = 0u; j < extra; j = j + 1u) {
         i = i + 1;
         if (i >= len) { (*pos) = i; return 0xFFFDu; }
-        u8 b = buf[i];
+        let mut b: u8= buf[i];
         if ((b & 0xC0u) != 0x80u) { (*pos) = i; return 0xFFFDu; }
         cp = (cp << 6) | (u32)(b & 0x3Fu);
     }
@@ -26,7 +26,7 @@ u32 utf8_decode_one(u8* buf, u64 len, u64* pos) {
     return cp;
 }
 
-i32 utf8_encode_one(u32 cp, u8* buf) {
+fn utf8_encode_one(cp: u32, buf: *u8) i32 {
     if (cp < 0x80u)    { buf[0] = (u8)cp; return 1; }
     if (cp < 0x800u)   { buf[0] = (u8)(0xC0u|(cp>>6)); buf[1]=(u8)(0x80u|(cp&0x3Fu)); return 2; }
     if (cp < 0x10000u) {
@@ -37,36 +37,36 @@ i32 utf8_encode_one(u32 cp, u8* buf) {
     buf[2]=(u8)(0x80u|((cp>>6)&0x3Fu)); buf[3]=(u8)(0x80u|(cp&0x3Fu)); return 4;
 }
 
-bool utf8_validate(u8* buf, u64 len) {
-    u64 i = 0;
+fn utf8_validate(buf: *u8, len: u64) bool {
+    let mut i: u64= 0;
     while (i < len) {
-        u64 prev = i;
-        u32 cp = utf8_decode_one(buf, len, &i);
+        let mut prev: u64= i;
+        let mut cp: u32= utf8_decode_one(buf, len, &i);
         if (cp == 0xFFFDu && i == prev + 1) { return false; }
     }
     return true;
 }
 
-i32 utf8_count(u8* buf, u64 len) {
-    i32 n = 0; u64 i = 0;
+fn utf8_count(buf: *u8, len: u64) i32 {
+    let mut n: i32= 0; let mut i: u64= 0;
     while (i < len) { utf8_decode_one(buf, len, &i); n = n + 1; }
     return n;
 }
 
 istruc utf8_string {
-    u8* data;
-    u64 byte_len;
-    u64 cap;
+    let mut data: *u8;
+    let mut byte_len: u64;
+    let mut cap: u64;
 
-    void __construct__(utf8_string* self) { self.data=(u8*)0; self.byte_len=0; self.cap=0; }
+    fn __construct__(self: *utf8_string) void { self.data=(u8*)0; self.byte_len=0; self.cap=0; }
 
-    i32  len_bytes(utf8_string* self) { return (i32)self.byte_len; }
-    u8*  raw(utf8_string* self)       { return self.data; }
-    i8*  c_str(utf8_string* self)     { return (i8*)self.data; }
+    fn len_bytes(self: *utf8_string) i32 { return (i32)self.byte_len; }
+    fn raw(self: *utf8_string) *u8       { return self.data; }
+    fn c_str(self: *utf8_string) *i8     { return (i8*)self.data; }
 
-    bool eq(utf8_string* self, utf8_string* o) {
+    fn eq(self: *utf8_string, o: *utf8_string) bool {
         if (self.byte_len != (*o).byte_len) { return false; }
-        for (u64 i = 0; i < self.byte_len; i = i + 1)
+        for (let mut i: u64 = 0; i < self.byte_len; i = i + 1)
             if (self.data[i] != (*o).data[i]) { return false; }
         return true;
     }
@@ -74,14 +74,14 @@ istruc utf8_string {
 
 // --- UTF-16 ---
 
-u32 utf16_decode_one(u16* buf, u64 len_units, u64* pos) {
-    u64 i = (*pos);
+fn utf16_decode_one(buf: *u16, len_units: u64, pos: *u64) u32 {
+    let mut i: u64= (*pos);
     if (i >= len_units) { return 0xFFFDu; }
-    u16 w0 = buf[i];
+    let mut w0: u16= buf[i];
     if (w0 < 0xD800u || w0 > 0xDFFFu) { (*pos) = i + 1; return (u32)w0; }
     if (w0 >= 0xD800u && w0 <= 0xDBFFu) {
         if (i + 1 >= len_units) { (*pos) = i + 1; return 0xFFFDu; }
-        u16 w1 = buf[i+1];
+        let mut w1: u16= buf[i+1];
         if (w1 < 0xDC00u || w1 > 0xDFFFu) { (*pos) = i + 1; return 0xFFFDu; }
         (*pos) = i + 2;
         return 0x10000u + (((u32)(w0 - 0xD800u)) << 10) + (u32)(w1 - 0xDC00u);
@@ -89,7 +89,7 @@ u32 utf16_decode_one(u16* buf, u64 len_units, u64* pos) {
     (*pos) = i + 1; return 0xFFFDu;
 }
 
-i32 utf16_encode_one(u32 cp, u16* buf) {
+fn utf16_encode_one(cp: u32, buf: *u16) i32 {
     if (cp < 0x10000u) { buf[0] = (u16)cp; return 1; }
     cp = cp - 0x10000u;
     buf[0] = (u16)(0xD800u + (cp >> 10));
@@ -98,30 +98,30 @@ i32 utf16_encode_one(u32 cp, u16* buf) {
 }
 
 istruc utf16_string {
-    u16* data;
-    u64  unit_len;
-    u64  cap;
+    let mut data: *u16;
+    let mut unit_len: u64;
+    let mut cap: u64;
 
-    void __construct__(utf16_string* self) { self.data=(u16*)0; self.unit_len=0; self.cap=0; }
+    fn __construct__(self: *utf16_string) void { self.data=(u16*)0; self.unit_len=0; self.cap=0; }
 
-    i32  len_units(utf16_string* self) { return (i32)self.unit_len; }
-    u16* raw(utf16_string* self)       { return self.data; }
-    bool is_empty(utf16_string* self)  { return self.unit_len == 0; }
+    fn len_units(self: *utf16_string) i32 { return (i32)self.unit_len; }
+    fn raw(self: *utf16_string) *u16       { return self.data; }
+    fn is_empty(self: *utf16_string) bool  { return self.unit_len == 0; }
 }
 
 // --- UTF-32 ---
 
 istruc utf32_string {
-    u32* data;
-    u64  len;
-    u64  cap;
+    let mut data: *u32;
+    let mut len: u64;
+    let mut cap: u64;
 
-    void __construct__(utf32_string* self) { self.data=(u32*)0; self.len=0; self.cap=0; }
+    fn __construct__(self: *utf32_string) void { self.data=(u32*)0; self.len=0; self.cap=0; }
 
-    i32  length(utf32_string* self)   { return (i32)self.len; }
-    u32* raw(utf32_string* self)      { return self.data; }
-    bool is_empty(utf32_string* self) { return self.len == 0; }
-    u32  char_at(utf32_string* self, i32 i) { u32 v = self.data[i]; return v; }
+    fn length(self: *utf32_string) i32   { return (i32)self.len; }
+    fn raw(self: *utf32_string) *u32      { return self.data; }
+    fn is_empty(self: *utf32_string) bool { return self.len == 0; }
+    fn char_at(self: *utf32_string, i: i32) u32 { let mut v: u32= self.data[i]; return v; }
 }
 
 } // namespace encode

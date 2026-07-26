@@ -4,8 +4,8 @@ istruc Node {
     public void __construct__(Node* self, i32 v) { self.value = v; }
 }
 
-i32 main() {
-    Node n;
+fn main() i32 {
+    let mut n: Node;
     n.__construct__(5);
     return n.value;  // ERROR: 'value' is protected and we are not in a derived class
 }

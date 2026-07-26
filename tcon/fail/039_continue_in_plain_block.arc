@@ -1,6 +1,6 @@
 // FAIL: continue used in a plain block (not a loop)
-i32 main() {
-    i32 x = 0;
+fn main() i32 {
+    let mut x: i32= 0;
     {
         x = 1;
         continue;  // ERROR: not in a loop

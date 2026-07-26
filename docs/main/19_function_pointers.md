@@ -2,10 +2,10 @@
 
 ## Declaring a Function Pointer Type
 
-Use `using` to give a function-pointer type a name:
+The function pointer type uses the form `*(ArgTypes)ReturnType`. Use `using` to give a function-pointer type a name:
 
 ```arc
-using i32(i32, i32)* BinaryOp;
+using BinaryOp = *(i32, i32)i32;
 ```
 
 This declares `BinaryOp` as a pointer to a function taking two `i32` arguments and returning `i32`.
@@ -13,16 +13,16 @@ This declares `BinaryOp` as a pointer to a function taking two `i32` arguments a
 ## Basic Usage
 
 ```arc
-i32 add(i32 a, i32 b) { return a + b; }
-i32 mul(i32 a, i32 b) { return a * b; }
+fn add(a: i32, b: i32) i32 { return a + b; }
+fn mul(a: i32, b: i32) i32 { return a * b; }
 
-i32 apply(BinaryOp op, i32 x, i32 y) { return op(x, y); }
+fn apply(op: BinaryOp, x: i32, y: i32) i32 { return op(x, y); }
 
-i32 main() {
-    BinaryOp f = add;
-    i32 r = apply(f, 3, 4);   // 7
+pub fn main() i32 {
+    let mut f: BinaryOp = add;
+    let r: i32 = apply(f, 3, 4);   // 7
     f = mul;
-    r = apply(f, 3, 4);       // 12
+    let r2: i32 = apply(f, 3, 4);  // 12
     return 0;
 }
 ```
@@ -31,21 +31,44 @@ i32 main() {
 
 ```arc
 istruc Dispatcher {
-    i32(i32)* handler;
+    let mut handler: *(i32)i32;
 
-    void set(Dispatcher* self, i32(i32)* fn) { self.handler = fn; }
-    i32 run(Dispatcher* self, i32 x)         { return self.handler(x); }
+    fn set(self: *Dispatcher, f: *(i32)i32) void { self.handler = f; }
+    fn run(self: *Dispatcher, x: i32) i32        { return self.handler(x); }
 }
 ```
 
 ## Inline Types
 
-Function pointer types can appear inline without a using:
+Function pointer types can appear inline without a `using`:
+
 ```arc
-void call_with_5(i32(i32)* fn) { fn(5); }
+fn call_with_5(f: *(i32)i32) void { f(5); }
 ```
 
-> **Challenge:** Build an `EventSystem` istruc that holds up to 8 function pointers of type `void(i32)*`. Add `(void(i32)* cb)` and `emit(i32 event)` that calls all registered callbacks.
+## Lambdas as Function Pointers
+
+Lambda expressions produce function pointer values:
+
+```arc
+let double: *(i32)i32 = [](x: i32) i32 { return x * 2; };
+let result: i32 = double(21);   // 42
+```
+
+## ADT Enum Variants Holding Function Pointers
+
+```arc
+enum action {
+    compute(*(i32)i32),
+}
+
+pub fn main() i32 {
+    let mut a: action = action.compute([](x: i32) i32 { return x * x; });
+    return a[0](5);   // 25
+}
+```
+
+> **Challenge:** Build an `EventSystem` istruc that holds up to 8 function pointers of type `*(i32)void`. Add `fn register(self: *EventSystem, cb: *(i32)void) void` and `fn emit(self: *EventSystem, event: i32) void` that calls all registered callbacks.
 
 ---
 

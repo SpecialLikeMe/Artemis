@@ -1,19 +1,19 @@
 // 224: ADT enum istruc variant with user-defined __construct__ via x.variant() call
-extern i32 strcmp(const i8* a, const i8* b);
+@unsafe extern fn strcmp(a: *const i8, b: *const i8) i32;
 
 enum msg {
     empty,
     text .{
-        char* rc;
-        void __construct__(msg.text* self, char* a) {
+        let mut rc: *char;
+        fn __construct__(self: *msg.text, a: *char) void {
             self.rc = a;
         }
     },
 }
 
-i32 main() {
-    msg bar = msg.text("Hello world");
-    char* s = (*bar).rc;
+pub fn main() i32 {
+    let mut bar: msg= msg.text("Hello world");
+    let mut s: *char= (*bar).rc;
     if (strcmp(s, "Hello world") != 0) { return 1; }
     return 0;
 }

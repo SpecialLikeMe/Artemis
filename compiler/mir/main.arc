@@ -8,8 +8,8 @@
 //
 // Pipeline: AST → MIR (this file) → LIR → SMT → LLVM IR emit
 //
-// Status: scaffolding only — the lowering pass is a future work item.
-// Gate behind --use-mir flag; current pipeline skips MIR/LIR entirely.
+// Gated behind the --use-mir flag; the default pipeline lowers the AST straight to
+// LLVM IR and does not build MIR/LIR.
 
 namespace mir {
 
@@ -40,51 +40,46 @@ enum mir_instr_kind {
 }
 
 struct mir_val {
-    i32  kind;       // mir_val_kind
-    i32  type_id;    // index into type table
-    i8*  name;       // for MV_LOCAL/MV_GLOBAL/MV_PARAM
-    i64  iconst;     // for MV_CONST integer
-    f64  fconst;     // for MV_CONST float
+    let kind: i32;       // mir_val_kind
+    let type_id: i32;    // index into type table
+    let name: *i8;       // for MV_LOCAL/MV_GLOBAL/MV_PARAM
+    let iconst: i64;     // for MV_CONST integer
+    let fconst: f64;     // for MV_CONST float
 }
 
 struct mir_instr {
-    i32      kind;       // mir_instr_kind
-    mir_val* dst;        // null if no result
-    mir_val* src1;
-    mir_val* src2;
-    i8*      label;      // for MI_BRANCH, MI_CBRANCH, MI_LABEL
-    i8*      fn_name;    // for MI_CALL
-    mir_val** args;      // for MI_CALL
-    i32      args_len;
-    u64      line;
+    let kind: i32;       // mir_instr_kind
+    let dst: *mir_val;        // null if no result
+    let src1: *mir_val;
+    let src2: *mir_val;
+    let label: *i8;      // for MI_BRANCH, MI_CBRANCH, MI_LABEL
+    let fn_name: *i8;    // for MI_CALL
+    let args: **mir_val;      // for MI_CALL
+    let args_len: i32;
+    let line: u64;
 }
 
 struct mir_block {
-    i8*         name;
-    mir_instr** instrs;
-    i32         instrs_len;
-    i32         instrs_cap;
+    let name: *i8;
+    let instrs: **mir_instr;
+    let instrs_len: i32;
+    let instrs_cap: i32;
 }
 
 struct mir_func {
-    i8*         name;
-    mir_block** blocks;
-    i32         blocks_len;
-    i32         blocks_cap;
+    let name: *i8;
+    let blocks: **mir_block;
+    let blocks_len: i32;
+    let blocks_cap: i32;
 }
 
 struct mir_module {
-    mir_func** funcs;
-    i32        funcs_len;
-    i32        funcs_cap;
+    let funcs: **mir_func;
+    let funcs_len: i32;
+    let funcs_cap: i32;
 }
 
-// ---- Lower AST → MIR (stub) ----
-// TODO: implement the actual lowering pass
-// Currently returns a null/empty module; the main pipeline skips this when
-// --use-mir is not passed.
-mir_module* mir_lower_program(i8* prog) {
-    return (mir_module*)0;
-}
+// The AST → MIR lowering pass lives in mir/lower.arc as `lower_program`, which is
+// what the driver calls under --use-mir.
 
 } // namespace mir

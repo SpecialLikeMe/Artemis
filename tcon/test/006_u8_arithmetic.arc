@@ -1,7 +1,7 @@
-i32 main() {
-    u8 a = 200;
-    u8 b = 55;
-    u8 c = a + b;
+pub fn main() i32 {
+    let mut a: u8= 200;
+    let mut b: u8= 55;
+    let mut c: u8= a + b;
     if (c != 255) { return 1; }
     return 0;
 }

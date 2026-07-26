@@ -8,10 +8,10 @@
 
 ```arc
 namespace Math {
-    i32 abs(i32 x)                { return x < 0 ? -x : x; }
-    i32 min(i32 a, i32 b)         { return a < b ? a : b; }
-    i32 max(i32 a, i32 b)         { return a > b ? a : b; }
-    i32 clamp(i32 v, i32 lo, i32 hi) {
+    fn abs(x: i32) i32                     { return x < 0 ? -x : x; }
+    fn min(a: i32, b: i32) i32             { return a < b ? a : b; }
+    fn max(a: i32, b: i32) i32             { return a > b ? a : b; }
+    fn clamp(v: i32, lo: i32, hi: i32) i32 {
         return Math.min(Math.max(v, lo), hi);
     }
 }
@@ -24,8 +24,8 @@ namespace Math {
 Use dot notation to call namespace functions, access types, or read constants:
 
 ```arc
-i32 x = Math.abs(-5);            // 5
-i32 y = Math.clamp(15, 0, 10);   // 10
+let x: i32 = Math.abs(-5);            // 5
+let y: i32 = Math.clamp(15, 0, 10);   // 10
 ```
 
 ---
@@ -36,18 +36,21 @@ Define structs, istrucs, or enums inside a namespace:
 
 ```arc
 namespace Geo {
-    struct Point { f64 x; f64 y; }
+    struct Point {
+        let x: f64;
+        let y: f64;
+    }
 
-    f64 dist_sq(Point a, Point b) {
-        f64 dx = a.x - b.x;
-        f64 dy = a.y - b.y;
+    fn dist_sq(a: Point, b: Point) f64 {
+        let dx: f64 = a.x - b.x;
+        let dy: f64 = a.y - b.y;
         return dx * dx + dy * dy;
     }
 }
 
-Geo.Point p;
+let mut p: Geo.Point;
 p.x = 3.0; p.y = 4.0;
-f64 d = Geo.dist_sq(p, p);
+let d: f64 = Geo.dist_sq(p, p);
 ```
 
 ---
@@ -56,12 +59,12 @@ f64 d = Geo.dist_sq(p, p);
 
 ```arc
 namespace Outer {
-namespace Inner {
-    void fn() { }
-}
+    namespace Inner {
+        fn run() void { }
+    }
 }
 
-Outer.Inner.fn();
+Outer.Inner.run();
 ```
 
 Nested namespaces use multiple `.` separators.
@@ -77,7 +80,7 @@ extern std.fmt;
 extern std.hash;
 
 std.fmt.out_println("hello");
-u64 h = std.hash.fnv_hash_str("key");
+let h: u64 = std.hash.fnv_hash_str("key");
 ```
 
 ---
@@ -88,7 +91,7 @@ Namespace members are mangled as `NamespaceName__NS_funcname` in the generated I
 
 ---
 
-> **Challenge:** Create a `namespace Bits` with functions `set(u32 n, i32 bit) -> u32`, `clear(u32 n, i32 bit) -> u32`, and `test(u32 n, i32 bit) -> bool`. Test all three in `main`.
+> **Challenge:** Create a `namespace Bits` with functions `fn set(n: u32, bit: i32) u32`, `fn clear(n: u32, bit: i32) u32`, and `fn test(n: u32, bit: i32) bool`. Test all three in `main`.
 
 ---
 

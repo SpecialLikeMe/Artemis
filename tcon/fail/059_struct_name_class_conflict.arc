@@ -1,4 +1,4 @@
 // FAIL: declaring both a struct and istruc with the same name
-struct Conflict { i32 x; }
-istruc Conflict { i32 y; }  // ERROR: redeclaration
-i32 main() { return 0; }
+struct Conflict { let x: i32; }
+istruc Conflict { let mut y: i32; }  // ERROR: redeclaration
+fn main() i32 { return 0; }

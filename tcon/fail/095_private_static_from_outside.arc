@@ -3,6 +3,6 @@ istruc MathHelper {
     private static i32 secret_formula(i32 x) { return x * x + 1; }
     public static i32 public_api(i32 x) { return MathHelper.secret_formula(x); }
 }
-i32 main() {
+fn main() i32 {
     return MathHelper.secret_formula(5);  // ERROR: secret_formula is private
 }

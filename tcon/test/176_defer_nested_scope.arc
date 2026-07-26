@@ -1,11 +1,11 @@
 // defer runs at scope exit; nested scopes have independent defer queues
 // Use a helper function so we can check the log after all defers have fired.
-i32 log[16];
-i32 idx = 0;
+let mut log: [16]i32;
+let mut idx: i32= 0;
 
-void record(i32 v) { log[idx] = v; idx = idx + 1; }
+fn record(v: i32) void { log[idx] = v; idx = idx + 1; }
 
-void run_test() {
+fn run_test() void {
     defer record(99);           // outermost defer in run_test scope
     {
         defer record(20);       // inner scope defer
@@ -22,7 +22,7 @@ void run_test() {
     // on return from run_test: [1, 2, 11, 3, 20, 4, 99]
 }
 
-i32 main() {
+pub fn main() i32 {
     idx = 0;
     run_test();
     // All defers have now fired

@@ -1,8 +1,8 @@
-i32 main() {
-    i32 a = 1;
-    i32 b = a << 4;
+pub fn main() i32 {
+    let mut a: i32= 1;
+    let mut b: i32= a << 4;
     if (b != 16)  { return 1; }
-    i32 c = 3 << 3;
+    let mut c: i32= 3 << 3;
     if (c != 24)  { return 2; }
     return 0;
 }

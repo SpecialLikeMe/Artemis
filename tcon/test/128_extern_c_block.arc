@@ -1,15 +1,15 @@
 // extern "C" { } exports Artemis functions with C calling convention / no mangling.
 // Plain extern decl (no "C") imports an external symbol.
-extern i32 abs(i32 x);
-extern i64 llabs(i64 x);
+@unsafe extern fn abs(x: i32) i32;
+@unsafe extern fn llabs(x: i64) i64;
 
 // These Artemis functions are exported with C ABI (no name mangling):
 extern "C" {
-    i32 arc_double(i32 x) { return x * 2; }
-    i32 arc_negate(i32 x) { return -x; }
+    fn arc_double(x: i32) i32 { return x * 2; }
+    fn arc_negate(x: i32) i32 { return -x; }
 }
 
-i32 main() {
+pub fn main() i32 {
     if (abs(-9)            != 9)   { return 1; }
     if (llabs((i64)-100)   != (i64)100) { return 2; }
     if (arc_double(5)      != 10)  { return 3; }

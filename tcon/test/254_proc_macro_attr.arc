@@ -2,25 +2,25 @@
 // The macro is a pass-through (returns input unchanged); the decorated function
 // compiles and runs normally.
 
-tokenstream* log_calls(&memstr alloc, tokenstream* input) attr {
+fn log_calls(&memstr alloc, tokenstream* input) *tokenstream attr {
     return input;
 }
 
-tokenstream* mark_pure(&memstr alloc, tokenstream* input) attr verify {
+fn mark_pure(&memstr alloc, tokenstream* input) *tokenstream attr verify {
     return input;
 }
 
 #[log_calls]
-i32 add(i32 a, i32 b) {
+fn add(a: i32, b: i32) i32 {
     return a + b;
 }
 
 #[mark_pure]
-i32 mul(i32 a, i32 b) {
+fn mul(a: i32, b: i32) i32 {
     return a * b;
 }
 
-i32 main() {
+pub fn main() i32 {
     if (add(2, 3) != 5)  { return 1; }
     if (mul(4, 5) != 20) { return 2; }
     return 0;

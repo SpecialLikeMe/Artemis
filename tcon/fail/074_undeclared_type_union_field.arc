@@ -1,3 +1,3 @@
 // FAIL: union field uses an undeclared type
-union Bad { i32 i; Ghost g; }  // ERROR: Ghost undeclared
-i32 main() { return 0; }
+union Bad { let i: i32; let g: Ghost; }  // ERROR: Ghost undeclared
+fn main() i32 { return 0; }

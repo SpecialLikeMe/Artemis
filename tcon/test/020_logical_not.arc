@@ -1,7 +1,7 @@
-i32 main() {
-    i32 a = 0;
+pub fn main() i32 {
+    let mut a: i32= 0;
     if (!(!a)) { return 1; }
-    i32 b = 5;
+    let mut b: i32= 5;
     if (!b)    { return 2; }
     if (!!a)   { return 3; }
     return 0;

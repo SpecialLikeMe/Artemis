@@ -1,12 +1,12 @@
 // SMT claim: loop with constant bounds — induction variable proven in [0, N-1], verdict=GOOD.
 // After widening: interval for i is [0, 9], array size=10 → bounds check proven GOOD.
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
-i32 main() {
-    i32 arr[10];
+pub fn main() i32 {
+    let mut arr: [10]i32;
 
     // Fill: arr[i] = i*i
-    i32 i = 0;
+    let mut i: i32= 0;
     while (i < 10) {
         arr[i] = i * i;
         i = i + 1;
@@ -19,8 +19,8 @@ i32 main() {
     if (arr[9] != 81) { printf("FAIL arr[9]=%d\n", arr[9]);  return 4; }
 
     // Sum of squares 0..9 = 285
-    i32 sum = 0;
-    i32 j = 0;
+    let mut sum: i32= 0;
+    let mut j: i32= 0;
     while (j < 10) {
         sum = sum + arr[j];
         j = j + 1;

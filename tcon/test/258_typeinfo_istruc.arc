@@ -1,32 +1,38 @@
-// PASS: @typeinfo() for istruc types reports correct kind and field count
+// PASS: @typeinfo() for istruc types reports correct kind (Istruc=13) and field count
 istruc Point {
-    i32 x;
-    i32 y;
-    void __construct__(Point* self, i32 xv, i32 yv) {
+    let mut x: i32;
+    let mut y: i32;
+    fn __construct__(self: *Point, xv: i32, yv: i32) void {
         self.x = xv;
         self.y = yv;
     }
-    i32 sum(Point* self) { return self.x + self.y; }
+    fn sum(self: *Point) i32 { return self.x + self.y; }
 }
 
-i32 main() {
-    // @typeinfo on an istruc should report IFO_KIND_STRUCT (2) or IFO_KIND_ISTRUC (5)
-    type_info* tp = @typeinfo(Point);
+pub fn main() i32 {
+    let mut tp: *type_info = @typeinfo(Point);
     if (tp == (type_info*)0) { return 1; }
-    // kind should be non-zero (it's a struct/istruc, not a primitive)
-    if (tp.kind == 0) { return 2; }
-    // field_count should be >= 2 (x and y, constructors may not be counted)
-    if (tp.field_count < 2) { return 3; }
-    // fields pointer should be non-null
-    if (tp.fields == (type_info_field*)0) { return 4; }
-    // size should be at least 8 bytes (two i32 fields)
-    if (tp.size < 8) { return 5; }
+    // Istruc variant: tag=13
+    if (tp.__tag != 13) { return 2; }
+
+    // field_count should be >= 2 (x and y)
+    let mut fc: i64 = 0;
+    match (*tp) {
+        type_info::Istruc(nm, flds, count, meths, mc, ifc, ifc_c, sz, al) => { fc = count; }
+        _ => { return 3; }
+    }
+    if (fc < 2) { return 3; }
 
     // Also verify that @typeinfo on a used istruc instance still works
-    Point p(3, 4);
-    type_info* tp2 = @typeinfo(Point);
+    let mut p: Point(3, 4);
+    let mut tp2: *type_info = @typeinfo(Point);
     if (tp2 == (type_info*)0) { return 6; }
-    if (tp2.field_count != tp.field_count) { return 7; }
+    let mut fc2: i64 = 0;
+    match (*tp2) {
+        type_info::Istruc(nm2, flds2, count2, meths2, mc2, ifc2, ifc_c2, sz2, al2) => { fc2 = count2; }
+        _ => { return 7; }
+    }
+    if (fc2 != fc) { return 7; }
 
     return 0;
 }

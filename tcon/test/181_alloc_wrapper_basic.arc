@@ -1,34 +1,34 @@
 // Custom allocator: istruc wrapping malloc/free
-extern void* malloc(u64 size);
-extern void free(void* ptr);
+@unsafe extern fn malloc(size: u64) *void;
+@unsafe extern fn free(ptr: *void) void;
 
 memstr HeapAlloc {
-    i32 count;
+    let mut count: i32;
 
-    void __construct__(HeapAlloc* self) { self.count = 0; }
+    fn __construct__(self: *HeapAlloc) void { self.count = 0; }
 
-    void* alloc(HeapAlloc* self, u64 size) {
+    fn alloc(self: *HeapAlloc, size: u64) *void {
         self.count = self.count + 1;
         return malloc(size);
     }
 
-    void dealloc(HeapAlloc* self, void* ptr) {
+    fn dealloc(self: *HeapAlloc, ptr: *void) void {
         self.count = self.count - 1;
         free(ptr);
     }
 
-    i32 outstanding(const HeapAlloc* self) { return self.count; }
+    fn outstanding(self: *const HeapAlloc) i32 { return self.count; }
 }
 
-i32 main() {
-    HeapAlloc a;
+pub fn main() i32 {
+    let mut a: HeapAlloc;
 
-    i32* p = (i32*)a.alloc(sizeof(i32) * 3);
+    let mut p: *i32= (i32*)a.alloc(sizeof(i32) * 3);
     if (p == 0) { return 1; }
     if (a.outstanding() != 1) { return 2; }
 
     p[0] = 10; p[1] = 20; p[2] = 30;
-    i32 sum = p[0] + p[1] + p[2];
+    let mut sum: i32= p[0] + p[1] + p[2];
     if (sum != 60) { return 3; }
 
     a.dealloc(p);

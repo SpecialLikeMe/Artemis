@@ -1,12 +1,12 @@
 // FAIL: top-level free function calls malloc without a &memstr allocator param.
 // Expected: compile error about heap allocation without allocator.
-extern void* malloc(u64 n);
+extern fn malloc(n: u64) *void;
 
-void* make_buffer(u64 size) {
+fn make_buffer(size: u64) *void {
     return malloc(size);  // error: no &memstr param
 }
 
-i32 main() {
-    void* p = make_buffer(64);
+fn main() i32 {
+    let mut p: *void= make_buffer(64);
     return 0;
 }

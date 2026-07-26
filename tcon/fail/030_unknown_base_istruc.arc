@@ -1,3 +1,3 @@
 // FAIL: istruc inherits from an undeclared type
-istruc Child : Ghost { i32 v; }  // ERROR: Ghost undeclared
-i32 main() { return 0; }
+istruc Child : Ghost { let mut v: i32; }  // ERROR: Ghost undeclared
+fn main() i32 { return 0; }

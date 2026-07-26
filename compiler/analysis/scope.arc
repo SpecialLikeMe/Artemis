@@ -10,35 +10,39 @@ enum sym_kind {
     sym_type     = 2,
     sym_enum     = 3,
     sym_func_ptr = 4,  // variable holding a function pointer (callable)
+    // Bound by a pattern (match arm). Its type comes from the matched variant's
+    // payload, which this pass does not model, so it must not be reported as a
+    // non-callable variable when the payload happens to be a function pointer.
+    sym_pat_bind = 5,
 }
 
 struct sym_entry {
-    i8*  name;
-    i32  kind;   // sym_kind
-    i8*  type_ptr;   // parser::type_node* as i8*
-    i32  scope_depth;
-    i32  param_count;  // for sym_func: >= 0 = exact, -1 = unknown
-    bool is_variadic;  // for sym_func: true if variadic (...)
-    bool is_nullable;  // for sym_var: true if declared as ?T
-    bool is_void_ret;  // for sym_func: true if return type is void
-    bool is_comptime;  // for sym_var: true if declared with comptime keyword
+    let name: *i8;
+    let kind: i32;   // sym_kind
+    let type_ptr: *i8;   // parser::type_node* as i8*
+    let scope_depth: i32;
+    let param_count: i32;  // for sym_func: >= 0 = exact, -1 = unknown
+    let is_variadic: bool;  // for sym_func: true if variadic (...)
+    let is_nullable: bool;  // for sym_var: true if declared as ?T
+    let is_void_ret: bool;  // for sym_func: true if return type is void
+    let is_comptime: bool;  // for sym_var: true if declared with comptime keyword
 }
 
 struct sym_table {
-    sym_entry* entries;
-    i32        len;
-    i32        cap;
+    let entries: *sym_entry;
+    let len: i32;
+    let cap: i32;
 }
 
-void sym_table_init(sym_table* t) {
+fn sym_table_init(t: *sym_table) void {
     t.entries = (sym_entry*)0;
     t.len     = 0;
     t.cap     = 0;
 }
 
-void sym_table_push(sym_table* t, sym_entry e) {
+fn sym_table_push(t: *sym_table, e: sym_entry) void {
     if (t.len >= t.cap) {
-        i32 nc = t.cap == 0 ? 32 : t.cap * 2;
+        let mut nc: i32= t.cap == 0 ? 32 : t.cap * 2;
         t.entries = (sym_entry*)arc_realloc((i8*)t.entries, sizeof(analysis__NS_sym_entry) * (u64)nc);
         t.cap = nc;
     }
@@ -48,25 +52,25 @@ void sym_table_push(sym_table* t, sym_entry e) {
 
 // ---- Struct registry ----
 struct struct_entry {
-    i8*  name;
-    i8*  decl_ptr;   // parser::struct_decl* as i8*
+    let name: *i8;
+    let decl_ptr: *i8;   // parser::struct_decl* as i8*
 }
 
 struct struct_table {
-    struct_entry* entries;
-    i32           len;
-    i32           cap;
+    let entries: *struct_entry;
+    let len: i32;
+    let cap: i32;
 }
 
-void struct_table_init(struct_table* t) {
+fn struct_table_init(t: *struct_table) void {
     t.entries = (struct_entry*)0;
     t.len     = 0;
     t.cap     = 0;
 }
 
-void struct_table_push(struct_table* t, struct_entry e) {
+fn struct_table_push(t: *struct_table, e: struct_entry) void {
     if (t.len >= t.cap) {
-        i32 nc = t.cap == 0 ? 16 : t.cap * 2;
+        let mut nc: i32= t.cap == 0 ? 16 : t.cap * 2;
         t.entries = (struct_entry*)arc_realloc((i8*)t.entries, sizeof(analysis__NS_struct_entry) * (u64)nc);
         t.cap = nc;
     }
@@ -77,24 +81,24 @@ void struct_table_push(struct_table* t, struct_entry e) {
 // ---- Scope manager ----
 
 istruc scope_manager {
-    sym_table    syms;
-    struct_table structs;
-    i32          depth;
+    let mut syms: sym_table;
+    let mut structs: struct_table;
+    let mut depth: i32;
 
-    void init(scope_manager* self) {
+    fn init(self: *scope_manager) void {
         sym_table_init(&self.syms);
         struct_table_init(&self.structs);
         self.depth = 0;
     }
 
-    void push_scope(scope_manager* self) {
+    fn push_scope(self: *scope_manager) void {
         self.depth = self.depth + 1;
     }
 
-    void pop_scope(scope_manager* self) {
+    fn pop_scope(self: *scope_manager) void {
         // Remove all entries at the current depth
-        i32 new_len = 0;
-        i32 i = 0;
+        let mut new_len: i32= 0;
+        let mut i: i32= 0;
         while (i < self.syms.len) {
             if (self.syms.entries[i].scope_depth < self.depth) {
                 self.syms.entries[new_len] = self.syms.entries[i];
@@ -106,8 +110,8 @@ istruc scope_manager {
         self.depth = self.depth - 1;
     }
 
-    void declare(scope_manager* self, i8* name, i32 kind, i8* type_ptr) {
-        sym_entry e;
+    fn declare(self: *scope_manager, name: *i8, kind: i32, type_ptr: *i8) void {
+        let mut e: sym_entry;
         e.name        = name;
         e.kind        = kind;
         e.type_ptr    = type_ptr;
@@ -120,8 +124,8 @@ istruc scope_manager {
         sym_table_push(&self.syms, e);
     }
 
-    void declare_var(scope_manager* self, i8* name, i32 kind, i8* type_ptr, bool is_nullable) {
-        sym_entry e;
+    fn declare_var(self: *scope_manager, name: *i8, kind: i32, type_ptr: *i8, is_nullable: bool) void {
+        let mut e: sym_entry;
         e.name        = name;
         e.kind        = kind;
         e.type_ptr    = type_ptr;
@@ -134,8 +138,8 @@ istruc scope_manager {
         sym_table_push(&self.syms, e);
     }
 
-    void declare_var_comptime(scope_manager* self, i8* name, i32 kind, i8* type_ptr, bool is_nullable, bool is_comptime) {
-        sym_entry e;
+    fn declare_var_comptime(self: *scope_manager, name: *i8, kind: i32, type_ptr: *i8, is_nullable: bool, is_comptime: bool) void {
+        let mut e: sym_entry;
         e.name        = name;
         e.kind        = kind;
         e.type_ptr    = type_ptr;
@@ -148,8 +152,8 @@ istruc scope_manager {
         sym_table_push(&self.syms, e);
     }
 
-    bool lookup_is_comptime(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_is_comptime(self: *scope_manager, name: *i8) bool {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].is_comptime;
@@ -159,8 +163,8 @@ istruc scope_manager {
         return false;
     }
 
-    void declare_func(scope_manager* self, i8* name, i8* type_ptr, i32 param_count, bool is_variadic) {
-        sym_entry e;
+    fn declare_func(self: *scope_manager, name: *i8, type_ptr: *i8, param_count: i32, is_variadic: bool) void {
+        let mut e: sym_entry;
         e.name        = name;
         e.kind        = (i32)sym_func;
         e.type_ptr    = type_ptr;
@@ -173,8 +177,8 @@ istruc scope_manager {
         sym_table_push(&self.syms, e);
     }
 
-    void declare_func_v(scope_manager* self, i8* name, i8* type_ptr, i32 param_count, bool is_variadic, bool is_void_ret) {
-        sym_entry e;
+    fn declare_func_v(self: *scope_manager, name: *i8, type_ptr: *i8, param_count: i32, is_variadic: bool, is_void_ret: bool) void {
+        let mut e: sym_entry;
         e.name        = name;
         e.kind        = (i32)sym_func;
         e.type_ptr    = type_ptr;
@@ -187,8 +191,8 @@ istruc scope_manager {
         sym_table_push(&self.syms, e);
     }
 
-    bool lookup_is_void_ret(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_is_void_ret(self: *scope_manager, name: *i8) bool {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].is_void_ret;
@@ -198,16 +202,16 @@ istruc scope_manager {
         return false;
     }
 
-    void declare_struct(scope_manager* self, i8* name, i8* decl_ptr) {
-        struct_entry e;
+    fn declare_struct(self: *scope_manager, name: *i8, decl_ptr: *i8) void {
+        let mut e: struct_entry;
         e.name     = name;
         e.decl_ptr = decl_ptr;
         struct_table_push(&self.structs, e);
     }
 
     // Lookup: search from innermost scope outward
-    i8* lookup(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup(self: *scope_manager, name: *i8) *i8 {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].type_ptr;
@@ -218,8 +222,8 @@ istruc scope_manager {
     }
 
     // Returns true if the name exists in ANY scope (regardless of type_ptr value)
-    bool exists(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn exists(self: *scope_manager, name: *i8) bool {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return true;
@@ -230,8 +234,8 @@ istruc scope_manager {
     }
 
     // Lookup only at the current scope depth (for duplicate-in-same-scope detection)
-    bool lookup_at_depth(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_at_depth(self: *scope_manager, name: *i8) bool {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (self.syms.entries[i].scope_depth == self.depth &&
                 strcmp(self.syms.entries[i].name, name) == 0) {
@@ -242,8 +246,8 @@ istruc scope_manager {
         return false;
     }
 
-    i32 lookup_kind(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_kind(self: *scope_manager, name: *i8) i32 {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].kind;
@@ -253,8 +257,8 @@ istruc scope_manager {
         return -1;
     }
 
-    i32 lookup_param_count(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_param_count(self: *scope_manager, name: *i8) i32 {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].param_count;
@@ -264,8 +268,8 @@ istruc scope_manager {
         return -1;
     }
 
-    bool lookup_is_variadic(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_is_variadic(self: *scope_manager, name: *i8) bool {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].is_variadic;
@@ -275,8 +279,8 @@ istruc scope_manager {
         return false;
     }
 
-    bool lookup_is_nullable(scope_manager* self, i8* name) {
-        i32 i = self.syms.len - 1;
+    fn lookup_is_nullable(self: *scope_manager, name: *i8) bool {
+        let mut i: i32= self.syms.len - 1;
         while (i >= 0) {
             if (strcmp(self.syms.entries[i].name, name) == 0) {
                 return self.syms.entries[i].is_nullable;
@@ -286,8 +290,8 @@ istruc scope_manager {
         return false;
     }
 
-    i8* lookup_struct(scope_manager* self, i8* name) {
-        i32 i = self.structs.len - 1;
+    fn lookup_struct(self: *scope_manager, name: *i8) *i8 {
+        let mut i: i32= self.structs.len - 1;
         while (i >= 0) {
             if (strcmp(self.structs.entries[i].name, name) == 0) {
                 return self.structs.entries[i].decl_ptr;

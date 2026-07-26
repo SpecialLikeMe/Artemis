@@ -3,5 +3,5 @@ istruc Shape {
     protected i32 area_cache;
     public void __construct__(Shape* self) { self.area_cache = 0; }
 }
-i32 get_cache(Shape* s) { return s->area_cache; }  // ERROR: area_cache is protected
-i32 main() { return 0; }
+fn get_cache(s: *Shape) i32 { return s->area_cache; }  // ERROR: area_cache is protected
+fn main() i32 { return 0; }

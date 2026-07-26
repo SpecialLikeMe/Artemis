@@ -5,11 +5,11 @@ Functions and istrucs can be parameterised over types using `<T>` syntax.
 ## Generic Functions
 
 ```arc
-T max<T>(T a, T b) { return a > b ? a : b; }
+fn max<T>(a: T, b: T) T { return a > b ? a : b; }
 
-i32 main() {
-    i32 x = max<i32>(3, 7);     // 7
-    f64 y = max<f64>(1.5, 2.5); // 2.5
+pub fn main() i32 {
+    let x: i32 = max<i32>(3, 7);      // 7
+    let y: f64 = max<f64>(1.5, 2.5);  // 2.5
     return 0;
 }
 ```
@@ -18,28 +18,28 @@ i32 main() {
 
 ```arc
 istruc Stack<T> {
-    T   data[64];
-    i32 top;
+    let mut data: [64]T;
+    let mut top: i32;
 
-    void __construct__(Stack* self) { self.top = 0; }
+    fn __construct__(self: *Stack) void { self.top = 0; }
 
-    void push(Stack* self, T val) {
+    fn push(self: *Stack, val: T) void {
         self.data[self.top] = val;
         self.top = self.top + 1;
     }
 
-    T pop(Stack* self) {
+    fn pop(self: *Stack) T {
         self.top = self.top - 1;
         return self.data[self.top];
     }
 
-    bool empty(Stack* self) { return self.top == 0; }
+    fn empty(self: *Stack) bool { return self.top == 0; }
 }
 
-i32 main() {
-    Stack<i32> s;
+pub fn main() i32 {
+    let mut s: Stack<i32>();
     s.push(1); s.push(2); s.push(3);
-    i32 x = s.pop();   // 3
+    let x: i32 = s.pop();   // 3
     return 0;
 }
 ```
@@ -48,7 +48,7 @@ i32 main() {
 
 Type parameters are resolved at compile time. Each distinct instantiation (`Stack<i32>`, `Stack<f64>`, etc.) produces a separate set of compiled functions. There is no runtime type erasure.
 
-> **Challenge:** Write a generic `Pair<A, B>` istruc with fields `first` and `second`. Add a method `void swap(Pair* self)` that exchanges the two values (same type only — use `Pair<T, T>`).
+> **Challenge:** Write a generic `Pair<A, B>` istruc with fields `first` and `second`. Add a method `fn swap(self: *Pair) void` that exchanges the two values (same type only — use `Pair<T, T>`).
 
 ---
 
@@ -65,14 +65,14 @@ Generic code works best with a single type parameter `T`. Multiple type paramete
 ```arc
 // Preferred: single type param
 istruc Option<T> {
-    T   value;
-    b8  has_value;
+    let mut value: T;
+    let mut has_value: b8;
 }
 
 // More complex — consider whether composition is cleaner
 istruc Pair<A, B> {
-    A first;
-    B second;
+    let mut first: A;
+    let mut second: B;
 }
 ```
 
@@ -82,8 +82,8 @@ Artemis generics are unconstrained — any type can be substituted. Document ass
 
 ```arc
 // Requires: T is trivially copyable (no internal pointers).
-void swap<T>(T* a, T* b) {
-    T tmp = (*a);
+fn swap<T>(a: *T, b: *T) void {
+    let tmp: T = (*a);
     (*a) = (*b);
     (*b) = tmp;
 }
@@ -96,12 +96,12 @@ This makes monomorphization failures easier to diagnose.
 Deep generic instantiation can cause exponential compile-time growth. The informal limit is three levels:
 
 ```
-vector<T>               // Level 1
-map<K, vector<V>>       // Level 2
+vector<T>                      // Level 1
+map<K, vector<V>>              // Level 2
 cache<Key, map<K, vector<V>>>  // Level 3 — maximum recommended
 ```
 
-Beyond three levels, consider erasing the inner type to `void*` and casting at the boundary.
+Beyond three levels, consider erasing the inner type to `*void` and casting at the boundary.
 
 | Convention | Rule | Rationale |
 |------------|------|-----------|

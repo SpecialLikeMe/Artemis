@@ -1,26 +1,26 @@
 // Test: std.debug — std.debug.poison/std.debug.is_poisoned, std.debug.assert (non-panic path), std.debug.null_check
-extern std.debug;
-extern void* malloc(u64 n);
-extern void  free(void* p);
-extern i32   printf(i8* fmt, ...);
+extern  std.debug;
+@unsafe extern fn malloc(n: u64) *void;
+@unsafe extern fn free(p: *void) void;
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 memstr SysAlloc {
-    void* mmap(SysAlloc* self, u64 n)         { return malloc(n); }
-    void  rmap(SysAlloc* self, void* p, u64 n) { free(p); }
+    fn mmap(self: *SysAlloc, n: u64) *void         { return malloc(n); }
+    fn rmap(self: *SysAlloc, p: *void, n: u64) void { free(p); }
 }
 
 // Zero a byte buffer — kept in a helper to avoid the pre-existing
 // memstr-instance + loop-in-same-function IR crash.
-void zero_buf(u8* b, i32 n) {
-    i32 i = 0;
+fn zero_buf(b: *u8, n: i32) void {
+    let mut i: i32= 0;
     while (i < n) { b[i] = 0; i = i + 1; }
 }
 
-i32 main() {
-    SysAlloc sa;
+pub fn main() i32 {
+    let mut sa: SysAlloc;
 
     // std.debug.poison fills memory with a pattern
-    void* p = sa.mmap((u64)16);
+    let mut p: *void= sa.mmap((u64)16);
     if (p == (void*)0) { return 1; }
     std.debug.poison(p, (u64)16);
     if (!std.debug.is_poisoned(p, (u64)16)) {
@@ -43,7 +43,7 @@ i32 main() {
     std.debug.assert(true, "should not panic");
 
     // std.debug.null_check with non-null pointer is a no-op
-    void* q = sa.mmap((u64)1);
+    let mut q: *void= sa.mmap((u64)1);
     std.debug.null_check(q, "017_debug");
     sa.rmap(q, (u64)1);
 

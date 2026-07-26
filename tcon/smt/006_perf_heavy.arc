@@ -19,17 +19,17 @@
 //
 // If overhead were significant the test harness would time out.
 // If any check fires spuriously the process aborts and the test fails.
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 // UNKNOWN x N²: looped 3×3 matrix multiply — every index is a loop variable.
 // Worst-case SMT: 3 nested loops × 3 multiplies × 2 reads + 1 write = many checks.
-void matmul(i32* A, i32* B, i32* C, i32 n) {
-    i32 i = 0;
+fn matmul(A: *i32, B: *i32, C: *i32, n: i32) void {
+    let mut i: i32= 0;
     while (i < n) {
-        i32 j = 0;
+        let mut j: i32= 0;
         while (j < n) {
-            i32 s = 0;
-            i32 k = 0;
+            let mut s: i32= 0;
+            let mut k: i32= 0;
             while (k < n) {
                 s = s + A[i*n+k] * B[k*n+j];   // UNKNOWN: every subscript dynamic
                 k = k + 1;
@@ -42,28 +42,28 @@ void matmul(i32* A, i32* B, i32* C, i32 n) {
 }
 
 // UNKNOWN x N: dot product — both reads dynamic every iteration.
-i32 dot(i32* a, i32* b, i32 n) {
-    i32 s = 0; i32 i = 0;
+fn dot(a: *i32, b: *i32, n: i32) i32 {
+    let mut s: i32= 0; let mut i: i32= 0;
     while (i < n) { s = s + a[i]*b[i]; i = i + 1; }   // UNKNOWN x 2 per iter
     return s;
 }
 
 // UNKNOWN x N: sum — dynamic read every iteration.
-i32 vsum(i32* a, i32 n) {
-    i32 s = 0; i32 i = 0;
+fn vsum(a: *i32, n: i32) i32 {
+    let mut s: i32= 0; let mut i: i32= 0;
     while (i < n) { s = s + a[i]; i = i + 1; }         // UNKNOWN x 1 per iter
     return s;
 }
 
 // UNKNOWN x N: saxpy — a[i] = a[i] + scalar * b[i], all dynamic.
-void saxpy(i32* a, i32 scalar, i32* b, i32 n) {
-    i32 i = 0;
+fn saxpy(a: *i32, scalar: i32, b: *i32, n: i32) void {
+    let mut i: i32= 0;
     while (i < n) { a[i] = a[i] + scalar*b[i]; i = i + 1; }  // UNKNOWN x 3 per iter
 }
 
 // UNKNOWN x N: prefix sum — each write and read indexed by loop variable.
-void prefix_sum(i32* src, i32* dst, i32 n) {
-    i32 i = 0;
+fn prefix_sum(src: *i32, dst: *i32, n: i32) void {
+    let mut i: i32= 0;
     dst[i] = src[i];   // UNKNOWN
     i = i + 1;
     while (i < n) {
@@ -72,9 +72,9 @@ void prefix_sum(i32* src, i32* dst, i32 n) {
     }
 }
 
-i32 main() {
+pub fn main() i32 {
     // matmul: 3×3 worst-case — 3³×5 = 135 UNKNOWN checks per call
-    i32 A[9]; i32 B[9]; i32 C[9];
+    let mut A: [9]i32; let mut B: [9]i32; let mut C: [9]i32;
     A[0]=1; A[1]=2; A[2]=0;
     A[3]=3; A[4]=4; A[5]=0;
     A[6]=0; A[7]=0; A[8]=1;
@@ -88,27 +88,27 @@ i32 main() {
     if (C[8]!=1)             { printf("FAIL matmul c22=%d\n",C[8]); return 3; }
 
     // identity × M = M
-    i32 I[9];
+    let mut I: [9]i32;
     I[0]=1; I[1]=0; I[2]=0;
     I[3]=0; I[4]=1; I[5]=0;
     I[6]=0; I[7]=0; I[8]=1;
-    i32 M[9];
+    let mut M: [9]i32;
     M[0]=2; M[1]=3; M[2]=4;
     M[3]=5; M[4]=6; M[5]=7;
     M[6]=8; M[7]=9; M[8]=10;
-    i32 R[9];
+    let mut R: [9]i32;
     matmul(I, M, R, 3);
     if (R[0]!=2||R[1]!=3||R[2]!=4) { printf("FAIL I*M row0\n"); return 4; }
     if (R[3]!=5||R[4]!=6||R[5]!=7) { printf("FAIL I*M row1\n"); return 5; }
     if (R[6]!=8||R[7]!=9||R[8]!=10){ printf("FAIL I*M row2\n"); return 6; }
 
     // dot product — 2 UNKNOWN checks per element, all safe
-    i32 v[4]; v[0]=1; v[1]=2; v[2]=3; v[3]=4;
+    let mut v: [4]i32; v[0]=1; v[1]=2; v[2]=3; v[3]=4;
     if (dot(v, v, 4) != 30) { printf("FAIL dot4\n"); return 7; }  // 1+4+9+16
     if (dot(v, v, 3) != 14) { printf("FAIL dot3\n"); return 8; }  // 1+4+9
 
     // vsum — 1 UNKNOWN check per element, all safe
-    i32 data[8];
+    let mut data: [8]i32;
     data[0]=1; data[1]=2; data[2]=3; data[3]=4;
     data[4]=5; data[5]=6; data[6]=7; data[7]=8;
     if (vsum(data, 8) != 36) { printf("FAIL vsum8\n"); return 9; }
@@ -122,8 +122,8 @@ i32 main() {
     }
 
     // prefix sum — 2 UNKNOWN checks per element (dst[i-1] + src[i] → write dst[i])
-    i32 src[5]; src[0]=1; src[1]=2; src[2]=3; src[3]=4; src[4]=5;
-    i32 dst[5];
+    let mut src: [5]i32; src[0]=1; src[1]=2; src[2]=3; src[3]=4; src[4]=5;
+    let mut dst: [5]i32;
     prefix_sum(src, dst, 5);
     if (dst[0]!=1||dst[1]!=3||dst[2]!=6||dst[3]!=10||dst[4]!=15) {
         printf("FAIL prefix_sum %d %d %d %d %d\n",dst[0],dst[1],dst[2],dst[3],dst[4]);

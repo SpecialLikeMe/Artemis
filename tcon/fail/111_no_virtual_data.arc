@@ -3,13 +3,13 @@ istruc Base {
     virtual i32 tag;
 }
 istruc Child : Base {
-    i32 tag;
-    void __construct__(Child* self, i32 t) { self.tag = t; }
-    i32 get(const Child* self) { return self.tag; }
+    let mut tag: i32;
+    fn __construct__(self: *Child, t: i32) void { self.tag = t; }
+    fn get(self: *const Child) i32 { return self.tag; }
 }
 
-i32 main() {
-    Child c(42);
+fn main() i32 {
+    fn c(42) Child;
     if (c.get() != 42) { return 1; }
     if (c.tag   != 42) { return 2; }
     return 0;

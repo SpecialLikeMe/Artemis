@@ -1,19 +1,19 @@
-i32 log[8];
-i32 log_idx = 0;
+let mut log: [8]i32;
+let mut log_idx: i32= 0;
 
-void push(i32 v) {
+fn push(v: i32) void {
     log[log_idx] = v;
     log_idx = log_idx + 1;
 }
 
-void inner() {
+fn inner() void {
     defer push(10);
     defer push(11);
     push(1);
     push(2);
 }
 
-i32 with_return(i32 x) {
+fn with_return(x: i32) i32 {
     defer push(99);
     if (x > 0) {
         defer push(88);
@@ -24,7 +24,7 @@ i32 with_return(i32 x) {
     return 0;
 }
 
-i32 main() {
+pub fn main() i32 {
     inner();
     if (log[0] != 1)  { return 1; }
     if (log[1] != 2)  { return 2; }

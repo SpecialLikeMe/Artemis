@@ -1,8 +1,8 @@
 istruc Box<T> {
-    T value;
+    let mut value: T;
 }
-i32 main() {
-    Box<i32> b;
+pub fn main() i32 {
+    let mut b: Box<i32>;
     b.value = 77;
     if (b.value != 77) { return 1; }
     return 0;

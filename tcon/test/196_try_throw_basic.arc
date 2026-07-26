@@ -1,13 +1,13 @@
 // Test basic error-union: function returns error, caught with except
-auto maybe_divide(i32 a, i32 b) !i32 {
+fn maybe_divide(a: i32, b: i32) !i32 {
     if (b == 0) {
         return error.DivByZero;
     }
     return a / b;
 }
 
-i32 main() {
-    i32 err_fired = 0;
+pub fn main() i32 {
+    let mut err_fired: i32= 0;
 
     // This call fails: handler should fire
     maybe_divide(10, 0) catch |e| {

@@ -1,14 +1,14 @@
 @ifndef RELEASE
 
-i32 mode() { return 1; }
+fn mode() i32 { return 1; }
 
 @else
 
-i32 mode() { return 0; }
+fn mode() i32 { return 0; }
 
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (mode() != 1) { return 1; }
     return 0;
 }

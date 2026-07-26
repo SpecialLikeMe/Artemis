@@ -1,6 +1,6 @@
-i32 main() {
-    i32 r = 0;
-    for (i32 i = 0; i < 3; i++) {
+pub fn main() i32 {
+    let mut r: i32= 0;
+    for (let mut i: i32 = 0; i < 3; i++) {
         switch (i) {
             case 0: r = r + 1; break;
             case 1: r = r + 10; break;

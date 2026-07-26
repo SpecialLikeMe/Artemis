@@ -1,14 +1,14 @@
 @define <A> <>
 
 @ifdef A
-i32 which() { return 1; }
+fn which() i32 { return 1; }
 @elifndef B
-i32 which() { return 2; }
+fn which() i32 { return 2; }
 @else
-i32 which() { return 3; }
+fn which() i32 { return 3; }
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (which() != 1) { return 1; }
     return 0;
 }

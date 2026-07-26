@@ -1,7 +1,7 @@
 // FAIL: calling __construct__ on an implicitly-constructed variable
-istruc Box { i32 v; void __construct__(Box* self, i32 x) { self.v = x; } }
-i32 main() {
-    Box b(10);
+istruc Box { let mut v: i32; fn __construct__(self: *Box, x: i32) void { self.v = x; } }
+fn main() i32 {
+    fn b(10) Box;
     b.__construct__(20);  // ERROR: b was not declared comptime
     return b.v;
 }

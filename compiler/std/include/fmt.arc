@@ -1,101 +1,121 @@
 // std.fmt — Full I/O and formatting library.
 // Access as: std.fmt.out_print(...), std.fmt.str_len(...), etc.
 
-extern i32    printf(i8* fmt, ...);
-extern i32    fprintf(void* stream, i8* fmt, ...);
-extern i32    sprintf(i8* buf, i8* fmt, ...);
-extern i32    snprintf(i8* buf, u64 n, i8* fmt, ...);
-extern i32    scanf(i8* fmt, ...);
-extern i32    sscanf(i8* buf, i8* fmt, ...);
-extern i32    fscanf(void* stream, i8* fmt, ...);
-extern i32    puts(i8* s);
-extern i32    putchar(i32 c);
-extern i32    getchar();
-extern i32    fflush(void* stream);
-extern void*  fopen(i8* path, i8* mode);
-extern i32    fclose(void* fp);
-extern u64    fread(void* buf, u64 sz, u64 n, void* fp);
-extern u64    fwrite(void* buf, u64 sz, u64 n, void* fp);
-extern i32    fseek(void* fp, i64 off, i32 whence);
-extern i64    ftell(void* fp);
-extern i32    feof(void* fp);
-extern i32    ferror(void* fp);
-extern i32    _write(i32 fd, void* buf, u32 n);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
+@unsafe extern fn fprintf(stream: *void, fmt: *i8, ...) i32;
+@unsafe extern fn sprintf(buf: *i8, fmt: *i8, ...) i32;
+@unsafe extern fn snprintf(buf: *i8, n: u64, fmt: *i8, ...) i32;
+@unsafe extern fn scanf(fmt: *i8, ...) i32;
+@unsafe extern fn sscanf(buf: *i8, fmt: *i8, ...) i32;
+@unsafe extern fn fscanf(stream: *void, fmt: *i8, ...) i32;
+@unsafe extern fn puts(s: *i8) i32;
+@unsafe extern fn putchar(c: i32) i32;
+@unsafe extern fn getchar() i32;
+@unsafe extern fn fflush(stream: *void) i32;
+@unsafe extern fn fopen(path: *i8, mode: *i8) *void;
+@unsafe extern fn fclose(fp: *void) i32;
+@unsafe extern fn fread(buf: *void, sz: u64, n: u64, fp: *void) u64;
+@unsafe extern fn fwrite(buf: *void, sz: u64, n: u64, fp: *void) u64;
+@unsafe extern fn fseek(fp: *void, off: i64, whence: i32) i32;
+@unsafe extern fn ftell(fp: *void) i64;
+@unsafe extern fn feof(fp: *void) i32;
+@unsafe extern fn ferror(fp: *void) i32;
+// Standard streams. On POSIX these are real extern globals; the Windows CRT has no
+// such symbols — `stderr`/`stdout` are macros over __acrt_iob_func(), so an extern
+// global reference fails to link. Select the right accessor per platform.
+@ifdef _WIN32
+@unsafe extern fn __acrt_iob_func(index: u32) *void;
+@else
+@unsafe extern let stderr: *void;
+@unsafe extern let stdout: *void;
+@endif
 
 // --- stdout output ---
 
 namespace std {
 namespace fmt {
-void out_print(i8* s) {
-    i32 i = 0;
+
+// FILE* for the standard streams, resolved per platform.
+fn stream_out() *void {
+@ifdef _WIN32
+    return __acrt_iob_func(1u);
+@else
+    return stdout;
+@endif
+}
+fn stream_err() *void {
+@ifdef _WIN32
+    return __acrt_iob_func(2u);
+@else
+    return stderr;
+@endif
+}
+fn out_print(s: *i8) void {
+    let mut i: i32= 0;
     while (s[i] != 0) { putchar((i32)s[i]); i = i + 1; }
 }
 
-void out_println(i8* s) {
-    i32 i = 0;
+fn out_println(s: *i8) void {
+    let mut i: i32= 0;
     while (s[i] != 0) { putchar((i32)s[i]); i = i + 1; }
     putchar(10);
 }
 
-void out_print_i32(i32 v)  { printf("%d", v); }
-void out_print_i64(i64 v)  { printf("%lld", v); }
-void out_print_u32(u32 v)  { printf("%u", v); }
-void out_print_u64(u64 v)  { printf("%llu", v); }
-void out_print_f32(f32 v)  { printf("%f", (f64)v); }
-void out_print_f64(f64 v)  { printf("%f", v); }
-void out_print_bool(bool b){ puts(b ? "true" : "false"); }
-void out_print_char(i8 c)  { putchar((i32)c); }
-void out_print_hex(u64 v)  { printf("0x%llx", v); }
-void out_print_ptr(void* p){ printf("%p", p); }
-void out_flush()           { fflush((void*)0); }
+fn out_print_i32(v: i32) void  { printf("%d", v); }
+fn out_print_i64(v: i64) void  { printf("%lld", v); }
+fn out_print_u32(v: u32) void  { printf("%u", v); }
+fn out_print_u64(v: u64) void  { printf("%llu", v); }
+fn out_print_f32(v: f32) void  { printf("%f", (f64)v); }
+fn out_print_f64(v: f64) void  { printf("%f", v); }
+fn out_print_bool(b: bool) void{ puts(b ? "true" : "false"); }
+fn out_print_char(c: i8) void  { putchar((i32)c); }
+fn out_print_hex(v: u64) void  { printf("0x%llx", v); }
+fn out_print_ptr(p: *void) void{ printf("%p", p); }
+fn out_flush() void           { fflush(stream_out()); }
 
 // --- stderr output (fd 2) ---
 
-void err_print(i8* s) {
-    i32 i = 0;
-    while (s[i] != 0) { i = i + 1; }
-    _write(2, (void*)s, (u32)i);
+fn err_print(s: *i8) void {
+    fprintf(stream_err(), "%s", s);
 }
-void err_println(i8* s) {
-    err_print(s);
-    i8 nl = 10;
-    _write(2, (void*)(&nl), (u32)1);
+fn err_println(s: *i8) void {
+    fprintf(stream_err(), "%s\n", s);
 }
-void err_print_i32(i32 v)  { printf("%d", v); }
-void err_flush()           { fflush((void*)0); }
+fn err_print_i32(v: i32) void  { fprintf(stream_err(), "%d", v); }
+fn err_flush() void           { fflush(stream_err()); }
 
 // --- buffer formatting ---
 
-i32 fmt_i32(i8* buf, u64 cap, i32 v)  { return snprintf(buf, cap, "%d", v); }
-i32 fmt_i64(i8* buf, u64 cap, i64 v)  { return snprintf(buf, cap, "%lld", v); }
-i32 fmt_u32(i8* buf, u64 cap, u32 v)  { return snprintf(buf, cap, "%u", v); }
-i32 fmt_u64(i8* buf, u64 cap, u64 v)  { return snprintf(buf, cap, "%llu", v); }
-i32 fmt_f64(i8* buf, u64 cap, f64 v)  { return snprintf(buf, cap, "%f", v); }
-i32 fmt_hex(i8* buf, u64 cap, u64 v)  { return snprintf(buf, cap, "0x%llx", v); }
-i32 fmt_ptr(i8* buf, u64 cap, void* p){ return snprintf(buf, cap, "%p", p); }
+fn fmt_i32(buf: *i8, cap: u64, v: i32) i32  { return snprintf(buf, cap, "%d", v); }
+fn fmt_i64(buf: *i8, cap: u64, v: i64) i32  { return snprintf(buf, cap, "%lld", v); }
+fn fmt_u32(buf: *i8, cap: u64, v: u32) i32  { return snprintf(buf, cap, "%u", v); }
+fn fmt_u64(buf: *i8, cap: u64, v: u64) i32  { return snprintf(buf, cap, "%llu", v); }
+fn fmt_f64(buf: *i8, cap: u64, v: f64) i32  { return snprintf(buf, cap, "%f", v); }
+fn fmt_hex(buf: *i8, cap: u64, v: u64) i32  { return snprintf(buf, cap, "0x%llx", v); }
+fn fmt_ptr(buf: *i8, cap: u64, p: *void) i32{ return snprintf(buf, cap, "%p", p); }
 
 // --- file I/O ---
 
-void* file_open(i8* path, i8* mode)          { return fopen(path, mode); }
-i32   file_close(void* fp)                    { return fclose(fp); }
-u64   file_read_bytes(void* fp, void* buf, u64 n)  { return fread(buf, (u64)1, n, fp); }
-u64   file_write_bytes(void* fp, void* buf, u64 n) { return fwrite(buf, (u64)1, n, fp); }
-bool  file_at_eof(void* fp)                   { return feof(fp) != 0; }
-bool  file_has_error(void* fp)                { return ferror(fp) != 0; }
-void  file_seek_start(void* fp, i64 off)      { fseek(fp, off, 0); }
-void  file_seek_cur(void* fp, i64 off)        { fseek(fp, off, 1); }
-void  file_seek_end(void* fp, i64 off)        { fseek(fp, off, 2); }
-i64   file_tell(void* fp)                     { return ftell(fp); }
-void  file_flush(void* fp)                    { fflush(fp); }
+fn file_open(path: *i8, mode: *i8) *void          { return fopen(path, mode); }
+fn file_close(fp: *void) i32                    { return fclose(fp); }
+fn file_read_bytes(fp: *void, buf: *void, n: u64) u64  { return fread(buf, (u64)1, n, fp); }
+fn file_write_bytes(fp: *void, buf: *void, n: u64) u64 { return fwrite(buf, (u64)1, n, fp); }
+fn file_at_eof(fp: *void) bool                   { return feof(fp) != 0; }
+fn file_has_error(fp: *void) bool                { return ferror(fp) != 0; }
+fn file_seek_start(fp: *void, off: i64) void      { fseek(fp, off, 0); }
+fn file_seek_cur(fp: *void, off: i64) void        { fseek(fp, off, 1); }
+fn file_seek_end(fp: *void, off: i64) void        { fseek(fp, off, 2); }
+fn file_tell(fp: *void) i64                     { return ftell(fp); }
+fn file_flush(fp: *void) void                    { fflush(fp); }
 
-i64 file_read_all(i8* path, i8* buf, u64 cap) {
-    void* fp = fopen(path, "rb");
+fn file_read_all(path: *i8, buf: *i8, cap: u64) i64 {
+    let mut fp: *void= fopen(path, "rb");
     if (fp == (void*)0) { return -1; }
     fseek(fp, (i64)0, 2);
-    i64 sz = ftell(fp);
+    let mut sz: i64= ftell(fp);
     fseek(fp, (i64)0, 0);
     if (sz < 0 || (u64)sz >= cap) { fclose(fp); return -1; }
-    u64 n = fread(buf, (u64)1, (u64)sz, fp);
+    let mut n: u64= fread(buf, (u64)1, (u64)sz, fp);
     buf[n] = 0;
     fclose(fp);
     return (i64)n;
@@ -103,68 +123,68 @@ i64 file_read_all(i8* path, i8* buf, u64 cap) {
 
 // --- string operations ---
 
-i32 str_len(i8* s) {
-    i32 n = 0;
+fn str_len(s: *i8) i32 {
+    let mut n: i32= 0;
     while (s[n] != 0) { n = n + 1; }
     return n;
 }
 
-bool str_eq(i8* a, i8* b) {
-    i32 i = 0;
+fn str_eq(a: *i8, b: *i8) bool {
+    let mut i: i32= 0;
     while (a[i] != 0 && b[i] != 0) { if (a[i] != b[i]) { return false; } i = i + 1; }
     return a[i] == b[i];
 }
 
-void str_copy(i8* dst, i8* src, u64 cap) {
-    u64 i = 0;
+fn str_copy(dst: *i8, src: *i8, cap: u64) void {
+    let mut i: u64= 0;
     while (src[i] != 0 && i + 1 < cap) { dst[i] = src[i]; i = i + 1; }
     dst[i] = 0;
 }
 
-void str_append(i8* dst, i8* src, u64 cap) {
-    i32 dl = 0; while (dst[dl] != 0) { dl = dl + 1; }
-    i32 i  = 0;
+fn str_append(dst: *i8, src: *i8, cap: u64) void {
+    let mut dl: i32= 0; while (dst[dl] != 0) { dl = dl + 1; }
+    let mut i: i32= 0;
     while (src[i] != 0 && (u64)(dl + i + 1) < cap) { dst[dl + i] = src[i]; i = i + 1; }
     dst[dl + i] = 0;
 }
 
-bool str_starts_with(i8* s, i8* prefix) {
-    i32 i = 0;
+fn str_starts_with(s: *i8, prefix: *i8) bool {
+    let mut i: i32= 0;
     while (prefix[i] != 0) { if (s[i] != prefix[i]) { return false; } i = i + 1; }
     return true;
 }
 
-bool str_ends_with(i8* s, i8* suffix) {
-    i32 sl = 0; while (s[sl] != 0) { sl = sl + 1; }
-    i32 xl = 0; while (suffix[xl] != 0) { xl = xl + 1; }
+fn str_ends_with(s: *i8, suffix: *i8) bool {
+    let mut sl: i32= 0; while (s[sl] != 0) { sl = sl + 1; }
+    let mut xl: i32= 0; while (suffix[xl] != 0) { xl = xl + 1; }
     if (xl > sl) { return false; }
-    i32 off = sl - xl;
-    for (i32 i = 0; i < xl; i = i + 1) { if (s[off+i] != suffix[i]) { return false; } }
+    let mut off: i32= sl - xl;
+    for (let mut i: i32 = 0; i < xl; i = i + 1) { if (s[off+i] != suffix[i]) { return false; } }
     return true;
 }
 
-i32 str_find(i8* haystack, i8* needle) {
-    i32 hl = 0; while (haystack[hl] != 0) { hl = hl + 1; }
-    i32 nl = 0; while (needle[nl] != 0) { nl = nl + 1; }
-    for (i32 i = 0; i <= hl - nl; i = i + 1) {
-        bool match = true;
-        for (i32 j = 0; j < nl; j = j + 1) {
-            if (haystack[i+j] != needle[j]) { match = false; break; }
+fn str_find(haystack: *i8, needle: *i8) i32 {
+    let mut hl: i32= 0; while (haystack[hl] != 0) { hl = hl + 1; }
+    let mut nl: i32= 0; while (needle[nl] != 0) { nl = nl + 1; }
+    for (let mut i: i32 = 0; i <= hl - nl; i = i + 1) {
+        let mut found: bool= true;
+        for (let mut j: i32 = 0; j < nl; j = j + 1) {
+            if (haystack[i+j] != needle[j]) { found = false; break; }
         }
-        if (match) { return i; }
+        if (found) { return i; }
     }
     return -1;
 }
 
-i32 str_to_i32(i8* s) {
-    i32 val = 0; i32 sign = 1; i32 i = 0;
+fn str_to_i32(s: *i8) i32 {
+    let mut val: i32= 0; let mut sign: i32= 1; let mut i: i32= 0;
     if (s[0] == '-') { sign = -1; i = 1; }
     while (s[i] >= '0' && s[i] <= '9') { val = val * 10 + (i32)(s[i] - '0'); i = i + 1; }
     return sign * val;
 }
 
-i64 str_to_i64(i8* s) {
-    i64 val = 0; i64 sign = 1; i32 i = 0;
+fn str_to_i64(s: *i8) i64 {
+    let mut val: i64= 0; let mut sign: i64= 1; let mut i: i32= 0;
     if (s[0] == '-') { sign = -1; i = 1; }
     while (s[i] >= '0' && s[i] <= '9') { val = val * 10 + (i64)(s[i] - '0'); i = i + 1; }
     return sign * val;

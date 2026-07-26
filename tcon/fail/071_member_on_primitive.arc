@@ -1,6 +1,6 @@
 // FAIL: member access on a primitive type
-i32 main() {
-    i32 x = 5;
-    i32 y = x.value;  // ERROR: i32 has no members
+fn main() i32 {
+    let mut x: i32= 5;
+    let mut y: i32= x.value;  // ERROR: i32 has no members
     return y;
 }

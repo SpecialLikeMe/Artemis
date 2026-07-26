@@ -1,8 +1,8 @@
-i32 main() {
-    i32 arr[5];
-    for (i32 i = 0; i < 5; i++) { arr[i] = i * 2; }
+pub fn main() i32 {
+    let mut arr: [5]i32;
+    for (let mut i: i32 = 0; i < 5; i++) { arr[i] = i * 2; }
 
-    i32* p = arr;
+    let mut p: *i32= arr;
     if (*p != 0)       { return 1; }
     p = p + 1;
     if (*p != 2)       { return 2; }

@@ -3,5 +3,5 @@ istruc Hidden {
     private i32 key;
     public void __construct__(Hidden* self, i32 k) { self.key = k; }
 }
-i32 extract(Hidden* h) { return h->key; }  // ERROR: key is private
-i32 main() { return 0; }
+fn extract(h: *Hidden) i32 { return h->key; }  // ERROR: key is private
+fn main() i32 { return 0; }

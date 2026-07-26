@@ -1,13 +1,13 @@
 istruc Point {
-    i32 x;
-    i32 y;
-    void __construct__(Point* self, i32 a, i32 b) { self.x = a; self.y = b; }
-    i32 sum(const Point* self) { return self.x + self.y; }
+    let mut x: i32;
+    let mut y: i32;
+    fn __construct__(self: *Point, a: i32, b: i32) void { self.x = a; self.y = b; }
+    fn sum(self: *const Point) i32 { return self.x + self.y; }
 }
-i32 main() {
-    Point p(3, 4);
+pub fn main() i32 {
+    let mut p: Point(3, 4);
     if (p.sum() != 7) { return 1; }
-    Point q(10, 20);
+    let mut q: Point(10, 20);
     if (q.sum() != 30) { return 2; }
     return 0;
 }

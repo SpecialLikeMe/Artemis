@@ -2,14 +2,14 @@
 
 #[derive(Clone)]
 istruc Rect {
-    i32 w;
-    i32 h;
+    let mut w: i32;
+    let mut h: i32;
 }
 
-i32 main() {
-    Rect r;
+pub fn main() i32 {
+    let mut r: Rect;
     r.w = 10;
     r.h = 20;
-    Rect r2 = __derive_Clone_Rect(&r);
+    let mut r2: Rect= __derive_Clone_Rect(&r);
     return r2.w - 10;  // expect 0
 }

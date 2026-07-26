@@ -1,8 +1,8 @@
 // FAIL: calling __construct__ via pointer on a non-comptime variable
-istruc Node { i32 v; void __construct__(Node* self, i32 x) { self.v = x; } }
-i32 main() {
-    Node n(1);
-    Node* p = &n;
+istruc Node { let mut v: i32; fn __construct__(self: *Node, x: i32) void { self.v = x; } }
+fn main() i32 {
+    fn n(1) Node;
+    let mut p: *Node= &n;
     p->__construct__(2);  // ERROR: n is not declared comptime
     return n.v;
 }

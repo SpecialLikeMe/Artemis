@@ -2,12 +2,12 @@
 
 #[derive(Debug)]
 istruc Point {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 }
 
-i32 main() {
-    Point p;
+pub fn main() i32 {
+    let mut p: Point;
     p.x = 3;
     p.y = 4;
     __derive_Debug_Point(&p);

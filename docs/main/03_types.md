@@ -31,7 +31,7 @@ u64 big = 1000000000000u;
 i8  c   = 'A';
 ```
 
-Integer types are implicitly converted in assignments. Narrowing conversions (e.g., `i64` → `i32`) truncate the value silently — be deliberate.
+Integer types are **not** implicitly converted in arithmetic. Mixing differently-sized integers (e.g. `i32 + i64`) is a compile error — use an explicit cast: `(x as i64) + y`. Integer literals are untyped and can appear in any integer context without a cast.
 
 ### `signed` / `unsigned` Qualifiers
 
@@ -50,15 +50,15 @@ These are C-compatibility qualifiers. Prefer the explicit-width signed/unsigned 
 
 | Type   | Format         | Alias   | Notes |
 |--------|----------------|---------|-------|
-| `f8`   | 8-bit float    |         | Stored as i8 internally |
-| `f16`  | Half precision |         |       |
-| `f32`  | Single         |         |       |
-| `f64`  | Double         | `float` |       |
-| `f128` | Quad           |         |       |
-| `f256` | —              |         | Maps to fp128 (LLVM limit) |
-| `f512` | —              |         | Maps to fp128 (LLVM limit) |
+| `f16`  | Half precision (IEEE 754)  |         |       |
+| `f32`  | Single precision (IEEE 754)|         |       |
+| `f64`  | Double precision (IEEE 754)| `float` |       |
+| `f80`  | Extended precision (x87)   |         |       |
+| `f128` | Quad precision (IEEE 754)  |         |       |
 
-The generic syntax is `fN` for any `N`.
+Valid float widths are `16`, `32`, `64`, `80`, and `128` — the compiler rejects any other width (e.g. `f887` is a compile error).
+
+The generic syntax is `fN` for `N` in {16, 32, 64, 80, 128}.
 
 ```arc
 f64 pi  = 3.14159;

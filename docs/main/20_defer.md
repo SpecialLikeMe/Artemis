@@ -26,8 +26,8 @@ The deferred action is registered at the point the `defer` statement is encounte
 Multiple `defer` statements in the same scope execute in **LIFO** (last-in, first-out) order — the last `defer` encountered runs first:
 
 ```arc
-i32 main() {
-    i32 g = 0;
+pub fn main() i32 {
+    let mut g: i32 = 0;
 
     {
         defer g = 7;
@@ -46,14 +46,13 @@ i32 main() {
 `defer` is the primary tool for ensuring cleanup happens on all return paths:
 
 ```arc
-i32 process_file(i8* path) {
-    void* fp = fopen(path, "rb");
-    if (fp == (void*)0) { return -1; }
+fn process_file(path: *i8) i32 {
+    let fp: *void = fopen(path, "rb");
+    if (fp == (*void)0) { return -1; }
     defer { fclose(fp); }    // runs when process_file returns, on any path
 
     // Read file...
-    if (read_error) { return -2; }   // fclose still runs
-    return 0;                         // fclose runs here too
+    return 0;   // fclose runs here
 }
 ```
 
@@ -64,8 +63,8 @@ i32 process_file(i8* path) {
 `defer` is scoped to the nearest enclosing `{...}` block:
 
 ```arc
-i32 main() {
-    i32 g = 0;
+pub fn main() i32 {
+    let mut g: i32 = 0;
     {
         defer g = 42;      // runs when this inner block exits, not at function end
     }
@@ -81,12 +80,12 @@ i32 main() {
 ### Arena cleanup
 
 ```arc
-i32 process() {
-    Arena arena(65536);
+fn process() i32 {
+    let mut arena: Arena(65536);
     defer { arena.deinit(); }
 
-    void* data = arena.alloc(1024);
-    if (data == (void*)0) { return -1; }   // deinit still runs
+    let data: *void = arena.alloc(1024);
+    if (data == (*void)0) { return -1; }   // deinit still runs
 
     // ... use data ...
     return 0;
@@ -96,24 +95,12 @@ i32 process() {
 ### Lock / unlock
 
 ```arc
-void critical_section(SpinLock* lock, State* s) {
-    lock.lock();
-    defer { lock.unlock(); }
+fn critical_section(lock: *SpinLock, s: *State) void {
+    lock.acquire();
+    defer { lock.release(); }
 
     // ... modify s safely ...
-    if (error_case) { return; }   // unlock still runs
-}
-```
-
-### File open / close
-
-```arc
-void write_log(i8* msg) {
-    void* fp = fopen("log.txt", "a");
-    if (fp == (void*)0) { return; }
-    defer { fclose(fp); }
-
-    fprintf(fp, "%s\n", msg);
+    if (error_case) { return; }   // release still runs
 }
 ```
 
@@ -127,12 +114,12 @@ void write_log(i8* msg) {
 
 ```arc
 // Single expression form
-errdefer alloc.deinit(resource);
+errdefer resource.deinit();
 
 // Block form
 errdefer {
-    printf("cleanup after error\n");
-    alloc.deinit(resource);
+    log_error();
+    resource.deinit();
 }
 ```
 
@@ -147,39 +134,19 @@ errdefer {
 ### Example — Error-Only Cleanup
 
 ```arc
-auto open_and_process(i8* path) !i32 {
-    void* fp = fopen(path, "rb");
+fn open_and_process(path: *i8) !i32 {
+    let fp: *void = fopen(path, "rb");
     if (fp == null) { return error.NotFound; }
 
     defer   { fclose(fp); }         // always close the file
     errdefer { log_error(path); }   // log only when something goes wrong
 
-    i32 result = process(fp);
+    let result: i32 = try process(fp);
     return result;
 }
 ```
 
-If `process(fp)` succeeds, only `fclose` runs. If an error is returned or propagated, both `log_error` and `fclose` run (in LIFO order, `errdefer` first since it was registered after `defer`).
-
-### Combining `defer` and `errdefer`
-
-Multiple `errdefer` statements execute in LIFO order, just like `defer`. They interleave with `defer` according to registration order:
-
-```arc
-auto allocate_two() !void {
-    void* a = alloc(64);
-    defer  { free(a); }
-    errdefer { log("failed after a"); }
-
-    void* b = alloc(64);
-    defer  { free(b); }
-    errdefer { log("failed after b"); }
-
-    try do_work(a, b);
-    // Success: both free() run, no log() calls
-    // Error:   log("failed after b"), log("failed after a"), free(b), free(a)
-}
-```
+If `process(fp)` succeeds, only `fclose` runs. If an error is returned or propagated, both `log_error` and `fclose` run (in LIFO order).
 
 ---
 

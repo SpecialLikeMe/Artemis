@@ -12,58 +12,58 @@
 // This test contains 15 functions with 100+ SMT-relevant sites (array accesses,
 // pointer derefs, divisions) to demonstrate that analysis time is linear and the
 // compile step completes within the test harness timeout.
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 // g00-g14: each exercises a distinct SMT pattern.
 // GOOD = constant literal index resolved statically; UNKNOWN = dynamic, check injected.
 
-i32 g00(i32* a) { return a[0]+a[1]+a[2]+a[3]+a[4]+a[5]+a[6]+a[7]; }          // GOOD×8
-i32 g01(i32* a) { return a[0]*a[1]+a[2]*a[3]+a[4]*a[5]+a[6]*a[7]; }          // GOOD×8
-i32 g02(i32* a, i32 i) { return a[i]; }                                        // UNKNOWN×1
-i32 g03(i32* a, i32 i, i32 j) { return a[i]+a[j]; }                           // UNKNOWN×2
-i32 g04(i32* a, i32 n) {                                                        // UNKNOWN per iter
-    i32 s=0; i32 i=0; while(i<n){s=s+a[i];i=i+1;} return s;
+fn g00(a: *i32) i32 { return a[0]+a[1]+a[2]+a[3]+a[4]+a[5]+a[6]+a[7]; }          // GOOD×8
+fn g01(a: *i32) i32 { return a[0]*a[1]+a[2]*a[3]+a[4]*a[5]+a[6]*a[7]; }          // GOOD×8
+fn g02(a: *i32, i: i32) i32 { return a[i]; }                                        // UNKNOWN×1
+fn g03(a: *i32, i: i32, j: i32) i32 { return a[i]+a[j]; }                           // UNKNOWN×2
+fn g04(a: *i32, n: i32) i32 {                                                        // UNKNOWN per iter
+    let mut s: i32=0; let mut i: i32=0; while(i<n){s=s+a[i];i=i+1;} return s;
 }
-i32 g05(i32* a, i32 n) {                                                        // UNKNOWN per iter
-    i32 p=1; i32 i=0; while(i<n){p=p*a[i];i=i+1;} return p;
+fn g05(a: *i32, n: i32) i32 {                                                        // UNKNOWN per iter
+    let mut p: i32=1; let mut i: i32=0; while(i<n){p=p*a[i];i=i+1;} return p;
 }
-i32 g06(i32 a, i32 b) { if(b==0){return 0;} return a/b; }                     // GOOD after guard
-i32 g07(i32 a, i32 b) { if(b==0){return 0;} return a%b; }                     // GOOD after guard
-i32 g08(i32* a) {                                                               // UNKNOWN per iter
-    i32 m=a[0]; i32 i=1; while(i<8){if(a[i]>m){m=a[i];}i=i+1;} return m;
+fn g06(a: i32, b: i32) i32 { if(b==0){return 0;} return a/b; }                     // GOOD after guard
+fn g07(a: i32, b: i32) i32 { if(b==0){return 0;} return a%b; }                     // GOOD after guard
+fn g08(a: *i32) i32 {                                                               // UNKNOWN per iter
+    let mut m: i32=a[0]; let mut i: i32=1; while(i<8){if(a[i]>m){m=a[i];}i=i+1;} return m;
 }
-i32 g09(i32* a) {                                                               // UNKNOWN per iter
-    i32 m=a[0]; i32 i=1; while(i<8){if(a[i]<m){m=a[i];}i=i+1;} return m;
+fn g09(a: *i32) i32 {                                                               // UNKNOWN per iter
+    let mut m: i32=a[0]; let mut i: i32=1; while(i<8){if(a[i]<m){m=a[i];}i=i+1;} return m;
 }
-i32 g10(i32* a, i32* b) {                                                       // GOOD×8
+fn g10(a: *i32, b: *i32) i32 {                                                       // GOOD×8
     return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
           +a[4]*b[4]+a[5]*b[5]+a[6]*b[6]+a[7]*b[7];
 }
-i32 g11(i32* a, i32* b, i32 n) {                                               // UNKNOWN per iter
-    i32 s=0; i32 i=0; while(i<n){s=s+a[i]*b[i];i=i+1;} return s;
+fn g11(a: *i32, b: *i32, n: i32) i32 {                                               // UNKNOWN per iter
+    let mut s: i32=0; let mut i: i32=0; while(i<n){s=s+a[i]*b[i];i=i+1;} return s;
 }
-i32 g12(i32* a) {                                                               // GOOD×8
+fn g12(a: *i32) i32 {                                                               // GOOD×8
     return a[7]-a[6]+a[5]-a[4]+a[3]-a[2]+a[1]-a[0];
 }
-i32 g13(i32* a) {                                                               // UNKNOWN per iter
-    i32 s=0; i32 i=0; while(i<8){s=s+a[i]*a[i];i=i+1;} return s;
+fn g13(a: *i32) i32 {                                                               // UNKNOWN per iter
+    let mut s: i32=0; let mut i: i32=0; while(i<8){s=s+a[i]*a[i];i=i+1;} return s;
 }
-i32 g14(i32* a, i32* b) {                                                      // UNKNOWN per iter
-    i32 s=0; i32 i=0;
+fn g14(a: *i32, b: *i32) i32 {                                                      // UNKNOWN per iter
+    let mut s: i32=0; let mut i: i32=0;
     while(i<8){
-        i32 d=a[i]-b[i];
+        let mut d: i32=a[i]-b[i];
         s=s+d*d;
         i=i+1;
     }
     return s;
 }
 
-i32 main() {
-    i32 arr[8];
+pub fn main() i32 {
+    let mut arr: [8]i32;
     arr[0]=1; arr[1]=2; arr[2]=3; arr[3]=4;
     arr[4]=5; arr[5]=6; arr[6]=7; arr[7]=8;
 
-    i32 rev[8];
+    let mut rev: [8]i32;
     rev[0]=8; rev[1]=7; rev[2]=6; rev[3]=5;
     rev[4]=4; rev[5]=3; rev[6]=2; rev[7]=1;
 

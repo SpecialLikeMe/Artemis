@@ -1,18 +1,18 @@
 // PASS: extended static member tests — static fields and static methods on istruc
 istruc Counter {
-    static i32 total;
-    i32 n;
-    void __construct__(Counter* self, i32 v) {
+    static let mut total: i32;
+    let mut n: i32;
+    fn __construct__(self: *Counter, v: i32) void {
         self.n = v;
         Counter.total = Counter.total + 1;
     }
-    static i32 get_total() { return Counter.total; }
-    i32 get(Counter* self) { return self.n; }
+    static fn get_total() i32 { return Counter.total; }
+    fn get(self: *Counter) i32 { return self.n; }
 }
 
-i32 main() {
-    Counter c(10);
-    Counter d(20);
+pub fn main() i32 {
+    let mut c: Counter(10);
+    let mut d: Counter(20);
     if (Counter.total != 2)         { return 1; }
     if (Counter.get_total() != 2)   { return 2; }
     if (c.get() != 10)              { return 3; }

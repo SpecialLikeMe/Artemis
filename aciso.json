@@ -1,0 +1,6 @@
+{
+  "project": {"name": "project", "version": "0.1.0", "main": "src/main.arc", "owner": "", "authors": []},
+  "build": {"output_dir": "build/", "source_dir": "src/"},
+  "symbol": {"defined_symbols": []},
+  "targets": {"main_f": ["dll", "so", "dylib"]}
+}

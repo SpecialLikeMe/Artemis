@@ -1,10 +1,10 @@
 istruc Token {
-    i32 id;
-    i32 kind;
-    i32 total(const Token* self) { return self.id + self.kind; }
+    let mut id: i32;
+    let mut kind: i32;
+    fn total(self: *const Token) i32 { return self.id + self.kind; }
 }
-i32 main() {
-    Token t = Token { .id = 5, .kind = 6 };
+pub fn main() i32 {
+    let mut t: Token= Token { .id = 5, .kind = 6 };
     if (t.total() != 11) { return 1; }
     return 0;
 }

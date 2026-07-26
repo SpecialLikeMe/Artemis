@@ -1,13 +1,13 @@
-void greet()  { return; }
-i32 add(i32 a, i32 b)  { return a + b; }
+fn greet() void  { return; }
+fn add(a: i32, b: i32) i32  { return a + b; }
 istruc W {
-    i32 v;
-    i32 get(const W* self)  { return self.v; }
+    let mut v: i32;
+    fn get(self: *const W) i32  { return self.v; }
 }
-i32 main() {
+pub fn main() i32 {
     greet();
     if (add(2, 3) != 5) { return 1; }
-    W w;
+    let mut w: W;
     w.v = 9;
     if (w.get() != 9) { return 2; }
     return 0;

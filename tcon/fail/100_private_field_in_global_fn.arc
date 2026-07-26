@@ -3,8 +3,8 @@ istruc Wallet {
     private i32 balance;
     public void __construct__(Wallet* self, i32 b) { self.balance = b; }
 }
-i32 steal(Wallet* w) { return w->balance; }  // ERROR: balance is private
-i32 main() {
-    Wallet w(500);
+fn steal(w: *Wallet) i32 { return w->balance; }  // ERROR: balance is private
+fn main() i32 {
+    fn w(500) Wallet;
     return steal(&w);
 }

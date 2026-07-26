@@ -1,9 +1,9 @@
-i32 main() {
-    char c = 'A';
+pub fn main() i32 {
+    let mut c: char= 'A';
     if (c != 65) { return 1; }
-    char d = c;
+    let mut d: char= c;
     if (d != 'A') { return 2; }
-    char lo = 'a';
+    let mut lo: char= 'a';
     if (lo != 97) { return 3; }
     return 0;
 }

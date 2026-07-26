@@ -3,10 +3,10 @@
 
 #[derive(UnknownTrait)]
 istruc Point {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 }
 
-i32 main() {
+fn main() i32 {
     return 0;
 }

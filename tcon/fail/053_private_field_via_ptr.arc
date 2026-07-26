@@ -3,9 +3,9 @@ istruc Safe {
     private i32 pin;
     public void __construct__(Safe* self, i32 p) { self.pin = p; }
 }
-i32 main() {
-    Safe s(1234);
-    Safe* p = &s;
-    i32 x = p->pin;  // ERROR: pin is private
+fn main() i32 {
+    fn s(1234) Safe;
+    let mut p: *Safe= &s;
+    let mut x: i32= p->pin;  // ERROR: pin is private
     return x;
 }

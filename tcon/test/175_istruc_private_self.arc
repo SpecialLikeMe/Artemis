@@ -1,28 +1,28 @@
 // members are accessible from within class methods (self)
 istruc BankAccount {
-    i32 balance;
-    i32 pin;
+    let mut balance: i32;
+    let mut pin: i32;
 
-    void __construct__(BankAccount* self, i32 initial, i32 p) {
+    fn __construct__(self: *BankAccount, initial: i32, p: i32) void {
         self.balance = initial;
         self.pin     = p;
     }
 
-    bool verify(const BankAccount* self, i32 p) {
+    fn verify(self: *const BankAccount, p: i32) bool {
         return self.pin == p;
     }
 
-    i32 get_balance(const BankAccount* self) {
+    fn get_balance(self: *const BankAccount) i32 {
         return self.balance;
     }
 
-    void deposit(BankAccount* self, i32 amount) {
+    fn deposit(self: *BankAccount, amount: i32) void {
         self.balance = self.balance + amount;
     }
 }
 
-i32 main() {
-    BankAccount acct(100, 1234);
+pub fn main() i32 {
+    let mut acct: BankAccount(100, 1234);
 
     if (!acct.verify(1234))   { return 1; }
     if (acct.verify(9999))    { return 2; }

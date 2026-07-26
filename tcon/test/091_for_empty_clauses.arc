@@ -1,6 +1,6 @@
-i32 main() {
-    i32 i = 0;
-    i32 sum = 0;
+pub fn main() i32 {
+    let mut i: i32= 0;
+    let mut sum: i32= 0;
     for (; i < 5; ) {
         sum = sum + i;
         i++;

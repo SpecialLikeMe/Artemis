@@ -1,3 +1,3 @@
 // FAIL: using referencing an undeclared type
-using Phantom Alias;  // ERROR: Phantom undeclared
-i32 main() { return 0; }
+using Alias = Phantom;  // ERROR: Phantom undeclared
+fn main() i32 { return 0; }

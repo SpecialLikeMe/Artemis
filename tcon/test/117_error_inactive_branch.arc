@@ -1,11 +1,11 @@
 @define <SAFE> <>
 
 @ifdef SAFE
-i32 ok() { return 0; }
+fn ok() i32 { return 0; }
 @else
 @error <This branch must never be reached>
 @endif
 
-i32 main() {
+pub fn main() i32 {
     return ok();
 }

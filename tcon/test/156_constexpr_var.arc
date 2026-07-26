@@ -1,7 +1,7 @@
-i32 main() {
-    comptime i32 N = 6;
-    comptime i32 M = N + 1;
-    i32 arr[7];
+pub fn main() i32 {
+    const N: i32= 6;
+    const M: i32= N + 1;
+    let mut arr: [7]i32;
     arr[0] = M;
     if (M != 7) { return 1; }
     if (arr[0] != 7) { return 2; }

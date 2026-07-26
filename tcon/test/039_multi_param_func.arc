@@ -1,7 +1,7 @@
-i32 add3(i32 a, i32 b, i32 c) { return a + b + c; }
-i32 max2(i32 a, i32 b) { return a > b ? a : b; }
+fn add3(a: i32, b: i32, c: i32) i32 { return a + b + c; }
+fn max2(a: i32, b: i32) i32 { return a > b ? a : b; }
 
-i32 main() {
+pub fn main() i32 {
     if (add3(1, 2, 3)   != 6)  { return 1; }
     if (add3(10, 20, 30) != 60){ return 2; }
     if (max2(7, 3)       != 7) { return 3; }

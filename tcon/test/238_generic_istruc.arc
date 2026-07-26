@@ -1,15 +1,15 @@
 // PASS: generic istruc (istruc Foo<T>) with multiple instantiations.
 istruc Box<T> {
-    T val;
-    void set(Box<T>* self, T v) { self.val = v; }
-    T    get(Box<T>* self)      { return self.val; }
+    let mut val: T;
+    fn set(self: *Box<T>, v: T) void { self.val = v; }
+    fn get(self: *Box<T>) T      { return self.val; }
 }
-i32 main() {
-    Box<i32> bi;
+pub fn main() i32 {
+    let mut bi: Box<i32>;
     bi.set(42);
     if (bi.get() != 42) { return 1; }
 
-    Box<i64> bl;
+    let mut bl: Box<i64>;
     bl.set((i64)1000000);
     if (bl.get() != (i64)1000000) { return 2; }
 

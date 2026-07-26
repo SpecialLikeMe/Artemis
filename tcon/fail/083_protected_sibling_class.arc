@@ -3,8 +3,8 @@ istruc Token {
     private i32 id;
     public void __construct__(Token* self, i32 v) { self.id = v; }
 }
-i32 main() {
-    Token t(42);
-    i32 x = t.id;  // ERROR: id is private
+fn main() i32 {
+    fn t(42) Token;
+    let mut x: i32= t.id;  // ERROR: id is private
     return x;
 }

@@ -4,23 +4,23 @@ istruc Shape {
 }
 
 istruc Rect : Shape {
-    i32 w;
-    i32 h;
-    void __construct__(Rect* self, i32 pw, i32 ph) { self.w = pw; self.h = ph; }
-    i32 area(const Rect* self) override { return self.w * self.h; }
+    let mut w: i32;
+    let mut h: i32;
+    fn __construct__(self: *Rect, pw: i32, ph: i32) void { self.w = pw; self.h = ph; }
+    fn area(self: *const Rect) i32 override { return self.w * self.h; }
 }
 
 istruc Circle : Shape {
-    i32 r;
-    void __construct__(Circle* self, i32 radius) { self.r = radius; }
-    i32 area(const Circle* self) override { return self.r * self.r; }
+    let mut r: i32;
+    fn __construct__(self: *Circle, radius: i32) void { self.r = radius; }
+    fn area(self: *const Circle) i32 override { return self.r * self.r; }
 }
 
-i32 main() {
-    Rect rect(3, 4);
+fn main() i32 {
+    fn rect(3, 4) Rect;
     if (rect.area() != 12) { return 1; }
 
-    Circle circ(5);
+    fn circ(5) Circle;
     if (circ.area() != 25) { return 2; }
     return 0;
 }

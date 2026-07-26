@@ -1,7 +1,7 @@
 enum Color { Red, Green, Blue }
 
-i32 main() {
-    i32 c = Red;
+pub fn main() i32 {
+    let mut c: i32= Red;
     if (c != 0)   { return 1; }
     c = Green;
     if (c != 1)   { return 2; }

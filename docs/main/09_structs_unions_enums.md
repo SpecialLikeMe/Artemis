@@ -8,29 +8,29 @@ A `struct` is a plain C-style aggregate. It has fields but no methods.
 
 ```arc
 struct Point {
-    f64 x;
-    f64 y;
+    let x: f64;
+    let y: f64;
 }
 
 struct Rect {
-    Point origin;
-    f64   width;
-    f64   height;
+    let origin: Point;
+    let width: f64;
+    let height: f64;
 }
 ```
 
 ### Creating and Using Structs
 
 ```arc
-Point p;
+let mut p: Point;
 p.x = 1.0;
 p.y = 2.0;
 
 // Named-field aggregate initializer
-Point q = Point { .x = 3.0, .y = 4.0 };
+let mut q: Point = Point { .x = 3.0, .y = 4.0 };
 
 // Inferred-type initializer (type comes from context)
-Point r = .{ .x = 5.0, .y = 6.0 };
+let mut r: Point = .{ .x = 5.0, .y = 6.0 };
 ```
 
 ### Passing Structs
@@ -38,13 +38,35 @@ Point r = .{ .x = 5.0, .y = 6.0 };
 Structs are passed by value or by pointer:
 
 ```arc
-void translate(Point* pt, f64 dx, f64 dy) {
+fn translate(pt: *Point, dx: f64, dy: f64) void {
     (*pt).x = (*pt).x + dx;
     (*pt).y = (*pt).y + dy;
 }
 
-Point p = .{ .x = 1.0, .y = 2.0 };
+let mut p: Point = .{ .x = 1.0, .y = 2.0 };
 translate(&p, 0.5, 0.5);
+```
+
+### Anonymous Structs
+
+An initializer written without a leading type name produces an **anonymous struct**. Two anonymous structs with the same field names and types share the same type.
+
+```arc
+let x = .{
+    .port = 8080,
+    .host = "localhost",
+};
+// x.port == 8080, x.host == "localhost"
+```
+
+Fields without names are positional and accessed with the subscript operator:
+
+```arc
+let mut foo = .{ 12, "hello", 99 };
+// foo[0] == 12
+// foo[1] == "hello"
+// foo[2] == 99
+foo[0] = 10;   // reassign positional field (foo is mut)
 ```
 
 ---
@@ -55,11 +77,11 @@ All fields of a union share the same memory region. Reading a field that was not
 
 ```arc
 union IntOrFloat {
-    i32 i;
-    f32 f;
+    let i: i32;
+    let f: f32;
 }
 
-IntOrFloat u;
+let mut u: IntOrFloat;
 u.i = 0x3f800000;    // write as integer
 // u.f is now 1.0    // read as float (IEEE 754 bit pattern)
 ```
@@ -73,11 +95,11 @@ Unions may contain any type, including structs.
 `using` creates a transparent alias for a type:
 
 ```arc
-using i32   ErrorCode;
-using Point Vec2;
+using ErrorCode = i32;
+using Vec2 = Point;
 
-ErrorCode err = 0;
-Vec2      pos = .{ .x = 0.0, .y = 0.0 };
+let err: ErrorCode = 0;
+let pos: Vec2 = .{ .x = 0.0, .y = 0.0 };
 ```
 
 ---
@@ -97,7 +119,7 @@ enum color {
 Variants are `i32` values starting at 0 and incrementing. Access them with `.`:
 
 ```arc
-i32 c = color.green;    // 1
+let c: i32 = color.green;    // 1
 
 if (c == color.green) { /* ... */ }
 if (c != color.red)   { /* ... */ }
@@ -106,8 +128,8 @@ if (c != color.red)   { /* ... */ }
 Plain enum variables can be assigned integer values directly:
 
 ```arc
-color c = color.blue;   // 2
-i32   n = c;             // n == 2
+let c: color = color.blue;   // 2
+let n: i32 = c;              // n == 2
 ```
 
 ---
@@ -125,7 +147,7 @@ enum status {
     timeout,
 }
 
-status s = status.ok;
+let mut s: status = status.ok;
 ```
 
 Plain tag variants are accessed like plain enum values (`status.ok`, etc.).
@@ -137,14 +159,14 @@ Tuple variants carry an ordered list of typed values:
 ```arc
 enum result {
     ok,
-    err(const i8*, i32),    // message, code
+    err(*i8, i32),    // message, code
 }
 
-result x = result.err("bad input", 42);
+let x: result = result.err("bad input", 42);
 
 // Payload access: dereference the enum variable, then index
-const i8* msg  = (*x)[0];
-i32       code = (*x)[1];
+let msg: *i8 = (*x)[0];
+let code: i32 = (*x)[1];
 ```
 
 The enum variable `x` holds the tagged union. `(*x)` dereferences to the payload; `[N]` indexes the N-th tuple element.
@@ -156,17 +178,17 @@ Named struct variants carry fields addressed by name:
 ```arc
 enum event {
     none,
-    key_press { i32 key; i32 modifiers; },
-    mouse_move { f32 x; f32 y; },
+    key_press { let key: i32; let modifiers: i32; },
+    mouse_move { let x: f32; let y: f32; },
 }
 
-event e = event.key_press { .key = 65, .modifiers = 0 };
+let mut e: event = event.key_press { .key = 65, .modifiers = 0 };
 
 // Payload access: dereference, then field name
-i32 k = (*e).key;
+let k: i32 = (*e).key;
 
 e = event.mouse_move { .x = 1.5, .y = 2.5 };
-f32 xv = (*e).x;
+let xv: f32 = (*e).x;
 ```
 
 ### Variant Form 4 — istruc Body Variant
@@ -177,8 +199,8 @@ f32 xv = (*e).x;
 enum msg {
     empty,
     text .{
-        char* rc;
-        void __construct__(msg.text* self, char* a) {
+        let mut rc: *i8;
+        fn __construct__(self: *msg.text, a: *i8) void {
             self.rc = a;
         }
     },
@@ -190,7 +212,7 @@ enum msg {
 Construction calls the constructor with `EnumName.VariantName(args...)`:
 
 ```arc
-msg bar = msg.text("Hello world");
+let mut bar: msg = msg.text("Hello world");
 ```
 
 Methods on the variant work like ordinary istruc methods:
@@ -199,14 +221,14 @@ Methods on the variant work like ordinary istruc methods:
 enum io_error {
     success,
     fatal .{
-        const i8* msg;
-        i32 code;
-        i32 get_code(const io_error.fatal* self) { return self.code; }
+        let mut msg: *i8;
+        let mut code: i32;
+        fn get_code(self: *io_error.fatal) i32 { return self.code; }
     },
 }
 
-io_error e = io_error.fatal .{ .msg = "disk full", .code = 28 };
-i32 c = e.get_code();    // resolves to the fatal variant's method
+let mut e: io_error = io_error.fatal .{ .msg = "disk full", .code = 28 };
+let c: i32 = e.get_code();    // resolves to the fatal variant's method
 ```
 
 ### Accessing Payload — the Deref Rule
@@ -214,7 +236,7 @@ i32 c = e.get_code();    // resolves to the fatal variant's method
 The enum variable holds the **tagged union** (tag + raw payload bytes):
 
 ```arc
-msg bar = msg.text("Hello world");
+let mut bar: msg = msg.text("Hello world");
 // bar  → the tagged union (has tag + payload bytes)
 // *bar → the payload (the msg.text struct)
 ```
@@ -230,16 +252,16 @@ A single enum can mix all four forms:
 
 ```arc
 enum value {
-    nothing,                     // plain tag
-    number(i32),                 // tuple (1 element)
-    pair { i32 a; i32 b; },      // named struct
-    text .{                      // istruc body
-        char* s;
-        void __construct__(value.text* self, char* str) {
+    nothing,                          // plain tag
+    number(i32),                      // tuple (1 element)
+    pair { let a: i32; let b: i32; }, // named struct
+    text .{                           // istruc body
+        let mut s: *i8;
+        fn __construct__(self: *value.text, str: *i8) void {
             self.s = str;
         }
-        i32 len(const value.text* self) {
-            i32 n = 0;
+        fn len(self: *value.text) i32 {
+            let mut n: i32 = 0;
             while (self.s[n] != 0) { n = n + 1; }
             return n;
         }

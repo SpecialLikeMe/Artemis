@@ -1,23 +1,23 @@
 // Function pointers: multiple function pointer parameters, complex dispatch
-i32 add(i32 a, i32 b) { return a + b; }
-i32 mul(i32 a, i32 b) { return a * b; }
-i32 sub(i32 a, i32 b) { return a - b; }
+fn add(a: i32, b: i32) i32 { return a + b; }
+fn mul(a: i32, b: i32) i32 { return a * b; }
+fn sub(a: i32, b: i32) i32 { return a - b; }
 
-i32 combine(i32(i32, i32)* op1, i32(i32, i32)* op2, i32 x, i32 y) {
+fn combine(op1: *(i32, i32)i32, op2: *(i32, i32)i32, x: i32, y: i32) i32 {
     return op1(x, y) + op2(x, y);
 }
 
-i32 apply_twice(i32(i32, i32)* op, i32 x, i32 y) {
+fn apply_twice(op: *(i32, i32)i32, x: i32, y: i32) i32 {
     return op(op(x, y), y);
 }
 
-i32 select_and_call(i32 sel, i32(i32, i32)* fa, i32(i32, i32)* fb, i32 x, i32 y) {
-    i32(i32, i32)* chosen;
+fn select_and_call(sel: i32, fa: *(i32, i32)i32, fb: *(i32, i32)i32, x: i32, y: i32) i32 {
+    let mut chosen: *(i32, i32)i32;
     if (sel == 0) { chosen = fa; } else { chosen = fb; }
     return chosen(x, y);
 }
 
-i32 main() {
+pub fn main() i32 {
     // add(3,4)+mul(3,4) = 7+12 = 19
     if (combine(&add, &mul, 3, 4) != 19) { return 1; }
     // sub(3,4)+add(3,4) = -1+7 = 6

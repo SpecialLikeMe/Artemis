@@ -4,8 +4,8 @@ istruc Engine {
     public i32 x;
 }
 
-i32 main() {
-    Engine e;
+fn main() i32 {
+    let mut e: Engine;
     e.x = 0;
     e.start_internal();  // ERROR: 'start_internal' is private
     return 0;

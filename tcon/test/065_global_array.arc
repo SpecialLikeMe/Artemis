@@ -1,12 +1,12 @@
-i32 table[5];
+let mut table: [5]i32;
 
-void init_table() {
-    for (i32 i = 0; i < 5; i++) {
+fn init_table() void {
+    for (let mut i: i32 = 0; i < 5; i++) {
         table[i] = i * 10;
     }
 }
 
-i32 main() {
+pub fn main() i32 {
     init_table();
     if (table[0] != 0)  { return 1; }
     if (table[1] != 10) { return 2; }

@@ -3,9 +3,9 @@ auto maybe_fail() !i32 {
     return error.Oops;
 }
 
-i32 run()  {
-    i32 v = try maybe_fail();  // must error
+fn run() i32  {
+    let mut v: i32= try maybe_fail();  // must error
     return v;
 }
 
-i32 main() { return run(); }
+fn main() i32 { return run(); }

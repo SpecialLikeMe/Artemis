@@ -1,10 +1,10 @@
 // FAIL: calling a non-existent method on an istruc instance
 istruc Logger {
-    i32 level;
-    void __construct__(Logger* self, i32 l) { self.level = l; }
+    let mut level: i32;
+    fn __construct__(self: *Logger, l: i32) void { self.level = l; }
 }
-i32 main() {
-    Logger log(1);
+fn main() i32 {
+    fn log(1) Logger;
     log.flush();  // ERROR: Logger has no method 'flush'
     return 0;
 }

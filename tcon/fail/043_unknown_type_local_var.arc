@@ -1,5 +1,5 @@
 // FAIL: local variable declaration uses an undeclared type name
-i32 main() {
-    Blarg x;  // ERROR: Blarg is undeclared
+fn main() i32 {
+    let mut x: Blarg;  // ERROR: Blarg is undeclared
     return 0;
 }

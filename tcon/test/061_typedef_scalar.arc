@@ -1,14 +1,14 @@
-using i32 Score;
-using f64 Real;
+using Score = i32;
+using Real = f64;
 
-Score triple(Score s) { return s * 3; }
+fn triple(s: Score) Score { return s * 3; }
 
-i32 main() {
-    Score s = 10;
+pub fn main() i32 {
+    let mut s: Score= 10;
     if (triple(s) != 30) { return 1; }
 
-    Real r = 2.5;
-    Real r2 = r * r;
+    let mut r: Real= 2.5;
+    let mut r2: Real= r * r;
     if (r2 != 6.25) { return 2; }
     return 0;
 }

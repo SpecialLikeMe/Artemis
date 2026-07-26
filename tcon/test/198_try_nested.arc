@@ -1,19 +1,19 @@
 // Test nested error propagation: inner function fails, outer catches with except
-auto inner_fn(i32 x) !i32 {
+fn inner_fn(x: i32) !i32 {
     if (x < 0) {
         return error.Negative;
     }
     return x + 1;
 }
 
-auto outer_fn(i32 x) !i32 {
+fn outer_fn(x: i32) !i32 {
     // try propagates error from inner_fn to outer_fn's caller
-    i32 v = try inner_fn(x);
+    let mut v: i32= try inner_fn(x);
     return v * 2;
 }
 
-i32 main() {
-    i32 outer_err = 0;
+pub fn main() i32 {
+    let mut outer_err: i32= 0;
 
     // inner_fn(-1) fails -> try propagates -> outer_fn fails -> except fires
     outer_fn(-1) catch |e| {

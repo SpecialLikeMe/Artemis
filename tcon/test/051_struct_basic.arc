@@ -1,10 +1,10 @@
 struct Point {
-    i32 x;
-    i32 y;
+    let x: i32;
+    let y: i32;
 }
 
-i32 main() {
-    Point p;
+pub fn main() i32 {
+    let mut p: Point;
     p.x = 3;
     p.y = 4;
     if (p.x != 3) { return 1; }

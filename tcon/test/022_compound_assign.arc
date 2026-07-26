@@ -1,5 +1,5 @@
-i32 main() {
-    i32 x = 10;
+pub fn main() i32 {
+    let mut x: i32= 10;
     x += 5;  if (x != 15) { return 1; }
     x -= 3;  if (x != 12) { return 2; }
     x *= 2;  if (x != 24) { return 3; }

@@ -6,10 +6,8 @@ Artemis uses **error unions** instead of exceptions. Functions that may fail dec
 
 ## Declaring a Fallible Function
 
-The trailing `!T` return type is written with `auto` as the declared return type:
-
 ```arc
-auto maybe_divide(i32 a, i32 b) !i32 {
+fn maybe_divide(a: i32, b: i32) !i32 {
     if (b == 0) {
         return error.DivByZero;
     }
@@ -45,24 +43,24 @@ Any identifier after `error.` is valid — there is no enum declaration needed. 
 ```arc
 maybe_divide(10, 0) catch |e| {
     // e is error_t: { i32 code; i8* name; i8* payload; }
-    printf("Error: %s (code %d)\n", e.name, e.code);
+    // e.name == "DivByZero"
 }
 
 // No error: handler does not run
 maybe_divide(10, 2) catch |e| {
-    printf("This will not print\n");
+    // not reached
 }
 ```
 
 ### The `error_t` Struct
 
-The `e` variable in `catch |e|` is of type `error_t`, which has these fields:
+The `e` variable in `catch |e|` is of type `error_t`:
 
 ```arc
 struct error_t {
-    i32  code;     // FNV-1a hash of the error name
-    i8*  name;     // human-readable string, e.g. "DivByZero"
-    i8*  payload;  // reserved; currently null
+    let code: i32;     // FNV-1a hash of the error name
+    let name: *i8;     // human-readable string, e.g. "DivByZero"
+    let payload: *i8;  // reserved; currently null
 }
 ```
 
@@ -73,46 +71,43 @@ struct error_t {
 `try expr` unwraps the value on success, or immediately propagates the error out of the enclosing `!T` function:
 
 ```arc
-auto outer(i32 x) !i32 {
-    i32 v = try inner(x);   // if inner fails, outer returns that error immediately
+fn outer(x: i32) !i32 {
+    let v: i32 = try inner(x);   // if inner fails, outer returns that error
     return v * 2;
 }
 ```
 
-`try` can only appear inside a function with a `!T` return type. Using `try` in a non-error-union function is a compile error.
+`try` can only appear inside a function with a `!T` return type.
 
 ### Chaining `try`
 
 ```arc
-auto read_config(i8* path) !i32 {
-    i32 fd = try open_file(path);
-    i32 n  = try read_bytes(fd);
+fn read_config(path: *i8) !i32 {
+    let fd: i32 = try open_file(path);
+    let n: i32  = try read_bytes(fd);
     return n;
 }
 ```
 
 ---
 
-
----
-
 ## Full Example
 
 ```arc
-auto inner_fn(i32 x) !i32 {
+fn inner_fn(x: i32) !i32 {
     if (x < 0) {
         return error.Negative;
     }
     return x + 1;
 }
 
-auto outer_fn(i32 x) !i32 {
-    i32 v = try inner_fn(x);
+fn outer_fn(x: i32) !i32 {
+    let v: i32 = try inner_fn(x);
     return v * 2;
 }
 
-i32 main() {
-    i32 outer_err = 0;
+pub fn main() i32 {
+    let mut outer_err: i32 = 0;
 
     outer_fn(-1) catch |e| {
         // e.name == "Negative"
@@ -129,4 +124,26 @@ i32 main() {
 
 ---
 
-[Prev: Language Reference](23_reference.md) | [Next: Nullable Types](25_nullable.md)
+## `!void` — Fallible Void Functions
+
+Functions that may fail but return nothing on success use `!void`:
+
+```arc
+fn write_file(path: *i8, data: *i8) !void {
+    let fp: *void = fopen(path, "w");
+    if (fp == null) { return error.OpenFailed; }
+    defer { fclose(fp); }
+    // write data...
+}
+
+pub fn main() i32 {
+    write_file("out.txt", "hello") catch |e| {
+        return 1;
+    }
+    return 0;
+}
+```
+
+---
+
+[Prev: Compile-Time Features](18_comptime.md) | [Next: Interfaces](26_interfaces.md)

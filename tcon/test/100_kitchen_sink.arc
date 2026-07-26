@@ -1,45 +1,45 @@
 struct Stack {
-    i32 data[16];
-    i32 top;
+    let data: [16]i32;
+    let top: i32;
 }
 
-void stack_init(Stack* s) { (*s).top = 0; }
+fn stack_init(s: *Stack) void { (*s).top = 0; }
 
-void stack_push(Stack* s, i32 v) {
+fn stack_push(s: *Stack, v: i32) void {
     if ((*s).top < 16) {
         (*s).data[(*s).top] = v;
         (*s).top = (*s).top + 1;
     }
 }
 
-i32 stack_pop(Stack* s) {
+fn stack_pop(s: *Stack) i32 {
     if ((*s).top == 0) { return -1; }
     (*s).top = (*s).top - 1;
     return (*s).data[(*s).top];
 }
 
-i32 stack_size(Stack* s) { return (*s).top; }
+fn stack_size(s: *Stack) i32 { return (*s).top; }
 
-using i32 Result;
+using Result = i32;
 
 enum OpCode { Push = 0, Pop = 1 }
 
-Result run(i32 ops) {
-    Stack s;
+fn run(ops: i32) Result {
+    let mut s: Stack;
     stack_init(&s);
 
-    for (i32 i = 1; i <= ops; i++) {
+    for (let mut i: i32 = 1; i <= ops; i++) {
         stack_push(&s, i * i);
     }
 
-    i32 sum = 0;
+    let mut sum: i32= 0;
     while (stack_size(&s) > 0) {
         sum = sum + stack_pop(&s);
     }
     return sum;
 }
 
-i32 main() {
+pub fn main() i32 {
     if (run(0) != 0)    { return 1; }
     if (run(1) != 1)    { return 2; }
     if (run(3) != 14)   { return 3; }

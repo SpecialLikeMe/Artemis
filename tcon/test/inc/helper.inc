@@ -1,1 +1,1 @@
-i32 square(i32 x) { return x * x; }
+fn square(x: i32) i32 { return x * x; }

@@ -10,10 +10,10 @@
 //   3. catch handler that accesses arrays — safety checks still fire in the handler
 //   4. errdefer + bounds access: the deferred block is analysed by the SMT as well
 //   5. Function with both GOOD and UNKNOWN verdicts inside !T return
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 // Pattern 1: error-union + constant-index array access (GOOD × N, no runtime checks).
-auto lookup(i32* table, i32 key) !i32 {
+fn lookup(table: *i32, key: i32) !i32 {
     if (key < 0) {
         return error.BadKey;
     }
@@ -25,20 +25,20 @@ auto lookup(i32* table, i32 key) !i32 {
 }
 
 // Pattern 2: try propagation — inner failure bubbles; outer does bounded work on success.
-auto doubled_lookup(i32* table, i32 key) !i32 {
-    i32 v = try lookup(table, key);
+fn doubled_lookup(table: *i32, key: i32) !i32 {
+    let mut v: i32= try lookup(table, key);
     // GOOD: constant index 0
-    i32 base = table[0];
+    let mut base: i32= table[0];
     return v * 2 + base;
 }
 
 // Pattern 5: GOOD + UNKNOWN inside !T — both verdicts coexist peacefully.
-auto safe_sum(i32* arr, i32 n, i32 limit) !i32 {
+fn safe_sum(arr: *i32, n: i32, limit: i32) !i32 {
     if (n > limit) {
         return error.TooLarge;
     }
-    i32 s = 0;
-    i32 i = 0;
+    let mut s: i32= 0;
+    let mut i: i32= 0;
     // GOOD: constant indices [0], [1] below; UNKNOWN: dynamic index arr[i] in loop
     s = s + arr[0] + arr[1];
     while (i < n) {
@@ -48,12 +48,12 @@ auto safe_sum(i32* arr, i32 n, i32 limit) !i32 {
     return s;
 }
 
-i32 main() {
-    i32 table[4]; table[0]=10; table[1]=20; table[2]=30; table[3]=40;
+pub fn main() i32 {
+    let mut table: [4]i32; table[0]=10; table[1]=20; table[2]=30; table[3]=40;
 
     // Pattern 1: successful lookup — no error, value returned
-    i32 got = 0;
-    i32 err = 0;
+    let mut got: i32= 0;
+    let mut err: i32= 0;
     lookup(table, 2) catch |e| { err = 1; }
     if (err != 0) { printf("FAIL lookup(2) fired error\n"); return 1; }
 
@@ -64,14 +64,14 @@ i32 main() {
 
     // Pattern 2: successful try propagation — outer returns 2*30 + 10 = 70
     err = 0;
-    i32 result = 0;
+    let mut result: i32= 0;
     // Can't capture error-union into i32 directly; check the error path instead
     doubled_lookup(table, -5) catch |e| { err = 1; }
     if (err != 1) { printf("FAIL doubled_lookup(-5) should error\n"); return 3; }
 
     // Pattern 5: safe_sum with n=2, limit=8 → s = arr[0]+arr[1] + arr[0]+arr[1]
     // = 10+20 + 10+20 = 60
-    i32 data[4]; data[0]=10; data[1]=20; data[2]=30; data[3]=40;
+    let mut data: [4]i32; data[0]=10; data[1]=20; data[2]=30; data[3]=40;
     err = 0;
     safe_sum(data, 2, 8) catch |e| { err = 1; }
     if (err != 0) { printf("FAIL safe_sum(2,8) fired error\n"); return 4; }

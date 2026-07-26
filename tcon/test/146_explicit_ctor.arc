@@ -1,10 +1,10 @@
 istruc Num {
-    i32 v;
-    void __construct__(Num* self, i32 a) { self.v = a; }
-    i32 get(const Num* self) { return self.v; }
+    let mut v: i32;
+    fn __construct__(self: *Num, a: i32) void { self.v = a; }
+    fn get(self: *const Num) i32 { return self.v; }
 }
-i32 main() {
-    Num n(42);
+pub fn main() i32 {
+    let mut n: Num(42);
     if (n.get() != 42) { return 1; }
     return 0;
 }

@@ -1,6 +1,6 @@
-i32 main() {
-    i32 a = -10;
-    i32 b = -20;
+pub fn main() i32 {
+    let mut a: i32= -10;
+    let mut b: i32= -20;
     if (a + b != -30)  { return 1; }
     if (a - b != 10)   { return 2; }
     if (a * b != 200)  { return 3; }

@@ -4,6 +4,6 @@ istruc Account {
     public void __construct__(Account* self, i32 b) { self.balance = b; }
 }
 istruc SavingsAccount : Account {
-    i32 total(const SavingsAccount* self) { return self.balance; }  // ERROR: balance is private
+    fn total(self: *const SavingsAccount) i32 { return self.balance; }  // ERROR: balance is private
 }
-i32 main() { return 0; }
+fn main() i32 { return 0; }

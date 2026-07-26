@@ -2,18 +2,29 @@
 
 ## Importing C Functions
 
-Use a plain `extern` declaration (no `"C"` qualifier) to import an external C symbol.
-The compiler applies C linkage (no mangling) automatically:
+Use `@unsafe extern fn` to import an external C symbol. The `@unsafe` marker is
+required because external calls bypass the SMT's safety checks — the compiler cannot
+verify what the C function does.
 
 ```arc
-extern i32   printf(i8* fmt, ...);
-extern void* malloc(u64 size);
-extern void  free(void* ptr);
-extern i32   strlen(i8* s);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
+@unsafe extern fn malloc(size: u64) *void;
+@unsafe extern fn free(ptr: *void) void;
+@unsafe extern fn strlen(s: *i8) i32;
 ```
 
-Each declaration must appear at file scope. Multiple declarations are just repeated
-`extern` lines — there is no block form for importing.
+You can group multiple declarations in an `@unsafe` block:
+
+```arc
+@unsafe {
+    extern fn printf(fmt: *i8, ...) i32;
+    extern fn puts(str: *i8) i32;
+    extern fn malloc(n: u64) *void;
+}
+```
+
+Each declaration must appear at file scope. Calling `extern fn` without `@unsafe`
+is a compile error.
 
 ## Exporting Artemis Functions to C
 

@@ -1,29 +1,29 @@
 // Test: interface as function parameter type (parsed as void*)
 // PASS PASS PASS
-int puts(i8* s);
+fn puts(s: *i8) int;
 
 interface Animal {
-    void speak(Animal* self);
+    fn speak(self: *Animal) void;
 }
 
 istruc Dog : Animal {
-    int id;
-    void speak(Dog* self) { puts("Dog"); }
+    let mut id: int;
+    fn speak(self: *Dog) void { puts("Dog"); }
 }
 
 istruc Cat : Animal {
-    int id;
-    void speak(Cat* self) { puts("Cat"); }
+    let mut id: int;
+    fn speak(self: *Cat) void { puts("Cat"); }
 }
 
 // Function accepting interface Animal* as void*
-void dispatch_dog(interface Animal* a) {
-    Dog* d = (Dog*)a;
+fn dispatch_dog(a: interface Animal*) void {
+    let mut d: *Dog= (Dog*)a;
     d.speak();
 }
 
-int main() {
-    Dog d;
+pub fn main() int {
+    let mut d: Dog;
     d.id = 1;
 
     // Pass concrete struct pointer as interface*
@@ -31,12 +31,12 @@ int main() {
     puts("PASS dispatch");
 
     // Interface pointer variable
-    void* p = (void*)&d;
-    Dog* dd = (Dog*)p;
+    let mut p: *void= (void*)&d;
+    let mut dd: *Dog= (Dog*)p;
     if (dd.id == 1) { puts("PASS id"); }
 
     // Interface parameter used for null check
-    interface Animal* q = (void*)0;
+    let mut q: interface Animal* = (void*)0;
     if (q == (void*)0) { puts("PASS null"); }
 
     return 0;

@@ -1,16 +1,16 @@
 // std.alloc.free_list — general free-list allocator
-extern std.alloc.free_list;
+extern  std.alloc.free_list;
 
-i32 main() {
-    std.alloc.free_list fl(4096);
+pub fn main() i32 {
+    let mut fl: std.alloc.free_list((u64)4096);
     if (fl.base == (void*)0) { return 1; }
 
     // Alloc a few blocks
-    void* a = fl.alloc_bytes((u64)64);
+    let mut a: *void= fl.alloc_bytes((u64)64);
     if (a == (void*)0) { return 2; }
-    void* b = fl.alloc_bytes((u64)128);
+    let mut b: *void= fl.alloc_bytes((u64)128);
     if (b == (void*)0) { return 3; }
-    void* c = fl.alloc_bytes((u64)32);
+    let mut c: *void= fl.alloc_bytes((u64)32);
     if (c == (void*)0) { return 4; }
 
     // Write to blocks
@@ -23,7 +23,7 @@ i32 main() {
 
     // Free middle block, then alloc again
     fl.free_ptr(b);
-    void* d = fl.alloc_bytes((u64)64);
+    let mut d: *void= fl.alloc_bytes((u64)64);
     if (d == (void*)0) { return 8; }
     ((i32*)d)[0] = 444;
 
@@ -33,7 +33,7 @@ i32 main() {
     fl.free_ptr(d);
 
     // Can still alloc after all frees
-    void* e = fl.alloc_bytes((u64)512);
+    let mut e: *void= fl.alloc_bytes((u64)512);
     if (e == (void*)0) { return 9; }
 
     fl.deinit();

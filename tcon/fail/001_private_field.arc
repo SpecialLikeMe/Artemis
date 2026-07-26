@@ -4,8 +4,8 @@ istruc Wallet {
     public void __construct__(Wallet* self, i32 v) { self.balance = v; }
 }
 
-i32 main() {
-    Wallet w(100);
-    i32 stolen = w.balance;  // ERROR: 'balance' is private
+fn main() i32 {
+    fn w(100) Wallet;
+    let mut stolen: i32= w.balance;  // ERROR: 'balance' is private
     return stolen;
 }

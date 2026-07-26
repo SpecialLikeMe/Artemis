@@ -1,8 +1,8 @@
 //  functions that contain no try/res/error-union return compile and run
-i32 add(i32 a, i32 b)  { return a + b; }
-void noop()  { return; }
+fn add(a: i32, b: i32) i32  { return a + b; }
+fn noop() void  { return; }
 
-i32 main() {
+pub fn main() i32 {
     if (add(10, 32) != 42) { return 1; }
     noop();
     return 0;

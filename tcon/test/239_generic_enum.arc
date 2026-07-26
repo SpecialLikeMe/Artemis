@@ -10,25 +10,25 @@ enum Maybe<T> {
     something,
 }
 
-i32 main() {
+pub fn main() i32 {
     // Different instantiations of the same generic enum
-    Status<i32> s1;
+    let mut s1: Status<i32>;
     s1 = ok;
     if (s1 != 0) { return 1; }
 
-    Status<f32> s2;
+    let mut s2: Status<f32>;
     s2 = fail;
     if (s2 != 1) { return 2; }
 
-    Status<i64> s3;
+    let mut s3: Status<i64>;
     s3 = pending;
     if (s3 != 2) { return 3; }
 
-    Maybe<i32> m;
+    let mut m: Maybe<i32>;
     m = something;
     if (m != 1) { return 4; }
 
-    Maybe<i8*> n;
+    let mut n: Maybe<i8*>;
     n = nothing;
     if (n != 0) { return 5; }
 

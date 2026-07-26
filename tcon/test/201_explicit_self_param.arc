@@ -1,27 +1,27 @@
 // Test: explicit self parameter — any name works, just pass pointer-to-class type
 istruc Counter {
-    i32 value;
+    let mut value: i32;
 
-    void __construct__(Counter* self) { self.value = 0; }
+    fn __construct__(self: *Counter) void { self.value = 0; }
 
-    void increment(Counter* me) { me.value = me.value + 1; }
-    void add(Counter* c, i32 n)  { c.value = c.value + n; }
+    fn increment(me: *Counter) void { me.value = me.value + 1; }
+    fn add(c: *Counter, n: i32) void  { c.value = c.value + n; }
 
-    i32 get(const Counter* reader) { return reader.value; }
+    fn get(reader: *const Counter) i32 { return reader.value; }
 
-    void reset(Counter* self) { self.value = 0; }
+    fn reset(self: *Counter) void { self.value = 0; }
 }
 
 istruc Pair {
-    i32 a;
-    i32 b;
+    let mut a: i32;
+    let mut b: i32;
 
-    i32 sum(const Pair* p)  { return p.a + p.b; }
-    i32 diff(const Pair* p) { return p.a - p.b; }
+    fn sum(p: *const Pair) i32  { return p.a + p.b; }
+    fn diff(p: *const Pair) i32 { return p.a - p.b; }
 }
 
-i32 main() {
-    Counter c;
+pub fn main() i32 {
+    let mut c: Counter;
     c.increment();
     c.increment();
     if (c.get() != 2)  { return 1; }
@@ -32,7 +32,7 @@ i32 main() {
     c.reset();
     if (c.get() != 0)  { return 3; }
 
-    Pair p;
+    let mut p: Pair;
     p.a = 7;
     p.b = 3;
     if (p.sum()  != 10) { return 4; }

@@ -1,7 +1,7 @@
-i32 main() {
-    i32 count = 0;
-    for (i32 i = 0; i < 5; i++) {
-        for (i32 j = 0; j < 5; j++) {
+pub fn main() i32 {
+    let mut count: i32= 0;
+    for (let mut i: i32 = 0; i < 5; i++) {
+        for (let mut j: i32 = 0; j < 5; j++) {
             count = count + 1;
         }
     }

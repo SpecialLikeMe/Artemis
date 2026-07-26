@@ -7,13 +7,13 @@
 //   void free(i8* ptr);
 
 memstr SysAlloc {
-    void* alloc_(SysAlloc* self, u64 n)            { return (void*)malloc(n); }
-    void* grow_(SysAlloc* self, i8* p, u64 n)       { return (void*)realloc(p, n); }
-    void  free_(SysAlloc* self, i8* p)               { free(p); }
+    fn alloc_(self: *SysAlloc, n: u64) *void            { return (void*)malloc(n); }
+    fn grow_(self: *SysAlloc, p: *i8, n: u64) *void       { return (void*)realloc(p, n); }
+    fn free_(self: *SysAlloc, p: *i8) void               { free(p); }
 }
 
 // These wrappers are NOT named malloc/realloc/free so the heap-op
 // enforcement in the analyzer does not flag them.
-void* arc_malloc(u64 n)            { SysAlloc _s; return _s.alloc_(n); }
-void* arc_realloc(i8* p, u64 n)    { SysAlloc _s; return _s.grow_(p, n); }
-void  arc_free(i8* p)              { SysAlloc _s; _s.free_(p); }
+fn arc_malloc(n: u64) *void            { let mut _s: SysAlloc; return _s.alloc_(n); }
+fn arc_realloc(p: *i8, n: u64) *void    { let mut _s: SysAlloc; return _s.grow_(p, n); }
+fn arc_free(p: *i8) void              { let mut _s: SysAlloc; _s.free_(p); }

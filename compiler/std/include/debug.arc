@@ -1,25 +1,25 @@
 // std.debug — Panic handler, assertions, memory poison helpers.
 // Access as: std.debug.panic(...), std.debug.assert(...), etc.
 
-extern i32   printf(i8* fmt, ...);
-extern void  abort();
-extern void* malloc(u64 n);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
+@unsafe extern fn abort() void;
+@unsafe extern fn malloc(n: u64) *void;
 
 namespace std {
 namespace debug {
-void panic(i8* msg) {
+fn panic(msg: *i8) void {
     printf("\nPANIC: %s\n", msg);
     abort();
 }
 
-void panic_fmt(i8* fmt_str, i32 val) {
+fn panic_fmt(fmt_str: *i8, val: i32) void {
     printf("\nPANIC: ");
     printf(fmt_str, val);
     printf("\n");
     abort();
 }
 
-void bounds_check(i32 idx, i32 len, i8* context) {
+fn bounds_check(idx: i32, len: i32, context: *i8) void {
     if (idx < 0 || idx >= len) {
         printf("\nPANIC: bounds check failed in %s: index %d out of bounds [0,%d)\n",
                context, idx, len);
@@ -27,34 +27,34 @@ void bounds_check(i32 idx, i32 len, i8* context) {
     }
 }
 
-void null_check(void* p, i8* context) {
+fn null_check(p: *void, context: *i8) void {
     if (p == (void*)0) {
         printf("\nPANIC: null pointer dereference in %s\n", context);
         abort();
     }
 }
 
-void assert(bool cond, i8* msg) {
+fn assert(cond: bool, msg: *i8) void {
 @ifdef DEBUG
     if (!cond) { panic(msg); }
 @endif
 }
 
-void poison(void* p, u64 n) {
-    u8* b = (u8*)p;
-    for (u64 i = 0; i < n; i = i + 1) b[i] = (u8)(0xDEu ^ (u8)(i & 0xFFu));
+fn poison(p: *void, n: u64) void {
+    let mut b: *u8= (u8*)p;
+    for (let mut i: u64 = 0; i < n; i = i + 1) b[i] = (u8)(0xDEu ^ (u8)(i & 0xFFu));
 }
 
-bool is_poisoned(void* p, u64 n) {
-    u8* b = (u8*)p;
-    i32 hits = 0;
-    for (u64 i = 0; i < n; i = i + 1) {
+fn is_poisoned(p: *void, n: u64) bool {
+    let mut b: *u8= (u8*)p;
+    let mut hits: i32= 0;
+    for (let mut i: u64 = 0; i < n; i = i + 1) {
         if (b[i] == (u8)(0xDEu ^ (u8)(i & 0xFFu))) { hits = hits + 1; }
     }
     return hits > (i32)(n / 2);
 }
 
-void breakpoint() { }
+fn breakpoint() void { }
 
 } // namespace debug
 } // namespace std

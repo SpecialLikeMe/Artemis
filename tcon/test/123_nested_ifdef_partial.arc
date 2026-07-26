@@ -2,13 +2,13 @@
 
 @ifdef OUTER
 @ifdef INNER_MISSING
-i32 val() { return 1; }
+fn val() i32 { return 1; }
 @else
-i32 val() { return 2; }
+fn val() i32 { return 2; }
 @endif
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (val() != 2) { return 1; }
     return 0;
 }

@@ -1,38 +1,38 @@
 // Tests that a memstr type constructs, allocates, and frees correctly.
-extern void* malloc(u64 n);
-extern void  free(void* p);
+@unsafe extern fn malloc(n: u64) *void;
+@unsafe extern fn free(p: *void) void;
 
 memstr MyAlloc {
-    void* base;
-    u64   used;
-    u64   cap;
+    let mut base: *void;
+    let mut used: u64;
+    let mut cap: u64;
 
-    void __construct__(MyAlloc* self, u64 capacity) {
+    fn __construct__(self: *MyAlloc, capacity: u64) void {
         self.base = malloc(capacity);
         self.used = (u64)0;
         self.cap  = capacity;
     }
 
-    void* alloc_bytes(MyAlloc* self, u64 n) {
+    fn alloc_bytes(self: *MyAlloc, n: u64) *void {
         if (self.used + n > self.cap) { return (void*)0; }
-        void* p = (void*)((u8*)self.base + self.used);
+        let mut p: *void= (void*)((u8*)self.base + self.used);
         self.used = self.used + n;
         return p;
     }
 
-    void deinit(MyAlloc* self) { free(self.base); }
+    fn deinit(self: *MyAlloc) void { free(self.base); }
 }
 
-i32 main() {
-    MyAlloc a(1024);
+pub fn main() i32 {
+    let mut a: MyAlloc((u64)1024);
     if (a.base == (void*)0) { return 1; }
 
     // Alloc five i32s, write values
-    i32* p0 = (i32*)a.alloc_bytes((u64)4);
-    i32* p1 = (i32*)a.alloc_bytes((u64)4);
-    i32* p2 = (i32*)a.alloc_bytes((u64)4);
-    i32* p3 = (i32*)a.alloc_bytes((u64)4);
-    i32* p4 = (i32*)a.alloc_bytes((u64)4);
+    let mut p0: *i32= (i32*)a.alloc_bytes((u64)4);
+    let mut p1: *i32= (i32*)a.alloc_bytes((u64)4);
+    let mut p2: *i32= (i32*)a.alloc_bytes((u64)4);
+    let mut p3: *i32= (i32*)a.alloc_bytes((u64)4);
+    let mut p4: *i32= (i32*)a.alloc_bytes((u64)4);
     if (p0 == (i32*)0) { return 2; }
     if (p4 == (i32*)0) { return 3; }
 

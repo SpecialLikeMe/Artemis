@@ -2,4 +2,4 @@
 istruc Bad {
     mandatory i32 f(const Bad* self) { return 0; }  // ERROR: mandatory requires virtual
 }
-i32 main() { return 0; }
+fn main() i32 { return 0; }

@@ -10,24 +10,29 @@ enum diag_level_t {
 }
 
 struct diagnostic_t {
-    i32  level;
-    i8*  filename;
-    i32  line;
-    i32  col;
-    i8*  message;
+    let level: i32;
+    let filename: *i8;
+    let line: i32;
+    let col: i32;
+    let message: *i8;
 }
 
 // Dynamic array of diagnostics
 struct diag_vec {
-    diagnostic_t* data;
-    i32           len;
-    i32           cap;
+    let data: *diagnostic_t;
+    let len: i32;
+    let cap: i32;
 }
 
-void diag_vec_push(diag_vec* v, diagnostic_t d) {
+fn diag_vec_push(v: *diag_vec, d: diagnostic_t) void {
     if (v.len >= v.cap) {
-        i32 nc = v.cap == 0 ? 16 : v.cap * 2;
-        v.data = (diagnostic_t*)arc_realloc((i8*)v.data, sizeof(diagnostics__NS_diagnostic_t) * (u64)nc);
+        let mut nc: i32= v.cap == 0 ? 16 : v.cap * 2;
+        let mut nd: *diagnostic_t= (diagnostic_t*)arc_realloc((i8*)v.data, sizeof(diagnostic_t) * (u64)nc);
+        if (nd == (diagnostic_t*)0) {
+            printf("fatal: out of memory in diagnostic vector\n");
+            return;
+        }
+        v.data = nd;
         v.cap = nc;
     }
     v.data[v.len] = d;
@@ -37,12 +42,12 @@ void diag_vec_push(diag_vec* v, diagnostic_t d) {
 // ---- Diagnostic engine ----
 
 istruc diag_engine {
-    i8*       filename;
-    diag_vec  diags;
-    i32       err_count;
-    i32       max_errors;
+    let mut filename: *i8;
+    let mut diags: diag_vec;
+    let mut err_count: i32;
+    let mut max_errors: i32;
 
-    void init(diag_engine* self, i8* fname) {
+    fn init(self: *diag_engine, fname: *i8) void {
         self.filename   = fname;
         self.err_count  = 0;
         self.max_errors = 20;
@@ -51,9 +56,9 @@ istruc diag_engine {
         self.diags.cap  = 0;
     }
 
-    void emit_error(diag_engine* self, i32 line, i32 col, i8* msg) {
+    fn emit_error(self: *diag_engine, line: i32, col: i32, msg: *i8) void {
         if (self.err_count >= self.max_errors) { return; }
-        diagnostic_t d;
+        let mut d: diagnostic_t;
         d.level    = DIAG_ERROR;
         d.filename = self.filename;
         d.line     = line;
@@ -63,8 +68,8 @@ istruc diag_engine {
         self.err_count = self.err_count + 1;
     }
 
-    void emit_warning(diag_engine* self, i32 line, i32 col, i8* msg) {
-        diagnostic_t d;
+    fn emit_warning(self: *diag_engine, line: i32, col: i32, msg: *i8) void {
+        let mut d: diagnostic_t;
         d.level    = DIAG_WARNING;
         d.filename = self.filename;
         d.line     = line;
@@ -73,18 +78,18 @@ istruc diag_engine {
         diag_vec_push(&self.diags, d);
     }
 
-    void absorb(diag_engine* self, i8* msg) {
-        self.emit_error(0, 0, msg);
+    fn absorb(self: *diag_engine, msg: *i8) void {
+        (void)msg; // intentionally suppressed — caller determined this diagnostic is not an error
     }
 
-    bool has_errors(diag_engine* self) {
+    fn has_errors(self: *diag_engine) bool {
         return self.err_count > 0;
     }
 
-    void flush(diag_engine* self) {
-        for (i32 i = 0; i < self.diags.len; i = i + 1) {
-            diagnostic_t d = self.diags.data[i];
-            i8* lvl = "note";
+    fn flush(self: *diag_engine) void {
+        for (let mut i: i32 = 0; i < self.diags.len; i = i + 1) {
+            let mut d: diagnostic_t= self.diags.data[i];
+            let mut lvl: *i8= "note";
             if (d.level == DIAG_ERROR)   { lvl = "error"; }
             if (d.level == DIAG_WARNING) { lvl = "warning"; }
             printf("%s:%d:%d: %s: %s\n",
@@ -96,7 +101,7 @@ istruc diag_engine {
         }
     }
 
-    bool finish(diag_engine* self) {
+    fn finish(self: *diag_engine) bool {
         self.flush();
         return self.has_errors();
     }

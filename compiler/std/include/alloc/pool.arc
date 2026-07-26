@@ -1,49 +1,56 @@
 // std.alloc.pool — Fixed-size object pool.
 // Allocates a block of N objects of a fixed stride; O(1) alloc/free via free-list.
-extern void* malloc(u64 n);
-extern void  free(void* p);
+@unsafe extern fn printf(fmt: *const i8, ...) i32;
+@unsafe extern fn malloc(n: u64) *void;
+@unsafe extern fn free(p: *void) void;
 
 namespace std {
 namespace alloc {
 
 memstr pool {
-    void*  base;
-    void** free_list;  // stack of free slot pointers
-    i32    capacity;
-    i32    free_count;
-    u64    slot_size;
+    let mut base: *void;
+    let mut free_list: **void;  // stack of free slot pointers
+    let mut capacity: i32;
+    let mut free_count: i32;
+    let mut slot_size: u64;
 
-    void __construct__(pool* self, i32 n, u64 object_size) {
+    fn __construct__(self: *pool, n: i32, object_size: u64) void {
         // Round up to 8-byte alignment
-        u64 rem = object_size % (u64)8;
+        let mut rem: u64= object_size % (u64)8;
         if (rem != 0) { self.slot_size = object_size + ((u64)8 - rem); }
         else { self.slot_size = object_size; }
-        self.capacity   = n;
-        self.base       = malloc(self.slot_size * (u64)n);
-        self.free_list  = (void**)malloc((u64)8 * (u64)n);
+        self.capacity  = n;
+        self.base      = malloc(self.slot_size * (u64)n);
+        self.free_list = (void**)malloc((u64)8 * (u64)n);
+        if (self.base == (void*)0 || self.free_list == (void**)0) {
+            printf("fatal: pool allocator out of memory\n");
+            self.capacity   = 0;
+            self.free_count = 0;
+            return;
+        }
         self.free_count = n;
-        for (i32 i = 0; i < n; i = i + 1) {
+        for (let mut i: i32 = 0; i < n; i = i + 1) {
             self.free_list[i] = (void*)((u8*)self.base + (u64)i * self.slot_size);
         }
     }
 
-    void* alloc_slot(pool* self) {
+    fn alloc_slot(self: *pool) *void {
         if (self.free_count == 0) { return (void*)0; }
         self.free_count = self.free_count - 1;
         return self.free_list[self.free_count];
     }
 
-    void free_slot(pool* self, void* p) {
+    fn free_slot(self: *pool, p: *void) void {
         if (self.free_count >= self.capacity) { return; }
         self.free_list[self.free_count] = p;
         self.free_count = self.free_count + 1;
     }
 
-    bool full(pool* self)  { return self.free_count == 0; }
-    bool empty(pool* self) { return self.free_count == self.capacity; }
-    i32  used_count(pool* self) { return self.capacity - self.free_count; }
+    fn full(self: *pool) bool  { return self.free_count == 0; }
+    fn empty(self: *pool) bool { return self.free_count == self.capacity; }
+    fn used_count(self: *pool) i32 { return self.capacity - self.free_count; }
 
-    void deinit(pool* self) {
+    fn deinit(self: *pool) void {
         free(self.base);
         free(self.free_list);
     }

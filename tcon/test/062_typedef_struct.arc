@@ -1,19 +1,19 @@
 struct _Pair {
-    i32 first;
-    i32 second;
+    let first: i32;
+    let second: i32;
 }
 
-using _Pair Pair;
+using Pair = _Pair;
 
-Pair make_pair(i32 a, i32 b) {
-    Pair p;
+fn make_pair(a: i32, b: i32) Pair {
+    let mut p: Pair;
     p.first  = a;
     p.second = b;
     return p;
 }
 
-i32 main() {
-    Pair p = make_pair(3, 7);
+pub fn main() i32 {
+    let mut p: Pair= make_pair(3, 7);
     if (p.first  != 3) { return 1; }
     if (p.second != 7) { return 2; }
     return 0;

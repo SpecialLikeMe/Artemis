@@ -1,6 +1,6 @@
-i32 main() {
-    i32 x = 5;
-    i32 r = 0;
+pub fn main() i32 {
+    let mut x: i32= 5;
+    let mut r: i32= 0;
     if (x > 3) {
         r = 1;
     } else {

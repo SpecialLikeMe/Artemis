@@ -1,20 +1,20 @@
-void double_val(i32* p) {
+fn double_val(p: *i32) void {
     *p = *p * 2;
 }
 
-void swap(i32* a, i32* b) {
-    i32 tmp = *a;
+fn swap(a: *i32, b: *i32) void {
+    let mut tmp: i32= *a;
     *a = *b;
     *b = tmp;
 }
 
-i32 main() {
-    i32 x = 5;
+pub fn main() i32 {
+    let mut x: i32= 5;
     double_val(&x);
     if (x != 10) { return 1; }
 
-    i32 a = 3;
-    i32 b = 7;
+    let mut a: i32= 3;
+    let mut b: i32= 7;
     swap(&a, &b);
     if (a != 7) { return 2; }
     if (b != 3) { return 3; }

@@ -1,18 +1,18 @@
-i32 main() {
-    u8 a = 2;
+pub fn main() i32 {
+    let mut a: u8= 2;
     if (a != 2) { return 1; }
 
-    u8 b = 200;
+    let mut b: u8= 200;
     if (b != 200) { return 2; }
 
-    i16 c = a;
+    let mut c: i16= a;
     if (c != 2) { return 3; }
 
-    i32 big = 42;
-    u8 small = big;
+    let mut big: i32= 42;
+    let mut small: u8= big;
     if (small != 42) { return 4; }
 
-    u8 x = 0;
+    let mut x: u8= 0;
     x = 99;
     if (x != 99) { return 5; }
 

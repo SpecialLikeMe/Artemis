@@ -3,6 +3,6 @@ istruc Engine {
     private void ignite(Engine* self) {}
 }
 istruc TurboEngine : Engine {
-    void boost(TurboEngine* self) { self.ignite(); }  // ERROR: ignite is private in Engine
+    fn boost(self: *TurboEngine) void { self.ignite(); }  // ERROR: ignite is private in Engine
 }
-i32 main() { return 0; }
+fn main() i32 { return 0; }

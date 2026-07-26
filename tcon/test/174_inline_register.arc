@@ -1,15 +1,15 @@
 // inline and storage class keywords
-inline i32 square(i32 x) { return x * x; }
-inline i32 cube(i32 x)   { return x * x * x; }
+fn square(x: i32) i32 { return x * x; }
+fn cube(x: i32) i32   { return x * x * x; }
 
-i32 main() {
-    i32 a = 4;
-    i32 b = 3;
+pub fn main() i32 {
+    let mut a: i32= 4;
+    let mut b: i32= 3;
 
     if (square(a) != 16) { return 1; }
     if (cube(b)   != 27) { return 2; }
 
-    i32 c = square(a) + cube(b);
+    let mut c: i32= square(a) + cube(b);
     if (c != 43) { return 3; }
     return 0;
 }

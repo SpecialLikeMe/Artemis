@@ -1,6 +1,6 @@
 enum Dir { North, South, East, West }
 
-i32 opposite(i32 d) {
+fn opposite(d: i32) i32 {
     switch (d) {
         case North: return South;
         case South: return North;
@@ -10,7 +10,7 @@ i32 opposite(i32 d) {
     }
 }
 
-i32 main() {
+pub fn main() i32 {
     if (opposite(North) != South) { return 1; }
     if (opposite(East)  != West)  { return 2; }
     if (opposite(South) != North) { return 3; }

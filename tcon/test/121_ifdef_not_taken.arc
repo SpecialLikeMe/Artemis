@@ -1,9 +1,9 @@
 @ifdef UNDEFINED_FLAG
-i32 bad() { return 1; }
+fn bad() i32 { return 1; }
 @else
-i32 good() { return 0; }
+fn good() i32 { return 0; }
 @endif
 
-i32 main() {
+pub fn main() i32 {
     return good();
 }

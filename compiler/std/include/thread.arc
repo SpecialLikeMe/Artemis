@@ -2,28 +2,28 @@
 // Cross-platform: pthreads on POSIX, Win32 threads on Windows.
 
 // pthreads (POSIX / MinGW on Windows)
-extern i32 pthread_create(void** tid, void* attr, void*(void*)* fn, void* arg);
-extern i32 pthread_join(void* tid, void** retval);
-extern i32 pthread_detach(void* tid);
-extern i32 pthread_exit(void* retval);
-extern void* pthread_self();
-extern i32 pthread_equal(void* a, void* b);
-extern i32 pthread_mutex_init(void* mtx, void* attr);
-extern i32 pthread_mutex_destroy(void* mtx);
-extern i32 pthread_mutex_lock(void* mtx);
-extern i32 pthread_mutex_trylock(void* mtx);
-extern i32 pthread_mutex_unlock(void* mtx);
-extern i32 pthread_cond_init(void* cond, void* attr);
-extern i32 pthread_cond_destroy(void* cond);
-extern i32 pthread_cond_wait(void* cond, void* mtx);
-extern i32 pthread_cond_timedwait(void* cond, void* mtx, void* ts);
-extern i32 pthread_cond_signal(void* cond);
-extern i32 pthread_cond_broadcast(void* cond);
-extern i32 sem_init(void* sem, i32 pshared, u32 val);
-extern i32 sem_destroy(void* sem);
-extern i32 sem_post(void* sem);
-extern i32 sem_wait(void* sem);
-extern i32 sem_trywait(void* sem);
+@unsafe extern fn pthread_create(void** tid, void* attr, *(void*)void* fn_ref, void* arg) i32;
+@unsafe extern fn pthread_join(tid: *void, retval: **void) i32;
+@unsafe extern fn pthread_detach(tid: *void) i32;
+@unsafe extern fn pthread_exit(retval: *void) i32;
+@unsafe extern fn pthread_self() *void;
+@unsafe extern fn pthread_equal(a: *void, b: *void) i32;
+@unsafe extern fn pthread_mutex_init(void* mtx, void* attr) i32;
+@unsafe extern fn pthread_mutex_destroy(mtx: *void) i32;
+@unsafe extern fn pthread_mutex_lock(mtx: *void) i32;
+@unsafe extern fn pthread_mutex_trylock(mtx: *void) i32;
+@unsafe extern fn pthread_mutex_unlock(mtx: *void) i32;
+@unsafe extern fn pthread_cond_init(void* cond, void* attr) i32;
+@unsafe extern fn pthread_cond_destroy(cond: *void) i32;
+@unsafe extern fn pthread_cond_wait(cond: *void, mtx: *void) i32;
+@unsafe extern fn pthread_cond_timedwait(cond: *void, mtx: *void, ts: *void) i32;
+@unsafe extern fn pthread_cond_signal(cond: *void) i32;
+@unsafe extern fn pthread_cond_broadcast(cond: *void) i32;
+@unsafe extern fn sem_init(sem: *void, pshared: i32, val: u32) i32;
+@unsafe extern fn sem_destroy(sem: *void) i32;
+@unsafe extern fn sem_post(sem: *void) i32;
+@unsafe extern fn sem_wait(sem: *void) i32;
+@unsafe extern fn sem_trywait(sem: *void) i32;
 
 namespace std {
 namespace thread {
@@ -31,110 +31,110 @@ namespace thread {
 // --- mutex ---
 
 istruc mutex {
-    i8 handle[64];  // storage for pthread_mutex_t (platform sized)
+    let mut handle: [64]i8;  // storage for pthread_mutex_t (platform sized)
 
-    void __construct__(mutex* self) {
+    fn __construct__(self: *mutex) void {
         pthread_mutex_init((void*)self.handle, (void*)0);
     }
 
-    void lock(mutex* self)     { pthread_mutex_lock((void*)self.handle); }
-    void unlock(mutex* self)   { pthread_mutex_unlock((void*)self.handle); }
-    bool try_lock(mutex* self) { return pthread_mutex_trylock((void*)self.handle) == 0; }
+    fn lock(self: *mutex) void     { pthread_mutex_lock((void*)self.handle); }
+    fn unlock(self: *mutex) void   { pthread_mutex_unlock((void*)self.handle); }
+    fn try_lock(self: *mutex) bool { return pthread_mutex_trylock((void*)self.handle) == 0; }
 
-    void deinit(mutex* self) { pthread_mutex_destroy((void*)self.handle); }
+    fn deinit(self: *mutex) void { pthread_mutex_destroy((void*)self.handle); }
 }
 
 // --- scoped lock guard ---
 istruc lock_guard {
-    mutex* mtx;
-    void __construct__(lock_guard* self, mutex* m) { self.mtx = m; (*m).lock(); }
-    void release(lock_guard* self) { (*self.mtx).unlock(); }
+    let mut mtx: *mutex;
+    fn __construct__(self: *lock_guard, m: *mutex) void { self.mtx = m; (*m).lock(); }
+    fn release(self: *lock_guard) void { (*self.mtx).unlock(); }
 }
 
 // --- condition variable ---
 
 istruc cond_var {
-    i8 handle[64];
+    let mut handle: [64]i8;
 
-    void __construct__(cond_var* self) {
+    fn __construct__(self: *cond_var) void {
         pthread_cond_init((void*)self.handle, (void*)0);
     }
 
-    void wait(cond_var* self, mutex* mtx) {
+    fn wait(self: *cond_var, mtx: *mutex) void {
         pthread_cond_wait((void*)self.handle, (void*)(*mtx).handle);
     }
 
-    void signal(cond_var* self)    { pthread_cond_signal((void*)self.handle); }
-    void broadcast(cond_var* self) { pthread_cond_broadcast((void*)self.handle); }
+    fn signal(self: *cond_var) void    { pthread_cond_signal((void*)self.handle); }
+    fn broadcast(self: *cond_var) void { pthread_cond_broadcast((void*)self.handle); }
 
-    void deinit(cond_var* self) { pthread_cond_destroy((void*)self.handle); }
+    fn deinit(self: *cond_var) void { pthread_cond_destroy((void*)self.handle); }
 }
 
 // --- semaphore ---
 
 istruc semaphore {
-    i8 handle[64];
+    let mut handle: [64]i8;
 
-    void __construct__(semaphore* self, u32 initial_val) {
+    fn __construct__(self: *semaphore, initial_val: u32) void {
         sem_init((void*)self.handle, 0, initial_val);
     }
 
-    void post(semaphore* self)     { sem_post((void*)self.handle); }
-    void wait(semaphore* self)     { sem_wait((void*)self.handle); }
-    bool try_wait(semaphore* self) { return sem_trywait((void*)self.handle) == 0; }
+    fn post(self: *semaphore) void     { sem_post((void*)self.handle); }
+    fn wait(self: *semaphore) void     { sem_wait((void*)self.handle); }
+    fn try_wait(self: *semaphore) bool { return sem_trywait((void*)self.handle) == 0; }
 
-    void deinit(semaphore* self) { sem_destroy((void*)self.handle); }
+    fn deinit(self: *semaphore) void { sem_destroy((void*)self.handle); }
 }
 
 // --- thread ---
 
 istruc thread_t {
-    void* handle;
-    bool  joined;
+    let mut handle: *void;
+    let mut joined: bool;
 
-    void __construct__(thread_t* self) {
+    fn __construct__(self: *thread_t) void {
         self.handle = (void*)0;
         self.joined = false;
     }
 
-    void spawn(thread_t* self, void*(void*)* fn, void* arg) {
-        pthread_create(thread_t* self.handle, (void*)0, fn, arg);
+    fn spawn(thread_t* self, void*(void*)* fn_ref, void* arg) void {
+        pthread_create(thread_t* self.handle, (void*)0, fn_ref, arg);
         self.joined = false;
     }
 
-    void join(thread_t* self) {
+    fn join(self: *thread_t) void {
         if (!self.joined && self.handle != (void*)0) {
             pthread_join(self.handle, (void**)0);
             self.joined = true;
         }
     }
 
-    void detach(thread_t* self) {
+    fn detach(self: *thread_t) void {
         if (!self.joined && self.handle != (void*)0) {
             pthread_detach(self.handle);
             self.joined = true;
         }
     }
 
-    bool is_done(thread_t* self) { return self.joined; }
+    fn is_done(self: *thread_t) bool { return self.joined; }
 }
 
 // --- thread-local ID ---
-void* current_id() { return pthread_self(); }
+fn current_id() *void { return pthread_self(); }
 
 // --- once flag (simple spin) ---
 istruc once_flag {
-    i32 done;
+    let mut done: i32;
 
-    void __construct__(once_flag* self) { self.done = 0; }
+    fn __construct__(self: *once_flag) void { self.done = 0; }
 
-    void call_once(once_flag* self, void()* fn) {
+    fn call_once(once_flag* self, void()* fn_ref) void {
         if (self.done != 0) { return; }
         // spin until we win the CAS
-        i32 zero = 0;
-        i32 one  = 1;
+        let mut zero: i32= 0;
+        let mut one: i32= 1;
         __asm__ { lock cmpxchg %one, %done : zero : one, done : memory }
-        if (zero == 0) { fn(); }
+        if (zero == 0) { fn_ref(); }
         else {
             while (self.done == 0) { __asm__ { pause : : : } }
         }
@@ -144,43 +144,43 @@ istruc once_flag {
 // --- read-write lock ---
 
 istruc rwlock {
-    mutex mtx;
-    cond_var readers_done;
-    cond_var writers_done;
-    i32 readers;
-    i32 writers;
-    i32 pending_writers;
+    let mut mtx: mutex;
+    let mut readers_done: cond_var;
+    let mut writers_done: cond_var;
+    let mut readers: i32;
+    let mut writers: i32;
+    let mut pending_writers: i32;
 
-    void __construct__(rwlock* self) {
+    fn __construct__(self: *rwlock) void {
         self.readers = 0; self.writers = 0; self.pending_writers = 0;
     }
 
-    void read_lock(rwlock* self) {
+    fn read_lock(self: *rwlock) void {
         self.mtx.lock();
         while (self.writers > 0 || self.pending_writers > 0)
-            self.writers_done.wait(rwlock* self.mtx);
+            self.writers_done.wait(&self.mtx);
         self.readers = self.readers + 1;
         self.mtx.unlock();
     }
 
-    void read_unlock(rwlock* self) {
+    fn read_unlock(self: *rwlock) void {
         self.mtx.lock();
         self.readers = self.readers - 1;
         if (self.readers == 0) { self.readers_done.signal(); }
         self.mtx.unlock();
     }
 
-    void write_lock(rwlock* self) {
+    fn write_lock(self: *rwlock) void {
         self.mtx.lock();
         self.pending_writers = self.pending_writers + 1;
         while (self.readers > 0 || self.writers > 0)
-            self.readers_done.wait(rwlock* self.mtx);
+            self.readers_done.wait(&self.mtx);
         self.pending_writers = self.pending_writers - 1;
         self.writers = self.writers + 1;
         self.mtx.unlock();
     }
 
-    void write_unlock(rwlock* self) {
+    fn write_unlock(self: *rwlock) void {
         self.mtx.lock();
         self.writers = self.writers - 1;
         if (self.pending_writers > 0) self.readers_done.broadcast();
@@ -192,24 +192,24 @@ istruc rwlock {
 // --- thread pool ---
 
 istruc thread_pool {
-    thread_t* threads;
-    i32       count;
+    let mut threads: *thread_t;
+    let mut count: i32;
 
-    void __construct__(thread_pool* self, i32 n, void*(void*)* fn, void* arg, &memstr a) {
+    fn __construct__(thread_pool* self, i32 n, void*(void*)* fn_ref, void* arg, &memstr a) void {
         self.count   = n;
         self.threads = (thread_t*)a.mmap((u64)(sizeof(thread_t) * n));
-        for (i32 i = 0; i < n; i = i + 1) {
+        for (let mut i: i32 = 0; i < n; i = i + 1) {
             self.threads[i].__construct__();
-            self.threads[i].spawn(fn, arg);
+            self.threads[i].spawn(fn_ref, arg);
         }
     }
 
-    void join_all(thread_pool* self) {
-        for (i32 i = 0; i < self.count; i = i + 1)
+    fn join_all(self: *thread_pool) void {
+        for (let mut i: i32 = 0; i < self.count; i = i + 1)
             self.threads[i].join();
     }
 
-    void deinit(thread_pool* self, &memstr a) { a.deinit(self.threads); }
+    fn deinit(thread_pool* self, &memstr a) void { a.free(self.threads); }
 }
 
 } // thread

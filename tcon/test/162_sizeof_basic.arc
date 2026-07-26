@@ -1,8 +1,8 @@
 // sizeof: primitive types and structs
-struct Pair { i32 a; i32 b; }
-struct Triple { i32 x; i32 y; i32 z; }
+struct Pair { let a: i32; let b: i32; }
+struct Triple { let x: i32; let y: i32; let z: i32; }
 
-i32 main() {
+pub fn main() i32 {
     if (sizeof(i8)   != 1) { return 1; }
     if (sizeof(i16)  != 2) { return 2; }
     if (sizeof(i32)  != 4) { return 3; }

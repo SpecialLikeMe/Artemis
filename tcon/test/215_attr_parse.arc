@@ -2,10 +2,10 @@
 // Attributes are stored on func_decl and not compiled.
 
 #[inline]
-i32 add(i32 a, i32 b) {
+fn add(a: i32, b: i32) i32 {
     return a + b;
 }
 
-i32 main() {
+pub fn main() i32 {
     return add(1, 2) - 3;
 }

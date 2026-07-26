@@ -4,11 +4,11 @@ istruc A {
 }
 istruc B : A {
     final i32 val(const B* self) override { return 2; }
-    i32 doubled(const B* self) { return self.val() * 2; }
+    fn doubled(self: *const B) i32 { return self.val() * 2; }
 }
 
-i32 main() {
-    B b;
+fn main() i32 {
+    let mut b: B;
     if (b.val()     != 2) { return 1; }
     if (b.doubled() != 4) { return 2; }
     return 0;

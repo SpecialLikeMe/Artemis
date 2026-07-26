@@ -1,4 +1,4 @@
-# 28. Type Aliases and `auto`
+# 28. Type Aliases
 
 ---
 
@@ -7,18 +7,21 @@
 `using` creates a transparent alias for any type. The alias and the underlying type are identical to the compiler:
 
 ```arc
-using i32   ErrorCode;
-using i8*   CStr;
-using i32*  IntPtr;
+using ErrorCode = i32;
+using CStr = *i8;
+using IntPtr = *i32;
 ```
 
 ### Struct / istruc Typedefs
 
 ```arc
-istruc Vec2 { i32 x; i32 y; }
-using Vec2 Point;
+istruc Vec2 {
+    let x: i32;
+    let y: i32;
+}
+using Point = Vec2;
 
-Point p;
+let mut p: Point;
 p.x = 3;
 p.y = 4;
 ```
@@ -26,65 +29,35 @@ p.y = 4;
 ### Function Pointer Typedefs
 
 ```arc
-using i32(i32, i32)* BinOp;
+using BinOp = *(i32, i32)i32;
 
-BinOp op = &add;
-i32 result = op(3, 4);
+let op: BinOp = add;
+let result: i32 = op(3, 4);
 ```
 
 ---
 
-## `using` — Contextual Alias
+## Type Inference with `let`
 
-`using` creates a contextual type alias, most commonly used with `const auto` to introduce a `let`-style binding:
-
-```arc
-using let = const auto;
-
-let x = 42;        // const i32 x = 42
-let y = "hello";   // const i8* y = "hello"
-let z = 3.14;      // const f64 z = 3.14
-```
-
-`using` bindings are scoped to the enclosing block or file scope.
-
----
-
-## `auto` Variables — Type Inference
-
-`auto` infers the variable type from the initializer expression:
+Omitting the type annotation from `let` infers the type from the initializer:
 
 ```arc
-auto x = 42;       // x : i32
-auto y = 3.14;     // y : f64
-auto s = "hello";  // s : i8*
-auto p = &x;       // p : i32*
+let x = 42;        // x : i32
+let y = 3.14;      // y : f64
+let s = "hello";   // s : *i8
+let p = &x;        // p : *i32
 ```
 
 The type is resolved at compile time — there is no runtime type erasure.
 
-### `auto` in For Loops
-
-```arc
-auto count = 0;
-for (; count < 10; count = count + 1) { }
-```
-
-### `auto` with Complex Expressions
-
-```arc
-auto result = some_func();   // type inferred from return type of some_func
-```
-
 ---
 
-## `auto` in Function Signatures — Error Unions
+## `!T` — Error Union Return Type
 
-`auto` as a function return type, combined with `!T`, declares a fallible function:
+Functions that may fail declare a `!T` return type:
 
 ```arc
-auto parse_int(i8* s) !i32 {
-    // returns either i32 or an error
+fn parse_int(s: *i8) !i32 {
     if (s == null) { return error.NullInput; }
     return 42;
 }

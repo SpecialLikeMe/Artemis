@@ -3,11 +3,11 @@
 
 @ifdef OUTER
 @ifdef INNER
-i32 val() { return 3; }
+fn val() i32 { return 3; }
 @endif
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (val() != 3) { return 1; }
     return 0;
 }

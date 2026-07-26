@@ -1,8 +1,8 @@
-i32 main() {
-    i32 outer = 0;
-    i32 inner_total = 0;
+pub fn main() i32 {
+    let mut outer: i32= 0;
+    let mut inner_total: i32= 0;
     while (outer < 3) {
-        i32 inner = 0;
+        let mut inner: i32= 0;
         while (1) {
             if (inner >= 3) { break; }
             inner_total = inner_total + 1;

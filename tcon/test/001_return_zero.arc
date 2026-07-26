@@ -1,1 +1,1 @@
-int main() { return 0; }
+pub fn main() int { return 0; }

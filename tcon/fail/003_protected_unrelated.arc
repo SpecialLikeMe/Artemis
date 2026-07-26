@@ -4,9 +4,9 @@ istruc Base {
 }
 
 istruc Unrelated {
-    i32 steal(Base* b) {
+    fn steal(b: *Base) i32 {
         return b->secret;  // ERROR: 'secret' is protected; Unrelated does not derive from Base
     }
 }
 
-i32 main() { return 0; }
+fn main() i32 { return 0; }

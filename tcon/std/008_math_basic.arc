@@ -1,10 +1,10 @@
 // std.math — basic math functions
-extern std.math;
+extern  std.math;
 
-extern f64 sqrt(f64 x);
-extern f64 fabs(f64 x);
+@unsafe extern fn sqrt(x: f64) f64;
+@unsafe extern fn fabs(x: f64) f64;
 
-i32 main() {
+pub fn main() i32 {
     // abs
     if (std.math.abs_i32(-7) != 7) { return 1; }
     if (std.math.abs_i64((i64)-999) != (i64)999) { return 2; }

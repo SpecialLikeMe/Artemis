@@ -1,31 +1,31 @@
 // Test: namespace istruc — static methods, intra-namespace type in method return
 namespace shapes {
-    struct Vec2 { f64 x; f64 y; }
+    struct Vec2 { let x: f64; let y: f64; }
 
     istruc Circle {
-        Vec2 center;
-        f64  radius;
+        let mut center: Vec2;
+        let mut radius: f64;
 
-        void __construct__(Circle* self, f64 cx, f64 cy, f64 r) {
+        fn __construct__(self: *Circle, cx: f64, cy: f64, r: f64) void {
             self.center.x = cx;
             self.center.y = cy;
             self.radius   = r;
         }
 
         // Intra-namespace: Vec2 unqualified, calls make_vec2 unqualified
-        Vec2 get_center(const Circle* self) { return self.center; }
+        fn get_center(self: *const Circle) Vec2 { return self.center; }
 
-        static Circle unit() {
-            Circle c;
+        static fn unit() Circle {
+            let mut c: Circle;
             c.center.x = 0.0; c.center.y = 0.0; c.radius = 1.0;
             return c;
         }
     }
 }
 
-i32 main() {
-    shapes.Circle c(1.0, 2.0, 3.0);
-    shapes.Vec2   v = c.get_center();
+pub fn main() i32 {
+    let mut c: shapes.Circle(1.0, 2.0, 3.0);
+    let mut v: shapes.Vec2= c.get_center();
     if (v.x != 1.0) { return 1; }
     if (v.y != 2.0) { return 2; }
 

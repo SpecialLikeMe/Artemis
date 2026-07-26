@@ -1,8 +1,8 @@
 // std.rand — Pseudo-random number generation (Xoshiro256**, PCG32).
 
-extern f64 log(f64 x);
-extern f64 cos(f64 x);
-extern f64 sqrt(f64 x);
+@unsafe extern fn log(x: f64) f64;
+@unsafe extern fn cos(x: f64) f64;
+@unsafe extern fn sqrt(x: f64) f64;
 
 namespace std {
 namespace rand {
@@ -10,56 +10,56 @@ namespace rand {
 // --- xoshiro256** ---
 
 istruc xoshiro_state {
-    u64 s[4];
+    let mut s: [4]u64;
 
-    void __construct__(xoshiro_state* self, u64 seed) {
-        for (i32 i = 0; i < 4; i = i + 1) {
+    fn __construct__(self: *xoshiro_state, seed: u64) void {
+        for (let mut i: i32 = 0; i < 4; i = i + 1) {
             seed = seed + 0x9e3779b97f4a7c15u;
-            u64 z = seed;
+            let mut z: u64= seed;
             z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9u;
             z = (z ^ (z >> 27)) * 0x94d049bb133111ebu;
             self.s[i] = z ^ (z >> 31);
         }
     }
 
-    u64 next_u64(xoshiro_state* self) {
-        u64 r1  = self.s[1] * 5;
-        u64 result = ((r1 << 7) | (r1 >> 57)) * 9;
-        u64 t   = self.s[1] << 17;
+    fn next_u64(self: *xoshiro_state) u64 {
+        let mut r1: u64= self.s[1] * 5;
+        let mut result: u64= ((r1 << 7) | (r1 >> 57)) * 9;
+        let mut t: u64= self.s[1] << 17;
         self.s[2] = self.s[2] ^ self.s[0];
         self.s[3] = self.s[3] ^ self.s[1];
         self.s[1] = self.s[1] ^ self.s[2];
         self.s[0] = self.s[0] ^ self.s[3];
         self.s[2] = self.s[2] ^ t;
-        u64 s3 = self.s[3];
+        let mut s3: u64= self.s[3];
         self.s[3] = (s3 << 45) | (s3 >> 19);
         return result;
     }
 
-    u32  next_u32(xoshiro_state* self)          { return (u32)(self.next_u64() >> 32); }
-    f64  next_f64(xoshiro_state* self)          { return (f64)(self.next_u64() >> 11) * (1.0 / 9007199254740992.0); }
-    f32  next_f32(xoshiro_state* self)          { return (f32)(self.next_u32() >> 8) * (1.0 / 16777216.0); }
+    fn next_u32(self: *xoshiro_state) u32          { return (u32)(self.next_u64() >> 32); }
+    fn next_f64(self: *xoshiro_state) f64          { return (f64)(self.next_u64() >> 11) * (1.0 / 9007199254740992.0); }
+    fn next_f32(self: *xoshiro_state) f32          { return (f32)(self.next_u32() >> 8) * (1.0 / 16777216.0); }
 
-    i32 range_i32(xoshiro_state* self, i32 lo, i32 hi) {
-        u32 span = (u32)(hi - lo + 1);
-        u32 r    = self.next_u32();
+    fn range_i32(self: *xoshiro_state, lo: i32, hi: i32) i32 {
+        let mut span: u32= (u32)(hi - lo + 1);
+        let mut r: u32= self.next_u32();
         return lo + (i32)(r % span);
     }
 
-    f64 range_f64(xoshiro_state* self, f64 lo, f64 hi) {
+    fn range_f64(self: *xoshiro_state, lo: f64, hi: f64) f64 {
         return lo + self.next_f64() * (hi - lo);
     }
 
-    bool next_bool(xoshiro_state* self) { return (self.next_u64() & 1u) != 0; }
+    fn next_bool(self: *xoshiro_state) bool { return (self.next_u64() & 1u) != 0; }
 
-    void fill_bytes(xoshiro_state* self, u8* buf, u64 n) {
-        u64 i = 0;
+    fn fill_bytes(self: *xoshiro_state, buf: *u8, n: u64) void {
+        let mut i: u64= 0;
         while (i + 8 <= n) {
-            u64 v = self.next_u64();
-            for (i32 j = 0; j < 8; j = j + 1) { buf[i] = (u8)(v >> (j * 8)); i = i + 1; }
+            let mut v: u64= self.next_u64();
+            for (let mut j: i32 = 0; j < 8; j = j + 1) { buf[i] = (u8)(v >> (j * 8)); i = i + 1; }
         }
         if (i < n) {
-            u64 v = self.next_u64();
+            let mut v: u64= self.next_u64();
             while (i < n) { buf[i] = (u8)v; v = v >> 8; i = i + 1; }
         }
     }
@@ -68,10 +68,10 @@ istruc xoshiro_state {
 // --- PCG32 ---
 
 istruc pcg_state {
-    u64 pcg_s;
-    u64 inc;
+    let mut pcg_s: u64;
+    let mut inc: u64;
 
-    void __construct__(pcg_state* self, u64 seed, u64 seq) {
+    fn __construct__(self: *pcg_state, seed: u64, seq: u64) void {
         self.pcg_s = 0;
         self.inc   = (seq << 1) | 1u;
         self.next_u32();
@@ -79,30 +79,30 @@ istruc pcg_state {
         self.next_u32();
     }
 
-    u32 next_u32(pcg_state* self) {
-        u64 old = self.pcg_s;
+    fn next_u32(self: *pcg_state) u32 {
+        let mut old: u64= self.pcg_s;
         self.pcg_s = old * 6364136223846793005u + self.inc;
-        u32 xsh = (u32)(((old >> 18) ^ old) >> 27);
-        u32 rot = (u32)(old >> 59);
+        let mut xsh: u32= (u32)(((old >> 18) ^ old) >> 27);
+        let mut rot: u32= (u32)(old >> 59);
         return (xsh >> rot) | (xsh << ((-(i32)rot) & 31));
     }
 
-    f64  next_f64(pcg_state* self) { return (f64)(self.next_u32() >> 1) * (1.0 / 2147483648.0); }
-    bool next_bool(pcg_state* self) { return (self.next_u32() & 1u) != 0; }
+    fn next_f64(self: *pcg_state) f64 { return (f64)(self.next_u32() >> 1) * (1.0 / 2147483648.0); }
+    fn next_bool(self: *pcg_state) bool { return (self.next_u32() & 1u) != 0; }
 
-    i32 range_i32(pcg_state* self, i32 lo, i32 hi) {
-        u32 span = (u32)(hi - lo + 1);
+    fn range_i32(self: *pcg_state, lo: i32, hi: i32) i32 {
+        let mut span: u32= (u32)(hi - lo + 1);
         return lo + (i32)(self.next_u32() % span);
     }
 }
 
 // --- Gaussian (Box-Muller) ---
 
-f64 gaussian(xoshiro_state* rng, f64 mean, f64 std_dev) {
-    f64 uu1 = (*rng).next_f64();
-    f64 uu2 = (*rng).next_f64();
+fn gaussian(rng: *xoshiro_state, mean: f64, std_dev: f64) f64 {
+    let mut uu1: f64= (*rng).next_f64();
+    let mut uu2: f64= (*rng).next_f64();
     if (uu1 <= 0.0) { uu1 = 1e-300; }
-    f64 z = sqrt(-2.0 * log(uu1)) * cos(6.28318530717958647 * uu2);
+    let mut z: f64= sqrt(-2.0 * log(uu1)) * cos(6.28318530717958647 * uu2);
     return mean + z * std_dev;
 }
 

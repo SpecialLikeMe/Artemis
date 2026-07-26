@@ -2,12 +2,12 @@
 @undef FLAG
 
 @ifndef FLAG
-i32 val() { return 5; }
+fn val() i32 { return 5; }
 @else
-i32 val() { return 0; }
+fn val() i32 { return 0; }
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (val() != 5) { return 1; }
     return 0;
 }

@@ -1,6 +1,6 @@
 // PASS: comptime if emits only the taken branch.
-comptime i32 VERSION = 2;
-i32 main() {
+const VERSION: i32= 2;
+pub fn main() i32 {
     comptime if (VERSION == 1) {
         return 1;  // should not be emitted
     } else {

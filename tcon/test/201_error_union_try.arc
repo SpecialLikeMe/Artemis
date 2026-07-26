@@ -1,16 +1,16 @@
 // try propagates error from callee; on success yields the value
-auto safe_div(i32 a, i32 b) !i32 {
+fn safe_div(a: i32, b: i32) !i32 {
     if (b == 0) { return error.DivByZero; }
     return a / b;
 }
 
-auto caller(i32 a, i32 b) !i32 {
-    i32 result = try safe_div(a, b);
+fn caller(a: i32, b: i32) !i32 {
+    let mut result: i32= try safe_div(a, b);
     return result;
 }
 
-i32 main() {
-    i32 err_fired = 0;
+pub fn main() i32 {
+    let mut err_fired: i32= 0;
 
     // propagated error hits the except handler
     caller(10, 0) catch |e| {

@@ -1,5 +1,5 @@
 // FAIL: sizeof applied to an undeclared type
-i32 main() {
-    i32 s = sizeof(Imaginary);  // ERROR: Imaginary undeclared
+fn main() i32 {
+    let mut s: i32= sizeof(Imaginary);  // ERROR: Imaginary undeclared
     return s;
 }

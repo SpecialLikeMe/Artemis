@@ -1,21 +1,21 @@
 // Method overloading is not supported in Artemis.
 // Two methods with the same name on an istruc must be an error.
 istruc Vec2 {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 
-    void __construct__(Vec2* self, i32 v) {
+    fn __construct__(self: *Vec2, v: i32) void {
         self.x = v;
         self.y = v;
     }
 
-    void __construct__(Vec2* self, i32 px, i32 py) {
+    fn __construct__(self: *Vec2, px: i32, py: i32) void {
         self.x = px;
         self.y = py;
     }
 }
 
-i32 main() {
-    Vec2 a(5);
+fn main() i32 {
+    fn a(5) Vec2;
     return 0;
 }

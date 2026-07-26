@@ -1,5 +1,5 @@
 // FAIL: casting to an undeclared type
-i32 main() {
-    i32 x = (SomeUnknown)5;  // ERROR: SomeUnknown undeclared
+fn main() i32 {
+    let mut x: i32= (SomeUnknown)5;  // ERROR: SomeUnknown undeclared
     return x;
 }

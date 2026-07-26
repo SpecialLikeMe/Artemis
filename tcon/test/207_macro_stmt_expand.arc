@@ -2,13 +2,13 @@
 // Verifies: a macro that expands to a variable declaration works inside a function body.
 // The expansion does NOT include a trailing ';'; the call-site ';' terminates the statement.
 
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 const_resolve let_i32 {
-    ($name:ident, $val:expr) => { i32 $name = $val },
+    ($name:ident, $val:expr) => { let mut $name: i32 = $val },
 }
 
-i32 main() {
+pub fn main() i32 {
     let_i32(x, 21);
     let_i32(y, x + x);
     if (y != 42) { return 1; }

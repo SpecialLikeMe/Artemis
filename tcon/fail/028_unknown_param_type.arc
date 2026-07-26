@@ -1,3 +1,3 @@
 // FAIL: function parameter uses an undeclared type
-i32 bar(Qux x) { return 0; }  // ERROR: Qux undeclared
-i32 main() { return 0; }
+fn bar(x: Qux) i32 { return 0; }  // ERROR: Qux undeclared
+fn main() i32 { return 0; }

@@ -1,10 +1,10 @@
 istruc Counter {
-    i32 n;
-    void __construct__(Counter* self) { self.n = 100; }
-    i32 get(const Counter* self) { return self.n; }
+    let mut n: i32;
+    fn __construct__(self: *Counter) void { self.n = 100; }
+    fn get(self: *const Counter) i32 { return self.n; }
 }
-i32 main() {
-    Counter c();
+pub fn main() i32 {
+    let mut c: Counter();
     if (c.get() != 100) { return 1; }
     return 0;
 }

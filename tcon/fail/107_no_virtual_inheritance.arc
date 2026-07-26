@@ -1,13 +1,13 @@
 istruc Animal {
-    i32 legs;
+    let mut legs: i32;
     virtual i32 speak(const Animal* self) { return 1; }
-    i32 nonvirtual(const Animal* self) { return 7; }
+    fn nonvirtual(self: *const Animal) i32 { return 7; }
 }
 istruc Dog : Animal {
-    i32 speak(const Dog* self) override { return 2; }
+    fn speak(self: *const Dog) i32 override { return 2; }
 }
-i32 main() {
-    Dog d;
+fn main() i32 {
+    let mut d: Dog;
     d.legs = 4;
     if (d.speak() != 2) { return 1; }
     if (d.nonvirtual() != 7) { return 2; }

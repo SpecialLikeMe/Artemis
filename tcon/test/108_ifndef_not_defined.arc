@@ -1,8 +1,8 @@
 @ifndef MISSING_FLAG
-i32 value() { return 9; }
+fn value() i32 { return 9; }
 @endif
 
-i32 main() {
+pub fn main() i32 {
     if (value() != 9) { return 1; }
     return 0;
 }

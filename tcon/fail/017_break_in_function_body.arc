@@ -1,3 +1,3 @@
 // FAIL: break not in a loop or switch
-void f() { break; }
-i32 main() { f(); return 0; }
+fn f() void { break; }
+fn main() i32 { f(); return 0; }

@@ -1,8 +1,8 @@
-i32 main() {
-    i32 x = -5;
-    i32 y = +x;
+pub fn main() i32 {
+    let mut x: i32= -5;
+    let mut y: i32= +x;
     if (y != -5) { return 1; }
-    i32 z = +42;
+    let mut z: i32= +42;
     if (z != 42) { return 2; }
     return 0;
 }

@@ -1,18 +1,18 @@
 // Test: errdefer block form and try propagation.
 
-i32 fired = 0;
+let mut fired: i32= 0;
 
-auto inner() !i32 {
+fn inner() !i32 {
     return error.Bad;
 }
 
-auto outer() !i32 {
+fn outer() !i32 {
     errdefer { fired = fired + 1; }
     try inner();
     return 0;
 }
 
-i32 main() {
+pub fn main() i32 {
     // errdefer in outer() should fire when try propagates the error
     fired = 0;
     outer();

@@ -5,14 +5,14 @@ enum event {
     mouse_move { f32 x; f32 y; },
 }
 
-i32 main() {
-    event e;
+pub fn main() i32 {
+    let mut e: event;
     e = event.key_press { .key = 65, .modifiers = 0 };
-    i32 k = (*e).key;
+    let mut k: i32= (*e).key;
     if (k != 65) { return 1; }
 
     e = event.mouse_move { .x = 1.5, .y = 2.5 };
-    f32 xv = (*e).x;
+    let mut xv: f32= (*e).x;
     if (xv < 1.4 || xv > 1.6) { return 2; }
     return 0;
 }

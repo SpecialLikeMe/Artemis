@@ -3,7 +3,7 @@
 namespace analysis {
 
 // Convert a prim_type_t value to a display string.
-i8* prim_to_str(i32 prim, u32 bit_width) {
+fn prim_to_str(prim: i32, bit_width: u32) *i8 {
     if (prim == char_t)    { return "i8"; }
     if (prim == void_t)    { return "void"; }
     if (prim == arb_bool)  { return "bool"; }
@@ -28,19 +28,19 @@ i8* prim_to_str(i32 prim, u32 bit_width) {
 }
 
 // Convert a type_node to a display string (heap-allocated).
-i8* type_to_str(parser.type_node* t) {
+fn type_to_str(t: *parser.type_node) *i8 {
     if (t == (parser.type_node*)0) { return "void"; }
-    i8 buf[256];
+    let mut buf: [256]i8;
     if (t.is_primitive && t.has_prim) {
-        i8* base = prim_to_str(t.prim, (u32)t.bit_width);
-        i32 depth = t.pointer_depth;
+        let mut base: *i8= prim_to_str(t.prim, (u32)t.bit_width);
+        let mut depth: i32= t.pointer_depth;
         if (depth == 0) {
             return lexer.str_dup(base);
         }
         snprintf(buf, (u64)256, "%s", base);
-        i32 i = 0;
+        let mut i: i32= 0;
         while (i < depth) {
-            i8 tmp[256];
+            let mut tmp: [256]i8;
             snprintf(tmp, (u64)256, "%s*", buf);
             snprintf(buf, (u64)256, "%s", tmp);
             i = i + 1;
@@ -49,9 +49,9 @@ i8* type_to_str(parser.type_node* t) {
     }
     if (t.name != (i8*)0) {
         snprintf(buf, (u64)256, "%s", t.name);
-        i32 i = 0;
+        let mut i: i32= 0;
         while (i < t.pointer_depth) {
-            i8 tmp[256];
+            let mut tmp: [256]i8;
             snprintf(tmp, (u64)256, "%s*", buf);
             snprintf(buf, (u64)256, "%s", tmp);
             i = i + 1;
@@ -62,7 +62,7 @@ i8* type_to_str(parser.type_node* t) {
 }
 
 // Return true if a prim type is an integer (not float, not void).
-bool is_int_prim(i32 prim) {
+fn is_int_prim(prim: i32) bool {
     if (prim == char_t)   { return true; }
     if (prim == arb_int)  { return true; }
     if (prim == arb_uint) { return true; }
@@ -71,18 +71,18 @@ bool is_int_prim(i32 prim) {
 }
 
 // Return true if a prim type is floating point.
-bool is_float_prim(i32 prim) {
+fn is_float_prim(prim: i32) bool {
     return prim == arb_float;
 }
 
 // Return true if a type_node is a pointer (pointer_depth > 0).
-bool is_pointer_type(parser.type_node* t) {
+fn is_pointer_type(t: *parser.type_node) bool {
     if (t == (parser.type_node*)0) { return false; }
     return t.pointer_depth > 0;
 }
 
 // Return true if a type_node is unsigned.
-bool is_unsigned_type(parser.type_node* t) {
+fn is_unsigned_type(t: *parser.type_node) bool {
     if (t == (parser.type_node*)0) { return false; }
     if (!t.is_primitive) { return false; }
     if (t.pointer_depth > 0) { return false; }
@@ -90,7 +90,7 @@ bool is_unsigned_type(parser.type_node* t) {
 }
 
 // Return true if two type_nodes are equal (shallow).
-bool types_equal(parser.type_node* a, parser.type_node* b) {
+fn types_equal(a: *parser.type_node, b: *parser.type_node) bool {
     if (a == (parser.type_node*)0 && b == (parser.type_node*)0) { return true; }
     if (a == (parser.type_node*)0 || b == (parser.type_node*)0) { return false; }
     if (a.is_primitive != b.is_primitive) { return false; }

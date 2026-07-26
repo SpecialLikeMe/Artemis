@@ -1,12 +1,12 @@
 // FAIL: accessing a non-existent member of a class must be rejected
 istruc Point {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 }
 
-i32 main() {
-    Point p;
+fn main() i32 {
+    let mut p: Point;
     p.x = 1;
-    i32 z = p.z;  // ERROR: 'z' does not exist in Point
+    let mut z: i32= p.z;  // ERROR: 'z' does not exist in Point
     return z;
 }

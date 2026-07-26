@@ -2,18 +2,18 @@
 enum io_error {
     success,
     fatal .{
-        const i8* msg;
-        i32 code;
-        i32 get_code(const fatal* self) { return self.code; }
+        const msg: *i8;
+        let mut code: i32;
+        fn get_code(self: *const fatal) i32 { return self.code; }
     },
 }
 
-i32 main() {
-    io_error e;
+pub fn main() i32 {
+    let mut e: io_error;
     e = io_error.success;
 
     e = io_error.fatal .{ .msg = "disk full", .code = 28 };
-    i32 c = e.get_code();
+    let mut c: i32= e.get_code();
     if (c != 28) { return 1; }
     return 0;
 }

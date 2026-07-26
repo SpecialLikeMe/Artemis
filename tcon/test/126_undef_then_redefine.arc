@@ -2,8 +2,8 @@
 @undef X
 @define <X> <99>
 
-i32 main() {
-    i32 v = X;
+pub fn main() i32 {
+    let mut v: i32= X;
     if (v != 99) { return 1; }
     return 0;
 }

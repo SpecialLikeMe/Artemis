@@ -1,10 +1,10 @@
 // Test: std.fmt — string operations (std.fmt.str_len, std.fmt.str_eq, std.fmt.str_copy, std.fmt.str_append, etc.)
-extern std.fmt;
-extern i32 printf(i8* fmt, ...);
+extern  std.fmt;
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
-i32 main() {
+pub fn main() i32 {
     // std.fmt.str_len
-    i32 l = std.fmt.str_len("hello");
+    let mut l: i32= std.fmt.str_len("hello");
     if (l != 5) { printf("FAIL std.fmt.str_len\n"); return 1; }
     if (std.fmt.str_len("") != 0) { printf("FAIL std.fmt.str_len empty\n"); return 2; }
 
@@ -14,7 +14,7 @@ i32 main() {
     if (std.fmt.str_eq("abc", "abcd")) { printf("FAIL std.fmt.str_eq length\n"); return 5; }
 
     // std.fmt.str_copy
-    i8 buf[32];
+    let mut buf: [32]i8;
     std.fmt.str_copy(buf, "world", (u64)32);
     if (!std.fmt.str_eq(buf, "world")) { printf("FAIL std.fmt.str_copy\n"); return 6; }
 
@@ -32,17 +32,17 @@ i32 main() {
     if (std.fmt.str_ends_with("foobar", "foo")) { printf("FAIL std.fmt.str_ends_with false\n"); return 11; }
 
     // std.fmt.str_find
-    i32 idx = std.fmt.str_find("foobar", "oba");
+    let mut idx: i32= std.fmt.str_find("foobar", "oba");
     if (idx != 2) { printf("FAIL std.fmt.str_find\n"); return 12; }
-    i32 idx2 = std.fmt.str_find("foobar", "xyz");
+    let mut idx2: i32= std.fmt.str_find("foobar", "xyz");
     if (idx2 != -1) { printf("FAIL std.fmt.str_find not found\n"); return 13; }
 
     // std.fmt.str_to_i32
-    i32 v = std.fmt.str_to_i32("-123");
+    let mut v: i32= std.fmt.str_to_i32("-123");
     if (v != -123) { printf("FAIL std.fmt.str_to_i32\n"); return 14; }
 
     // std.fmt.str_to_i64
-    i64 v2 = std.fmt.str_to_i64("9876543210");
+    let mut v2: i64= std.fmt.str_to_i64("9876543210");
     if (v2 != (i64)9876543210) { printf("FAIL std.fmt.str_to_i64\n"); return 15; }
 
     return 0;

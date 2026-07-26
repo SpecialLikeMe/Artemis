@@ -1,7 +1,7 @@
-i32 square(i32 x) { return x * x; }
-i32 cube(i32 x)   { return x * square(x); }
+fn square(x: i32) i32 { return x * x; }
+fn cube(x: i32) i32   { return x * square(x); }
 
-i32 main() {
+pub fn main() i32 {
     if (square(7)  != 49)  { return 1; }
     if (cube(3)    != 27)  { return 2; }
     if (square(square(2)) != 16) { return 3; }

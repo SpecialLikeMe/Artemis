@@ -1,4 +1,4 @@
 // FAIL: redefining the same istruc
-istruc Foo { i32 x; }
-istruc Foo { i32 y; }  // ERROR: redeclaration
-i32 main() { return 0; }
+istruc Foo { let mut x: i32; }
+istruc Foo { let mut y: i32; }  // ERROR: redeclaration
+fn main() i32 { return 0; }

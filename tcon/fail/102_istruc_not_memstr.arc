@@ -1,19 +1,19 @@
 // Passing an istruc as &memstr must be rejected by the compiler.
-extern void* malloc(u64 n);
-extern void  free(void* p);
+extern fn malloc(n: u64) *void;
+extern fn free(p: *void) void;
 
 istruc BadAlloc {
-    void* ptr;
-    void __construct__(BadAlloc* self) { self.ptr = (void*)0; }
+    let mut ptr: *void;
+    fn __construct__(self: *BadAlloc) void { self.ptr = (void*)0; }
 }
 
 // This function requires a memstr allocator
-void needs_memstr(&memstr a) {
+fn needs_memstr(&memstr a) void {
     // body intentionally empty (just testing type checking)
 }
 
-i32 main() {
-    BadAlloc b;
+fn main() i32 {
+    let mut b: BadAlloc;
     needs_memstr(b);  // ERROR: istruc is not a valid &memstr
     return 0;
 }

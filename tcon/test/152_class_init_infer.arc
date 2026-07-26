@@ -1,10 +1,10 @@
 istruc Vec2 {
-    i32 x;
-    i32 y;
-    i32 sum(const Vec2* self) { return self.x + self.y; }
+    let mut x: i32;
+    let mut y: i32;
+    fn sum(self: *const Vec2) i32 { return self.x + self.y; }
 }
-i32 main() {
-    Vec2 v = .{ .x = 1, .y = 2 };
+pub fn main() i32 {
+    let mut v: Vec2= .{ .x = 1, .y = 2 };
     if (v.sum() != 3) { return 1; }
     return 0;
 }

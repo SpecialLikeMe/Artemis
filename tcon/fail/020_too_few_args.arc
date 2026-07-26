@@ -1,3 +1,3 @@
 // FAIL: too few arguments to a function call
-i32 add(i32 a, i32 b) { return a + b; }
-i32 main() { return add(1); }  // ERROR: expected 2 args, got 1
+fn add(a: i32, b: i32) i32 { return a + b; }
+fn main() i32 { return add(1); }  // ERROR: expected 2 args, got 1

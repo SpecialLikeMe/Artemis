@@ -1,8 +1,8 @@
 // Inline ASM: add two integers using Intel-syntax asm with constraints
-i32 main() {
-    i32 a = 7;
-    i32 b = 5;
-    i32 result = 0;
+pub fn main() i32 {
+    let mut a: i32= 7;
+    let mut b: i32= 5;
+    let mut result: i32= 0;
     __asm__ {
         mov eax, %a
         add eax, %b

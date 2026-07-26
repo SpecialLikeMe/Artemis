@@ -1,3 +1,3 @@
 // FAIL: istruc field uses an undeclared type
-istruc Container { Unknown item; }  // ERROR: Unknown undeclared
-i32 main() { return 0; }
+istruc Container { let mut item: Unknown; }  // ERROR: Unknown undeclared
+fn main() i32 { return 0; }

@@ -1,6 +1,6 @@
 // FAIL: istruc method accessing protected member of an unrelated class
 istruc A { protected i32 val; }
 istruc B {
-    i32 steal(A* a) { return a->val; }  // ERROR: B does not inherit A
+    fn steal(a: *A) i32 { return a->val; }  // ERROR: B does not inherit A
 }
-i32 main() { return 0; }
+fn main() i32 { return 0; }

@@ -1,9 +1,9 @@
-i32 main() {
-    i64 a = 1000000000;
-    i64 b = 2000000000;
-    i64 c = a + b;
+pub fn main() i32 {
+    let mut a: i64= 1000000000;
+    let mut b: i64= 2000000000;
+    let mut c: i64= a + b;
     if (c != 3000000000) { return 1; }
-    i64 d = b - a;
+    let mut d: i64= b - a;
     if (d != 1000000000) { return 2; }
     return 0;
 }

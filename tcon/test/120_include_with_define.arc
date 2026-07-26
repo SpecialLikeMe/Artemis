@@ -1,7 +1,7 @@
 @define <MULT> <3>
 @include <inc/use_define.inc>
 
-i32 main() {
+pub fn main() i32 {
     if (triple(4) != 12) { return 1; }
     if (triple(0) != 0)  { return 2; }
     if (triple(7) != 21) { return 3; }

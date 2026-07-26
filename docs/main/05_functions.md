@@ -4,28 +4,32 @@
 
 ## Basic Functions
 
-```arc
-i32 add(i32 a, i32 b) { return a + b; }
+Functions are declared with `fn`:
 
-void greet(i8* name) {
+```arc
+fn add(a: i32, b: i32) i32 { return a + b; }
+
+fn greet(name: *i8) void {
     // ... use name ...
 }
 ```
 
-`main` must return `i32` (the process exit code):
+`pub fn main() i32` is the program entry point:
 
 ```arc
-i32 main() { return 0; }
+pub fn main() i32 { return 0; }
 ```
+
+The `pub` keyword makes the function visible outside the current module.
 
 ---
 
 ## Fallible Functions — `!T` Return Type
 
-A function that may fail uses `auto` as its declared return type and appends `!T` after the parameter list:
+A function that may fail appends `!` before the return type:
 
 ```arc
-auto maybe_divide(i32 a, i32 b) !i32 {
+fn maybe_divide(a: i32, b: i32) !i32 {
     if (b == 0) {
         return error.DivByZero;
     }
@@ -33,7 +37,8 @@ auto maybe_divide(i32 a, i32 b) !i32 {
 }
 ```
 
-Return an error with `return error.Name;`. Return a value normally otherwise. See [Chapter 24](24_error_handling.md) for full error-handling coverage.
+Return an error with `return error.Name;`. Return a value normally otherwise.
+See [Chapter 24](24_error_handling.md) for full error-handling coverage.
 
 ---
 
@@ -42,7 +47,7 @@ Return an error with `return error.Name;`. Return a value normally otherwise. Se
 `...` at the end of the parameter list marks a variadic function:
 
 ```arc
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 // calling a variadic function:
 printf("Value: %d\n", 42);
@@ -55,7 +60,7 @@ printf("Value: %d\n", 42);
 `inline` is a hint to inline the function at call sites:
 
 ```arc
-inline i32 fast_add(i32 a, i32 b) { return a + b; }
+inline fn fast_add(a: i32, b: i32) i32 { return a + b; }
 ```
 
 This is an optimizer hint — the compiler may ignore it.
@@ -67,11 +72,11 @@ This is an optimizer hint — the compiler may ignore it.
 Declare a function without a body to call it before its definition:
 
 ```arc
-i32 compute(i32 x);   // forward declaration
+fn compute(x: i32) i32;   // forward declaration
 
-i32 main() { return compute(5); }
+pub fn main() i32 { return compute(5); }
 
-i32 compute(i32 x) { return x * x; }
+fn compute(x: i32) i32 { return x * x; }
 ```
 
 ---
@@ -81,29 +86,30 @@ i32 compute(i32 x) { return x * x; }
 Type parameters go in `<>` after the function name:
 
 ```arc
-T max<T>(T a, T b) { return a > b ? a : b; }
+fn max<T>(a: T, b: T) T { return a > b ? a : b; }
 
-i32 x = max<i32>(3, 7);    // explicit
-f64 y = max(1.5, 2.5);     // inferred: T = f64
+let x: i32 = max<i32>(3, 7);    // explicit
+let y: f64  = max(1.5, 2.5);    // inferred: T = f64
 ```
 
 See [Chapter 11](11_generics.md) for details.
 
 ---
 
-## `const_resolve` — Compile-Time Function Macros
+## Function Pointer Types
 
-`const_resolve` defines a macro that rewrites token patterns at parse time:
+Function pointer types use `(ARGS)RETURN` notation:
 
 ```arc
-const_resolve double_it {
-    ($x:expr) => { (($x) + ($x)) }
-}
-
-i32 result = double_it(21);   // expands to ((21) + (21)) = 42
+let fn_ptr: (i32, i32)i32;     // pointer to fn(i32, i32) -> i32
+let double: *(i32)i32;          // pointer-to-fn returning i32
 ```
 
-See [Chapter 29](29_macros.md) for the full macro system.
+Lambdas use `[]` notation:
+
+```arc
+let add = [](a: i32, b: i32) i32 { return a + b; };
+```
 
 ---
 
@@ -112,46 +118,9 @@ See [Chapter 29](29_macros.md) for the full macro system.
 Functions that need heap memory should accept an allocator parameter rather than calling `malloc` directly. The `&memstr` type accepts any `memstr`-declared allocator:
 
 ```arc
-void* make_buffer(u64 n, &memstr alloc) {
+fn make_buffer(n: u64, alloc: &memstr) *void {
     return alloc.mmap(n);
 }
 ```
 
 `istruc` methods may allocate internally since they implement the allocator themselves. See [Chapter 13](13_memory.md).
-
----
-
-## `type` — First-Class Types as Parameters
-
-`type` is a first-class keyword for compile-time types. A function that accepts a `comptime type` parameter is monomorphized at the call site:
-
-```arc
-comptime type T = i32;
-T identity(T x) { return x; }
-```
-
-`comptime type` declarations can also appear at file scope as type aliases. See [Chapter 18](18_comptime.md) for the full `comptime` feature set.
-
----
-
-## `extern "C"` Functions
-
-To export an Artemis-defined function with C linkage (no name mangling):
-
-```arc
-extern "C" {
-    i32 arc_add(i32 a, i32 b) { return a + b; }
-}
-```
-
-To import a C function:
-
-```arc
-extern i32 printf(i8* fmt, ...);
-```
-
-See [Chapter 16](16_c_interop.md).
-
----
-
-[Prev: Variables and Constants](04_variables.md) | [Next: Control Flow](06_control_flow.md)

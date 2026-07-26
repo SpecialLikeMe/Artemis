@@ -1,7 +1,7 @@
 // Inline ASM: copy a value via register
-i32 main() {
-    i32 src = 99;
-    i32 dst = 0;
+pub fn main() i32 {
+    let mut src: i32= 99;
+    let mut dst: i32= 0;
     __asm__ {
         mov %dst, %src
         : "r"(src)

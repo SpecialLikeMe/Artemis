@@ -3,56 +3,56 @@
 
 @ifdef _WIN32
 // Windows API declarations (via kernel32/ntdll)
-extern void*  VirtualAlloc(void* addr, u64 size, u32 type, u32 protect);
-extern i32    VirtualFree(void* addr, u64 size, u32 type);
-extern i32    GetCurrentProcessId();
-extern void   ExitProcess(u32 code);
-extern i32    GetLastError();
-extern i32    Sleep(u32 ms);
-extern i64    GetTickCount64();
-extern i32    QueryPerformanceCounter(i64* count);
-extern i32    QueryPerformanceFrequency(i64* freq);
-extern i32    WriteFile(void* handle, void* buf, u32 n, u32* written, void* overlapped);
-extern void*  GetStdHandle(u32 id);
-extern i32    CreateDirectoryA(i8* path, void* sec);
-extern i32    RemoveDirectoryA(i8* path);
-extern i32    DeleteFileA(i8* path);
-extern i32    MoveFileA(i8* old_path, i8* new_path);
+@unsafe extern fn VirtualAlloc(addr: *void, size: u64, type: u32, protect: u32) *void;
+@unsafe extern fn VirtualFree(addr: *void, size: u64, type: u32) i32;
+@unsafe extern fn GetCurrentProcessId() i32;
+@unsafe extern fn ExitProcess(code: u32) void;
+@unsafe extern fn GetLastError() i32;
+@unsafe extern fn Sleep(ms: u32) i32;
+@unsafe extern fn GetTickCount64() i64;
+@unsafe extern fn QueryPerformanceCounter(count: *i64) i32;
+@unsafe extern fn QueryPerformanceFrequency(freq: *i64) i32;
+@unsafe extern fn WriteFile(handle: *void, buf: *void, n: u32, written: *u32, overlapped: *void) i32;
+@unsafe extern fn GetStdHandle(id: u32) *void;
+@unsafe extern fn CreateDirectoryA(path: *i8, sec: *void) i32;
+@unsafe extern fn RemoveDirectoryA(path: *i8) i32;
+@unsafe extern fn DeleteFileA(path: *i8) i32;
+@unsafe extern fn MoveFileA(old_path: *i8, new_path: *i8) i32;
 @else
 // POSIX / libc functions
-extern void*  mmap(void* addr, u64 len, i32 prot, i32 flags, i32 fd, i64 offset);
-extern i32    munmap(void* addr, u64 len);
-extern void*  sbrk(i64 increment);
-extern i32    getpid();
-extern i32    getppid();
-extern u64    getuid();
-extern u64    getgid();
-extern i32    kill(i32 pid, i32 sig);
-extern i32    clock_gettime(i32 clk_id, void* timespec);
-extern i32    nanosleep(void* req, void* rem);
-extern i32    usleep(u32 us);
-extern i32    sleep(u32 s);
-extern i64    write(i32 fd, void* buf, u64 n);
-extern i64    read(i32 fd, void* buf, u64 n);
-extern i32    open(i8* path, i32 flags, i32 mode);
-extern i32    close(i32 fd);
-extern i64    lseek(i32 fd, i64 offset, i32 whence);
-extern i32    unlink(i8* path);
-extern i32    mkdir(i8* path, i32 mode);
-extern i32    rmdir(i8* path);
-extern i32    rename(i8* old_p, i8* new_p);
-extern i32    stat(i8* path, void* statbuf);
-extern i32    fstat(i32 fd, void* statbuf);
-extern i32    access(i8* path, i32 mode);
-extern i8*    getcwd(i8* buf, u64 size);
-extern i32    chdir(i8* path);
-extern i8**   environ_ptr();
+@unsafe extern fn mmap(addr: *void, len: u64, prot: i32, flags: i32, fd: i32, offset: i64) *void;
+@unsafe extern fn munmap(addr: *void, len: u64) i32;
+@unsafe extern fn sbrk(increment: i64) *void;
+@unsafe extern fn getpid() i32;
+@unsafe extern fn getppid() i32;
+@unsafe extern fn getuid() u64;
+@unsafe extern fn getgid() u64;
+@unsafe extern fn kill(pid: i32, sig: i32) i32;
+@unsafe extern fn clock_gettime(clk_id: i32, timespec: *void) i32;
+@unsafe extern fn nanosleep(req: *void, rem: *void) i32;
+@unsafe extern fn usleep(us: u32) i32;
+@unsafe extern fn sleep(s: u32) i32;
+@unsafe extern fn write(fd: i32, buf: *void, n: u64) i64;
+@unsafe extern fn read(fd: i32, buf: *void, n: u64) i64;
+@unsafe extern fn open(path: *i8, flags: i32, mode: i32) i32;
+@unsafe extern fn close(fd: i32) i32;
+@unsafe extern fn lseek(fd: i32, offset: i64, whence: i32) i64;
+@unsafe extern fn unlink(path: *i8) i32;
+@unsafe extern fn mkdir(path: *i8, mode: i32) i32;
+@unsafe extern fn rmdir(path: *i8) i32;
+@unsafe extern fn rename(old_p: *i8, new_p: *i8) i32;
+@unsafe extern fn stat(path: *i8, statbuf: *void) i32;
+@unsafe extern fn fstat(fd: i32, statbuf: *void) i32;
+@unsafe extern fn access(path: *i8, mode: i32) i32;
+@unsafe extern fn getcwd(buf: *i8, size: u64) *i8;
+@unsafe extern fn chdir(path: *i8) i32;
+@unsafe extern fn environ_ptr() **i8;
 @endif
 
-extern void   exit(i32 code);
-extern void   abort();
-extern i64    time(i64* t);
-extern i32    printf(i8* fmt, ...);
+@unsafe extern fn exit(code: i32) void;
+@unsafe extern fn abort() void;
+@unsafe extern fn time(t: *i64) i64;
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 namespace std {
 namespace arch {
@@ -104,23 +104,23 @@ comptime i32 SIGINT  = 2;
 
 // --- Portable OS-backed virtual memory allocator ---
 memstr mmap_alloc {
-    u64 total_allocated;
+    let mut total_allocated: u64;
 
-    void __construct__(mmap_alloc* self) { self.total_allocated = 0; }
+    fn __construct__(self: *mmap_alloc) void { self.total_allocated = 0; }
 
-    void* sys_alloc(mmap_alloc* self, u64 n) {
+    fn sys_alloc(self: *mmap_alloc, n: u64) *void {
 @ifdef _WIN32
-        void* p = VirtualAlloc((void*)0, n, MEM_COMMIT | MEM_RESERVE, PAGE_RW);
+        let mut p: *void= VirtualAlloc((void*)0, n, MEM_COMMIT | MEM_RESERVE, PAGE_RW);
         if (p != (void*)0) self.total_allocated = self.total_allocated + n;
         return p;
 @else
-        void* p = mmap((void*)0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        let mut p: *void= mmap((void*)0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (p != (void*)0) self.total_allocated = self.total_allocated + n;
         return p;
 @endif
     }
 
-    void sys_free(mmap_alloc* self, void* p, u64 n) {
+    fn sys_free(self: *mmap_alloc, p: *void, n: u64) void {
 @ifdef _WIN32
         VirtualFree(p, 0, MEM_RELEASE);
 @else
@@ -131,40 +131,40 @@ memstr mmap_alloc {
 
 // --- timespec ---
 struct timespec_t {
-    i64 tv_sec;
-    i64 tv_nsec;
+    let tv_sec: i64;
+    let tv_nsec: i64;
 }
 
 // --- high-res timer ---
-i64 monotonic_ns() {
+fn monotonic_ns() i64 {
 @ifdef _WIN32
-    i64 count = 0; i64 freq = 0;
+    let mut count: i64= 0; let mut freq: i64= 0;
     QueryPerformanceCounter(&count);
     QueryPerformanceFrequency(&freq);
     if (freq == 0) return 0;
     return (count * 1000000000i64) / freq;
 @else
-    timespec_t ts;
+    let mut ts: timespec_t;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000000000i64 + ts.tv_nsec;
 @endif
 }
 
-i64 realtime_ns() {
+fn realtime_ns() i64 {
 @ifdef _WIN32
     return monotonic_ns(); // approximation on Windows
 @else
-    timespec_t ts;
+    let mut ts: timespec_t;
     clock_gettime(CLOCK_REALTIME, &ts);
     return ts.tv_sec * 1000000000i64 + ts.tv_nsec;
 @endif
 }
 
-void sleep_ms(u64 ms) {
+fn sleep_ms(ms: u64) void {
 @ifdef _WIN32
     Sleep((u32)ms);
 @else
-    timespec_t ts;
+    let mut ts: timespec_t;
     ts.tv_sec  = (i64)(ms / 1000);
     ts.tv_nsec = (i64)((ms % 1000) * 1000000);
     nanosleep(&ts, (void*)0);
@@ -172,9 +172,9 @@ void sleep_ms(u64 ms) {
 }
 
 // --- process ---
-void quit(i32 code)  { exit(code); }
-void panic_exit()    { abort(); }
-i32  pid() {
+fn quit(code: i32) void  { exit(code); }
+fn panic_exit() void    { abort(); }
+fn pid() i32 {
 @ifdef _WIN32
     return GetCurrentProcessId();
 @else
@@ -183,20 +183,20 @@ i32  pid() {
 }
 
 // --- raw write ---
-void write_stdout(i8* buf, u64 n) {
+fn write_stdout(buf: *i8, n: u64) void {
 @ifdef _WIN32
-    void* h = GetStdHandle((u32)0xFFFFFFF5); // STD_OUTPUT_HANDLE
-    u32 written = 0;
+    let mut h: *void= GetStdHandle((u32)0xFFFFFFF5); // STD_OUTPUT_HANDLE
+    let mut written: u32= 0;
     WriteFile(h, (void*)buf, (u32)n, &written, (void*)0);
 @else
     write(STDOUT, (void*)buf, n);
 @endif
 }
 
-void write_stderr(i8* buf, u64 n) {
+fn write_stderr(buf: *i8, n: u64) void {
 @ifdef _WIN32
-    void* h = GetStdHandle((u32)0xFFFFFFF4); // STD_ERROR_HANDLE
-    u32 written = 0;
+    let mut h: *void= GetStdHandle((u32)0xFFFFFFF4); // STD_ERROR_HANDLE
+    let mut written: u32= 0;
     WriteFile(h, (void*)buf, (u32)n, &written, (void*)0);
 @else
     write(STDERR, (void*)buf, n);

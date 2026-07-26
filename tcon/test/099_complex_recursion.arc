@@ -1,12 +1,12 @@
-i32 power(i32 base, i32 exp) {
+fn power(base: i32, exp: i32) i32 {
     if (exp == 0) { return 1; }
     if (exp == 1) { return base; }
-    i32 half = power(base, exp / 2);
+    let mut half: i32= power(base, exp / 2);
     if (exp % 2 == 0) { return half * half; }
     return base * half * half;
 }
 
-i32 main() {
+pub fn main() i32 {
     if (power(2, 0)  != 1)   { return 1; }
     if (power(2, 1)  != 2)   { return 2; }
     if (power(2, 8)  != 256) { return 3; }

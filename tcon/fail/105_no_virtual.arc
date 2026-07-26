@@ -1,7 +1,7 @@
 istruc Shape {
-    i32 id;
+    let mut id: i32;
 
-    void __construct__(Shape* self, i32 n) {
+    fn __construct__(self: *Shape, n: i32) void {
         self.id = n;
     }
 
@@ -9,48 +9,48 @@ istruc Shape {
         return 0;
     }
 
-    i32 get_id(const Shape* self) {
+    fn get_id(self: *const Shape) i32 {
         return self.id;
     }
 }
 
 istruc Circle : Shape {
-    i32 r;
+    let mut r: i32;
 
-    void __construct__(Circle* self, i32 n, i32 radius) {
+    fn __construct__(self: *Circle, n: i32, radius: i32) void {
         self.id = n;
         self.r = radius;
     }
 
-    i32 area(const Circle* self) override {
+    fn area(self: *const Circle) i32 override {
         return self.r * self.r;
     }
 }
 
 istruc Square : Shape {
-    i32 side;
+    let mut side: i32;
 
-    void __construct__(Square* self, i32 n, i32 s) {
+    fn __construct__(self: *Square, n: i32, s: i32) void {
         self.id = n;
         self.side = s;
     }
 
-    i32 area(const Square* self) override {
+    fn area(self: *const Square) i32 override {
         return self.side * self.side;
     }
 }
 
-i32 main() {
-    Shape s(0);
+fn main() i32 {
+    fn s(0) Shape;
     if (s.area()   != 0)  { return 1; }
     if (s.get_id() != 0)  { return 2; }
 
-    Circle c(1, 5);
+    fn c(1, 5) Circle;
     if (c.area()   != 25) { return 3; }
     if (c.get_id() != 1)  { return 4; }
     if (c.r        != 5)  { return 5; }
 
-    Square sq(2, 4);
+    fn sq(2, 4) Square;
     if (sq.area()   != 16) { return 6; }
     if (sq.get_id() != 2)  { return 7; }
 

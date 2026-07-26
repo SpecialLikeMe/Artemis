@@ -1,26 +1,26 @@
 // Test: basic interface declaration and implementation checking
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 interface Describable {
-    i32 describe(Describable* self);
+    fn describe(self: *Describable) i32;
 }
 
 istruc Point : Describable {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 
-    void __construct__(Point* self, i32 px, i32 py) {
+    fn __construct__(self: *Point, px: i32, py: i32) void {
         self.x = px;
         self.y = py;
     }
 
-    i32 describe(Point* self) {
+    fn describe(self: *Point) i32 {
         return self.x * 100 + self.y;
     }
 }
 
-i32 main() {
-    Point p(3, 7);
+pub fn main() i32 {
+    let mut p: Point(3, 7);
     if (p.describe() != 307) { return 1; }
     return 0;
 }

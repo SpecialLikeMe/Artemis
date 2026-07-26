@@ -1,6 +1,6 @@
 // comptime if / if comptime chains with else if
-i32 main() {
-    i32 r = 0;
+pub fn main() i32 {
+    let mut r: i32= 0;
 
     // if comptime with else
     if comptime (1 == 1) { r = r + 1; } else { r = r + 100; }
@@ -17,9 +17,9 @@ i32 main() {
     if (r != 11) { return 2; }
 
     // Nested comptime variables
-    comptime i32 A = 3;
-    comptime i32 B = A * 2;
-    comptime i32 C = A + B;
+    const A: i32= 3;
+    const B: i32= A * 2;
+    const C: i32= A + B;
     if (C != 9) { return 3; }
     return 0;
 }

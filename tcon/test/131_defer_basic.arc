@@ -1,8 +1,8 @@
-i32 g = 0;
+let mut g: i32= 0;
 
-void set(i32 v) { g = v; }
+fn set(v: i32) void { g = v; }
 
-i32 main() {
+pub fn main() i32 {
     g = 0;
     {
         defer set(42);

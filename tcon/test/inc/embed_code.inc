@@ -1,1 +1,1 @@
-i32 cube(i32 x) { return x * x * x; }
+fn cube(x: i32) i32 { return x * x * x; }

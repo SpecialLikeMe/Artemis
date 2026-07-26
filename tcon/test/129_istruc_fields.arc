@@ -1,26 +1,26 @@
 istruc Vec2 {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 }
 
 istruc Rect {
-    Vec2 origin;
-    i32  width;
-    i32  height;
+    let mut origin: Vec2;
+    let mut width: i32;
+    let mut height: i32;
 }
 
-i32 main() {
-    Vec2 v;
+pub fn main() i32 {
+    let mut v: Vec2;
     v.x = 3;
     v.y = 4;
     if (v.x != 3) { return 1; }
     if (v.y != 4) { return 2; }
 
-    Vec2* p = &v;
+    let mut p: *Vec2= &v;
     (*p).x = 10;
     if (v.x != 10) { return 3; }
 
-    Rect r;
+    let mut r: Rect;
     r.width  = 100;
     r.height = 50;
     if (r.width  != 100) { return 4; }

@@ -1,7 +1,7 @@
-struct Two { i32 a; i32 b; }
-struct One { i8 x; }
+struct Two { let a: i32; let b: i32; }
+struct One { let x: i8; }
 
-i32 main() {
+pub fn main() i32 {
     if (sizeof(One) < 1) { return 1; }
     if (sizeof(Two) < 8) { return 2; }
     if (sizeof(Two) < sizeof(One)) { return 3; }

@@ -1,19 +1,19 @@
 struct Inner {
-    i32 a;
-    i32 b;
+    let a: i32;
+    let b: i32;
 }
 
 struct Outer {
-    Inner in;
-    i32 c;
+    let in: Inner;
+    let c: i32;
 }
 
-i32 main() {
-    Outer o;
+pub fn main() i32 {
+    let mut o: Outer;
     o.in.a = 1;
     o.in.b = 2;
     o.c    = 3;
-    i32 sum = o.in.a + o.in.b + o.c;
+    let mut sum: i32= o.in.a + o.in.b + o.c;
     if (sum != 6) { return 1; }
     o.in.b = o.in.a + o.c;
     if (o.in.b != 4) { return 2; }

@@ -1,4 +1,4 @@
 // FAIL: redefining a function with two bodies sharing the same signature
-i32 foo(i32 x) { return x; }
-i32 foo(i32 x) { return x + 1; }  // ERROR: redefinition
-i32 main() { return foo(0); }
+fn foo(x: i32) i32 { return x; }
+fn foo(x: i32) i32 { return x + 1; }  // ERROR: redefinition
+fn main() i32 { return foo(0); }

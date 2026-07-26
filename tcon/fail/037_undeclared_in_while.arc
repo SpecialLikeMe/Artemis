@@ -1,5 +1,5 @@
 // FAIL: undeclared identifier in while condition
-i32 main() {
+fn main() i32 {
     while (ghost_cond) {}  // ERROR: ghost_cond undeclared
     return 0;
 }

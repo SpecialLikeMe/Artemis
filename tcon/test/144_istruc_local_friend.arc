@@ -1,22 +1,22 @@
 // Verify that a regular function can access istruc fields via pointer
 istruc Secret {
-    i32 value;
+    let mut value: i32;
 
-    void __construct__(Secret* self, i32 v) {
+    fn __construct__(self: *Secret, v: i32) void {
         self.value = v;
     }
 
-    i32 get(const Secret* self) {
+    fn get(self: *const Secret) i32 {
         return self.value;
     }
 }
 
-i32 peek(Secret* s) {
+fn peek(s: *Secret) i32 {
     return (*s).get();
 }
 
-i32 main() {
-    Secret s(77);
+pub fn main() i32 {
+    let mut s: Secret(77);
     if (s.get()  != 77) { return 1; }
     if (peek(&s) != 77) { return 2; }
     return 0;

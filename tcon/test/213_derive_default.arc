@@ -2,11 +2,11 @@
 
 #[derive(Default)]
 istruc Vec2 {
-    i32 x;
-    i32 y;
+    let mut x: i32;
+    let mut y: i32;
 }
 
-i32 main() {
-    Vec2 v = __derive_Default_Vec2();
+pub fn main() i32 {
+    let mut v: Vec2= __derive_Default_Vec2();
     return v.x + v.y;  // expect 0
 }

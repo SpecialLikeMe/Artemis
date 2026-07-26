@@ -1,6 +1,6 @@
 // FAIL: inheriting from an undeclared base class must be rejected
 istruc Child : Nonexistent {  // ERROR: 'Nonexistent' is not a known class
-    i32 x;
+    let mut x: i32;
 }
 
-i32 main() { return 0; }
+fn main() i32 { return 0; }

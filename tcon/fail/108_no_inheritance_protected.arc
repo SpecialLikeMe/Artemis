@@ -9,8 +9,8 @@ istruc Dog : Animal {
     public void set_legs(Dog* self, i32 n) { self.legs = n; }
 }
 
-i32 main() {
-    Dog d(4);
+fn main() i32 {
+    fn d(4) Dog;
     if (d.leg_count() != 4) { return 1; }
     d.set_legs(3);
     if (d.leg_count() != 3) { return 2; }

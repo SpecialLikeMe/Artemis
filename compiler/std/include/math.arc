@@ -1,45 +1,45 @@
 // std.math — Complete mathematics library.
 
 // C math functions (libm)
-extern f64 sin(f64 x);
-extern f64 cos(f64 x);
-extern f64 tan(f64 x);
-extern f64 asin(f64 x);
-extern f64 acos(f64 x);
-extern f64 atan(f64 x);
-extern f64 atan2(f64 y, f64 x);
-extern f64 sinh(f64 x);
-extern f64 cosh(f64 x);
-extern f64 tanh(f64 x);
-extern f64 exp(f64 x);
-extern f64 exp2(f64 x);
-extern f64 log(f64 x);
-extern f64 log2(f64 x);
-extern f64 log10(f64 x);
-extern f64 pow(f64 base, f64 exp);
-extern f64 sqrt(f64 x);
-extern f64 cbrt(f64 x);
-extern f64 ceil(f64 x);
-extern f64 floor(f64 x);
-extern f64 round(f64 x);
-extern f64 trunc(f64 x);
-extern f64 fabs(f64 x);
-extern f64 fmod(f64 x, f64 y);
-extern f64 hypot(f64 x, f64 y);
-extern f64 ldexp(f64 x, i32 exp);
-extern f64 frexp(f64 x, i32* exp);
-extern f64 modf(f64 x, f64* iptr);
-extern f32 sinf(f32 x);
-extern f32 cosf(f32 x);
-extern f32 tanf(f32 x);
-extern f32 sqrtf(f32 x);
-extern f32 fabsf(f32 x);
-extern f32 floorf(f32 x);
-extern f32 ceilf(f32 x);
-extern f32 roundf(f32 x);
-extern f32 powf(f32 b, f32 e);
-extern f32 logf(f32 x);
-extern f32 expf(f32 x);
+@unsafe extern fn sin(x: f64) f64;
+@unsafe extern fn cos(x: f64) f64;
+@unsafe extern fn tan(x: f64) f64;
+@unsafe extern fn asin(x: f64) f64;
+@unsafe extern fn acos(x: f64) f64;
+@unsafe extern fn atan(x: f64) f64;
+@unsafe extern fn atan2(y: f64, x: f64) f64;
+@unsafe extern fn sinh(x: f64) f64;
+@unsafe extern fn cosh(x: f64) f64;
+@unsafe extern fn tanh(x: f64) f64;
+@unsafe extern fn exp(x: f64) f64;
+@unsafe extern fn exp2(x: f64) f64;
+@unsafe extern fn log(x: f64) f64;
+@unsafe extern fn log2(x: f64) f64;
+@unsafe extern fn log10(x: f64) f64;
+@unsafe extern fn pow(base: f64, exp: f64) f64;
+@unsafe extern fn sqrt(x: f64) f64;
+@unsafe extern fn cbrt(x: f64) f64;
+@unsafe extern fn ceil(x: f64) f64;
+@unsafe extern fn floor(x: f64) f64;
+@unsafe extern fn round(x: f64) f64;
+@unsafe extern fn trunc(x: f64) f64;
+@unsafe extern fn fabs(x: f64) f64;
+@unsafe extern fn fmod(x: f64, y: f64) f64;
+@unsafe extern fn hypot(x: f64, y: f64) f64;
+@unsafe extern fn ldexp(x: f64, exp: i32) f64;
+@unsafe extern fn frexp(x: f64, exp: *i32) f64;
+@unsafe extern fn modf(x: f64, iptr: *f64) f64;
+@unsafe extern fn sinf(x: f32) f32;
+@unsafe extern fn cosf(x: f32) f32;
+@unsafe extern fn tanf(x: f32) f32;
+@unsafe extern fn sqrtf(x: f32) f32;
+@unsafe extern fn fabsf(x: f32) f32;
+@unsafe extern fn floorf(x: f32) f32;
+@unsafe extern fn ceilf(x: f32) f32;
+@unsafe extern fn roundf(x: f32) f32;
+@unsafe extern fn powf(b: f32, e: f32) f32;
+@unsafe extern fn logf(x: f32) f32;
+@unsafe extern fn expf(x: f32) f32;
 
 namespace std {
 namespace math {
@@ -54,42 +54,42 @@ comptime f64 INF    = 1.0 / 0.0;
 comptime f64 NAN_V  = 0.0 / 0.0;
 
 // --- basic ---
-i32 abs_i32(i32 x)   { return x < 0 ? -x : x; }
-i64 abs_i64(i64 x)   { return x < 0 ? -x : x; }
-f32 abs_f32(f32 x)   { return fabsf(x); }
-f64 abs_f64(f64 x)   { return fabs(x); }
+fn abs_i32(x: i32) i32   { return x < 0 ? -x : x; }
+fn abs_i64(x: i64) i64   { return x < 0 ? -x : x; }
+fn abs_f32(x: f32) f32   { return fabsf(x); }
+fn abs_f64(x: f64) f64   { return fabs(x); }
 
-i32 min_i32(i32 a, i32 b)   { return a < b ? a : b; }
-i32 max_i32(i32 a, i32 b)   { return a > b ? a : b; }
-i64 min_i64(i64 a, i64 b)   { return a < b ? a : b; }
-i64 max_i64(i64 a, i64 b)   { return a > b ? a : b; }
-f32 min_f32(f32 a, f32 b)   { return a < b ? a : b; }
-f32 max_f32(f32 a, f32 b)   { return a > b ? a : b; }
-f64 min_f64(f64 a, f64 b)   { return a < b ? a : b; }
-f64 max_f64(f64 a, f64 b)   { return a > b ? a : b; }
+fn min_i32(a: i32, b: i32) i32   { return a < b ? a : b; }
+fn max_i32(a: i32, b: i32) i32   { return a > b ? a : b; }
+fn min_i64(a: i64, b: i64) i64   { return a < b ? a : b; }
+fn max_i64(a: i64, b: i64) i64   { return a > b ? a : b; }
+fn min_f32(a: f32, b: f32) f32   { return a < b ? a : b; }
+fn max_f32(a: f32, b: f32) f32   { return a > b ? a : b; }
+fn min_f64(a: f64, b: f64) f64   { return a < b ? a : b; }
+fn max_f64(a: f64, b: f64) f64   { return a > b ? a : b; }
 
-i32 clamp_i32(i32 v, i32 lo, i32 hi) { return v < lo ? lo : v > hi ? hi : v; }
-f32 clamp_f32(f32 v, f32 lo, f32 hi) { return v < lo ? lo : v > hi ? hi : v; }
-f64 clamp_f64(f64 v, f64 lo, f64 hi) { return v < lo ? lo : v > hi ? hi : v; }
+fn clamp_i32(v: i32, lo: i32, hi: i32) i32 { return v < lo ? lo : v > hi ? hi : v; }
+fn clamp_f32(v: f32, lo: f32, hi: f32) f32 { return v < lo ? lo : v > hi ? hi : v; }
+fn clamp_f64(v: f64, lo: f64, hi: f64) f64 { return v < lo ? lo : v > hi ? hi : v; }
 
-i32 sign_i32(i32 x)  { return x < 0 ? -1 : x > 0 ? 1 : 0; }
-f64 sign_f64(f64 x)  { return x < 0.0 ? -1.0 : x > 0.0 ? 1.0 : 0.0; }
+fn sign_i32(x: i32) i32  { return x < 0 ? -1 : x > 0 ? 1 : 0; }
+fn sign_f64(x: f64) f64  { return x < 0.0 ? -1.0 : x > 0.0 ? 1.0 : 0.0; }
 
-f64 lerp(f64 a, f64 b, f64 t) { return a + t * (b - a); }
-f32 lerp_f32(f32 a, f32 b, f32 t) { return a + t * (b - a); }
+fn lerp(a: f64, b: f64, t: f64) f64 { return a + t * (b - a); }
+fn lerp_f32(a: f32, b: f32, t: f32) f32 { return a + t * (b - a); }
 
 // --- trig ---
-f64 deg_to_rad(f64 d) { return d * PI / 180.0; }
-f64 rad_to_deg(f64 r) { return r * 180.0 / PI; }
+fn deg_to_rad(d: f64) f64 { return d * PI / 180.0; }
+fn rad_to_deg(r: f64) f64 { return r * 180.0 / PI; }
 
 // --- rounding ---
-f64 snap(f64 v, f64 step) { return floor(v / step + 0.5) * step; }
+fn snap(v: f64, step: f64) f64 { return floor(v / step + 0.5) * step; }
 
 // --- power / log ---
-f64 log_base(f64 x, f64 base) { return log(x) / log(base); }
+fn log_base(x: f64, base: f64) f64 { return log(x) / log(base); }
 
-bool is_power_of_two(u64 n) { return n != 0 && (n & (n - 1)) == 0; }
-u64 next_power_of_two(u64 n) {
+fn is_power_of_two(n: u64) bool { return n != 0 && (n & (n - 1)) == 0; }
+fn next_power_of_two(n: u64) u64 {
     n = n - 1;
     n = n | (n >> 1);
     n = n | (n >> 2);
@@ -101,47 +101,47 @@ u64 next_power_of_two(u64 n) {
 }
 
 // --- integer arithmetic ---
-i32 gcd(i32 a, i32 b) {
+fn gcd(a: i32, b: i32) i32 {
     if (a < 0) { a = -a; }
     if (b < 0) { b = -b; }
-    while (b != 0) { i32 t = b; b = a % b; a = t; }
+    while (b != 0) { let mut t: i32= b; b = a % b; a = t; }
     return a;
 }
-i32 lcm(i32 a, i32 b) {
+fn lcm(a: i32, b: i32) i32 {
     // inline gcd to avoid same-namespace bare-name call limitation
-    i32 g = a < 0 ? -a : a;
-    i32 t = b < 0 ? -b : b;
-    while (t != 0) { i32 r = g % t; g = t; t = r; }
+    let mut g: i32= a < 0 ? -a : a;
+    let mut t: i32= b < 0 ? -b : b;
+    while (t != 0) { let mut r: i32= g % t; g = t; t = r; }
     return (a / g) * b;
 }
-i32 div_ceil(i32 a, i32 b) { return (a + b - 1) / b; }
-i32 div_floor(i32 a, i32 b){ return a / b; }
-bool is_even(i64 n) { return (n & 1) == 0; }
-bool is_odd(i64 n)  { return (n & 1) != 0; }
+fn div_ceil(a: i32, b: i32) i32 { return (a + b - 1) / b; }
+fn div_floor(a: i32, b: i32) i32{ return a / b; }
+fn is_even(n: i64) bool { return (n & 1) == 0; }
+fn is_odd(n: i64) bool  { return (n & 1) != 0; }
 
 // --- 2D vector ---
 istruc vec2 {
-    f64 x; f64 y;
+    let mut x: f64; let mut y: f64;
 
-    void __construct__(vec2* self, f64 vx, f64 vy) { self.x = vx; self.y = vy; }
+    fn __construct__(self: *vec2, vx: f64, vy: f64) void { self.x = vx; self.y = vy; }
 
-    vec2 add(vec2* self, vec2 o)   { vec2 r(self.x+o.x, self.y+o.y); return r; }
-    vec2 sub(vec2* self, vec2 o)   { vec2 r(self.x-o.x, self.y-o.y); return r; }
-    vec2 scale(vec2* self, f64 s)  { vec2 r(self.x*s,   self.y*s);   return r; }
-    f64  dot(vec2* self, vec2 o)   { return self.x*o.x + self.y*o.y; }
-    f64  len_sq(vec2* self)        { return self.x*self.x + self.y*self.y; }
-    f64  len(vec2* self)           { return sqrt(self.len_sq()); }
-    vec2 normalize(vec2* self) {
-        f64 l = self.len();
-        if (l == 0.0) { vec2 z(0.0, 0.0); return z; }
-        vec2 r(self.x/l, self.y/l); return r;
+    fn add(self: *vec2, o: vec2) vec2   { let mut r: vec2(self.x+o.x, self.y+o.y); return r; }
+    fn sub(self: *vec2, o: vec2) vec2   { let mut r: vec2(self.x-o.x, self.y-o.y); return r; }
+    fn scale(self: *vec2, s: f64) vec2  { let mut r: vec2(s*self.x, s*self.y); return r; }
+    fn dot(self: *vec2, o: vec2) f64   { return self.x*o.x + self.y*o.y; }
+    fn len_sq(self: *vec2) f64        { return self.x*self.x + self.y*self.y; }
+    fn len(self: *vec2) f64           { return sqrt(self.len_sq()); }
+    fn normalize(self: *vec2) vec2 {
+        let mut l: f64= self.len();
+        if (l == 0.0) { let mut z: vec2(0.0, 0.0); return z; }
+        let mut r: vec2(self.x/l, self.y/l); return r;
     }
-    f64  cross(vec2* self, vec2 o) { return self.x*o.y - self.y*o.x; }
-    vec2 perp(vec2* self)          { vec2 r(-self.y, self.x); return r; }
-    f64  angle(vec2* self)         { return atan2(self.y, self.x); }
-    vec2 rotate(vec2* self, f64 a) {
-        f64 c = cos(a); f64 s = sin(a);
-        vec2 r(self.x*c - self.y*s, self.x*s + self.y*c); return r;
+    fn cross(self: *vec2, o: vec2) f64 { return self.x*o.y - self.y*o.x; }
+    fn perp(self: *vec2) vec2          { let mut r: vec2(-self.y, self.x); return r; }
+    fn angle(self: *vec2) f64         { return atan2(self.y, self.x); }
+    fn rotate(self: *vec2, a: f64) vec2 {
+        let mut c: f64= cos(a); let mut s: f64= sin(a);
+        let mut r: vec2(self.x*c - self.y*s, self.x*s + self.y*c); return r;
     }
     bool operator==(vec2* self, vec2 o) { return self.x == o.x && self.y == o.y; }
     vec2 operator+(vec2* self, vec2 o)  { return self.add(o); }
@@ -151,28 +151,28 @@ istruc vec2 {
 
 // --- 3D vector ---
 istruc vec3 {
-    f64 x; f64 y; f64 z;
+    let mut x: f64; let mut y: f64; let mut z: f64;
 
-    void __construct__(vec3* self, f64 vx, f64 vy, f64 vz) { self.x=vx; self.y=vy; self.z=vz; }
+    fn __construct__(self: *vec3, vx: f64, vy: f64, vz: f64) void { self.x=vx; self.y=vy; self.z=vz; }
 
-    vec3 add(vec3* self, vec3 o)  { vec3 r(self.x+o.x,self.y+o.y,self.z+o.z); return r; }
-    vec3 sub(vec3* self, vec3 o)  { vec3 r(self.x-o.x,self.y-o.y,self.z-o.z); return r; }
-    vec3 scale(vec3* self, f64 s) { vec3 r(self.x*s,self.y*s,self.z*s); return r; }
-    f64  dot(vec3* self, vec3 o)  { return self.x*o.x+self.y*o.y+self.z*o.z; }
-    f64  len_sq(vec3* self)       { return self.x*self.x+self.y*self.y+self.z*self.z; }
-    f64  len(vec3* self)          { return sqrt(self.len_sq()); }
-    vec3 cross(vec3* self, vec3 o) {
-        vec3 r(self.y*o.z - self.z*o.y,
-               self.z*o.x - self.x*o.z,
-               self.x*o.y - self.y*o.x);
+    fn add(self: *vec3, o: vec3) vec3  { let mut r: vec3(self.x+o.x,self.y+o.y,self.z+o.z); return r; }
+    fn sub(self: *vec3, o: vec3) vec3  { let mut r: vec3(self.x-o.x,self.y-o.y,self.z-o.z); return r; }
+    fn scale(self: *vec3, s: f64) vec3 { let mut r: vec3(s*self.x, s*self.y, s*self.z); return r; }
+    fn dot(self: *vec3, o: vec3) f64  { return self.x*o.x+self.y*o.y+self.z*o.z; }
+    fn len_sq(self: *vec3) f64       { return self.x*self.x+self.y*self.y+self.z*self.z; }
+    fn len(self: *vec3) f64          { return sqrt(self.len_sq()); }
+    fn cross(self: *vec3, o: vec3) vec3 {
+        let mut r: vec3(self.y*o.z - self.z*o.y,
+                        self.z*o.x - self.x*o.z,
+                        self.x*o.y - self.y*o.x);
         return r;
     }
-    vec3 normalize(vec3* self) {
-        f64 l = self.len();
-        if (l == 0.0) { vec3 z(0.0,0.0,0.0); return z; }
-        vec3 r(self.x/l,self.y/l,self.z/l); return r;
+    fn normalize(self: *vec3) vec3 {
+        let mut l: f64= self.len();
+        if (l == 0.0) { let mut z: vec3(0.0,0.0,0.0); return z; }
+        let mut r: vec3(self.x/l,self.y/l,self.z/l); return r;
     }
-    vec3 reflect(vec3* self, vec3 n) { return self.sub(n.scale(2.0*self.dot(n))); }
+    fn reflect(self: *vec3, n: vec3) vec3 { return self.sub(n.scale(2.0*self.dot(n))); }
     vec3 operator+(vec3* self, vec3 o) { return self.add(o); }
     vec3 operator-(vec3* self, vec3 o) { return self.sub(o); }
     vec3 operator*(vec3* self, f64 s)  { return self.scale(s); }
@@ -180,26 +180,26 @@ istruc vec3 {
 
 // --- 4x4 matrix (column-major) ---
 istruc mat4 {
-    f64 m[16]; // [col*4 + row]
+    let mut m: [16]f64; // [col*4 + row]
 
-    void __construct__(mat4* self) {
-        for (i32 i = 0; i < 16; i = i + 1) { self.m[i] = 0.0; }
+    fn __construct__(self: *mat4) void {
+        for (let mut i: i32 = 0; i < 16; i = i + 1) { self.m[i] = 0.0; }
     }
 
     static mat4 identity() {
-        mat4 r;
+        let mut r: mat4;
         r.m[0]=1.0; r.m[5]=1.0; r.m[10]=1.0; r.m[15]=1.0;
         return r;
     }
 
-    f64 at(mat4* self, i32 row, i32 col) { return self.m[col*4 + row]; }
+    fn at(self: *mat4, row: i32, col: i32) f64 { return self.m[col*4 + row]; }
 
-    mat4 mul(mat4* self, mat4 b) {
-        mat4 r;
-        for (i32 row = 0; row < 4; row = row + 1) {
-            for (i32 col = 0; col < 4; col = col + 1) {
-                f64 s = 0.0;
-                for (i32 k = 0; k < 4; k = k + 1)
+    fn mul(self: *mat4, b: mat4) mat4 {
+        let mut r: mat4;
+        for (let mut row: i32 = 0; row < 4; row = row + 1) {
+            for (let mut col: i32 = 0; col < 4; col = col + 1) {
+                let mut s: f64= 0.0;
+                for (let mut k: i32 = 0; k < 4; k = k + 1)
                     s = s + self.m[k*4+row] * b.m[col*4+k];
                 r.m[col*4+row] = s;
             }
@@ -207,47 +207,47 @@ istruc mat4 {
         return r;
     }
 
-    mat4 transpose(mat4* self) {
-        mat4 r;
-        for (i32 i = 0; i < 4; i = i + 1)
-            for (i32 j = 0; j < 4; j = j + 1)
+    fn transpose(self: *mat4) mat4 {
+        let mut r: mat4;
+        for (let mut i: i32 = 0; i < 4; i = i + 1)
+            for (let mut j: i32 = 0; j < 4; j = j + 1)
                 r.m[i*4+j] = self.m[j*4+i];
         return r;
     }
 
     static mat4 translate(f64 tx, f64 ty, f64 tz) {
-        mat4 r = mat4.identity();
+        let mut r: mat4= mat4.identity();
         r.m[12]=tx; r.m[13]=ty; r.m[14]=tz;
         return r;
     }
 
     static mat4 scale_m(f64 sx, f64 sy, f64 sz) {
-        mat4 r;
+        let mut r: mat4;
         r.m[0]=sx; r.m[5]=sy; r.m[10]=sz; r.m[15]=1.0;
         return r;
     }
 
     static mat4 rotate_x(f64 a) {
-        mat4 r = mat4.identity();
+        let mut r: mat4= mat4.identity();
         r.m[5]=cos(a); r.m[6]=sin(a); r.m[9]=-sin(a); r.m[10]=cos(a);
         return r;
     }
 
     static mat4 rotate_y(f64 a) {
-        mat4 r = mat4.identity();
+        let mut r: mat4= mat4.identity();
         r.m[0]=cos(a); r.m[2]=-sin(a); r.m[8]=sin(a); r.m[10]=cos(a);
         return r;
     }
 
     static mat4 rotate_z(f64 a) {
-        mat4 r = mat4.identity();
+        let mut r: mat4= mat4.identity();
         r.m[0]=cos(a); r.m[1]=sin(a); r.m[4]=-sin(a); r.m[5]=cos(a);
         return r;
     }
 
     static mat4 perspective(f64 fov_y, f64 aspect, f64 near, f64 far) {
-        mat4 r;
-        f64 f = 1.0 / tan(fov_y * 0.5);
+        let mut r: mat4;
+        let mut f: f64= 1.0 / tan(fov_y * 0.5);
         r.m[0]  = f / aspect;
         r.m[5]  = f;
         r.m[10] = (far + near) / (near - far);
@@ -259,16 +259,16 @@ istruc mat4 {
 
 // --- quaternion ---
 istruc quat {
-    f64 w; f64 x; f64 y; f64 z;
+    let mut w: f64; let mut x: f64; let mut y: f64; let mut z: f64;
 
-    void __construct__(quat* self, f64 vw, f64 vx, f64 vy, f64 vz) {
+    fn __construct__(self: *quat, vw: f64, vx: f64, vy: f64, vz: f64) void {
         self.w=vw; self.x=vx; self.y=vy; self.z=vz;
     }
 
-    static quat identity() { quat q(1.0,0.0,0.0,0.0); return q; }
+    static quat identity() { let mut q: quat(1.0,0.0,0.0,0.0); return q; }
 
-    quat mul(quat* self, quat o) {
-        quat r(
+    fn mul(self: *quat, o: quat) quat {
+        let mut r: quat(
             self.w*o.w - self.x*o.x - self.y*o.y - self.z*o.z,
             self.w*o.x + self.x*o.w + self.y*o.z - self.z*o.y,
             self.w*o.y - self.x*o.z + self.y*o.w + self.z*o.x,
@@ -277,28 +277,28 @@ istruc quat {
         return r;
     }
 
-    f64  norm(quat* self) { return sqrt(self.w*self.w+self.x*self.x+self.y*self.y+self.z*self.z); }
+    fn norm(self: *quat) f64 { return sqrt(self.w*self.w+self.x*self.x+self.y*self.y+self.z*self.z); }
 
-    quat normalize(quat* self) {
-        f64 n = self.norm();
+    fn normalize(self: *quat) quat {
+        let mut n: f64= self.norm();
         if (n == 0.0) { return quat.identity(); }
-        quat r(self.w/n,self.x/n,self.y/n,self.z/n); return r;
+        let mut r: quat(self.w/n,self.x/n,self.y/n,self.z/n); return r;
     }
 
-    quat conjugate(quat* self) { quat r(self.w,-self.x,-self.y,-self.z); return r; }
+    fn conjugate(self: *quat) quat { let mut r: quat(self.w,-self.x,-self.y,-self.z); return r; }
 
     static quat from_axis_angle(vec3 axis, f64 angle) {
-        f64 s = sin(angle * 0.5);
-        vec3 na = axis.normalize();
-        quat q(cos(angle*0.5), na.x*s, na.y*s, na.z*s);
+        let mut s: f64= sin(angle * 0.5);
+        let mut na: vec3= axis.normalize();
+        let mut q: quat(cos(angle*0.5), na.x*s, na.y*s, na.z*s);
         return q;
     }
 
-    mat4 to_mat4(quat* self) {
-        mat4 r = mat4.identity();
-        f64 xx=self.x*self.x; f64 yy=self.y*self.y; f64 zz=self.z*self.z;
-        f64 xy=self.x*self.y; f64 xz=self.x*self.z; f64 yz=self.y*self.z;
-        f64 wx=self.w*self.x; f64 wy=self.w*self.y; f64 wz=self.w*self.z;
+    fn to_mat4(self: *quat) mat4 {
+        let mut r: mat4= mat4.identity();
+        let mut xx: f64=self.x*self.x; let mut yy: f64=self.y*self.y; let mut zz: f64=self.z*self.z;
+        let mut xy: f64=self.x*self.y; let mut xz: f64=self.x*self.z; let mut yz: f64=self.y*self.z;
+        let mut wx: f64=self.w*self.x; let mut wy: f64=self.w*self.y; let mut wz: f64=self.w*self.z;
         r.m[0]  = 1.0-2.0*(yy+zz);
         r.m[1]  = 2.0*(xy+wz);
         r.m[2]  = 2.0*(xz-wy);
@@ -313,38 +313,38 @@ istruc quat {
 }
 
 // --- statistics ---
-f64 mean(f64* arr, i32 n) {
-    f64 s = 0.0;
-    for (i32 i = 0; i < n; i = i + 1) s = s + arr[i];
+fn mean(arr: *f64, n: i32) f64 {
+    let mut s: f64= 0.0;
+    for (let mut i: i32 = 0; i < n; i = i + 1) s = s + arr[i];
     return s / (f64)n;
 }
-f64 variance(f64* arr, i32 n) {
-    f64 m = 0.0;
-    for (i32 i = 0; i < n; i = i + 1) m = m + arr[i];
+fn variance(arr: *f64, n: i32) f64 {
+    let mut m: f64= 0.0;
+    for (let mut i: i32 = 0; i < n; i = i + 1) m = m + arr[i];
     m = m / (f64)n;
-    f64 s = 0.0;
-    for (i32 i = 0; i < n; i = i + 1) { f64 d = arr[i]-m; s = s + d*d; }
+    let mut s: f64= 0.0;
+    for (let mut i: i32 = 0; i < n; i = i + 1) { let mut d: f64= arr[i]-m; s = s + d*d; }
     return s / (f64)n;
 }
-f64 std_dev(f64* arr, i32 n) {
-    f64 m = 0.0;
-    for (i32 i = 0; i < n; i = i + 1) m = m + arr[i];
+fn std_dev(arr: *f64, n: i32) f64 {
+    let mut m: f64= 0.0;
+    for (let mut i: i32 = 0; i < n; i = i + 1) m = m + arr[i];
     m = m / (f64)n;
-    f64 s = 0.0;
-    for (i32 i = 0; i < n; i = i + 1) { f64 d = arr[i]-m; s = s + d*d; }
+    let mut s: f64= 0.0;
+    for (let mut i: i32 = 0; i < n; i = i + 1) { let mut d: f64= arr[i]-m; s = s + d*d; }
     return sqrt(s / (f64)n);
 }
 
 // --- bit operations ---
-u32 popcount_u32(u32 x) {
+fn popcount_u32(x: u32) u32 {
     x = x - ((x >> 1) & 0x55555555u);
     x = (x & 0x33333333u) + ((x >> 2) & 0x33333333u);
     x = (x + (x >> 4)) & 0x0F0F0F0Fu;
     return (x * 0x01010101u) >> 24;
 }
-u32 clz_u32(u32 x) {
+fn clz_u32(x: u32) u32 {
     if (x == 0) { return 32; }
-    u32 n = 0;
+    let mut n: u32= 0;
     if ((x & 0xFFFF0000u) == 0) { n = n + 16; x = x << 16; }
     if ((x & 0xFF000000u) == 0) { n = n + 8;  x = x << 8;  }
     if ((x & 0xF0000000u) == 0) { n = n + 4;  x = x << 4;  }
@@ -352,9 +352,9 @@ u32 clz_u32(u32 x) {
     if ((x & 0x80000000u) == 0) { n = n + 1; }
     return n;
 }
-u32 ctz_u32(u32 x) {
+fn ctz_u32(x: u32) u32 {
     if (x == 0) { return 32; }
-    u32 n = 0;
+    let mut n: u32= 0;
     if ((x & 0xFFFFu) == 0) { n = n + 16; x = x >> 16; }
     if ((x & 0xFFu)   == 0) { n = n + 8;  x = x >> 8;  }
     if ((x & 0xFu)    == 0) { n = n + 4;  x = x >> 4;  }
@@ -362,7 +362,7 @@ u32 ctz_u32(u32 x) {
     if ((x & 0x1u)    == 0) { n = n + 1; }
     return n;
 }
-u32 bit_reverse_u32(u32 x) {
+fn bit_reverse_u32(x: u32) u32 {
     x = ((x & 0xAAAAAAAAu) >> 1)  | ((x & 0x55555555u) << 1);
     x = ((x & 0xCCCCCCCCu) >> 2)  | ((x & 0x33333333u) << 2);
     x = ((x & 0xF0F0F0F0u) >> 4)  | ((x & 0x0F0F0F0Fu) << 4);

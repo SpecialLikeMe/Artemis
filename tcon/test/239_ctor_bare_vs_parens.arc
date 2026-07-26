@@ -1,36 +1,36 @@
 // Test bare declaration vs explicit constructor call
 // PASS PASS PASS PASS
-int puts(i8* s);
+fn puts(s: *i8) int;
 
 istruc Counter {
-    int count;
-    void __construct__(Counter* self) {
+    let mut count: int;
+    fn __construct__(self: *Counter) void {
         self.count = 999;
     }
 }
 
 istruc WithArg {
-    int val;
-    void __construct__(WithArg* self, int v) {
+    let mut val: int;
+    fn __construct__(self: *WithArg, v: int) void {
         self.val = v * 2;
     }
 }
 
-int main() {
+pub fn main() int {
     // Bare declaration: constructor must NOT be called
-    Counter b;
+    let mut b: Counter;
     if (b.count == 0) { puts("PASS"); } else { puts("FAIL bare no ctor"); }
 
     // Explicit no-arg ctor call: constructor MUST be called
-    Counter c();
+    let mut c: Counter();
     if (c.count == 999) { puts("PASS"); } else { puts("FAIL parens ctor"); }
 
     // Ctor with arg
-    WithArg w(21);
+    let mut w: WithArg(21);
     if (w.val == 42) { puts("PASS"); } else { puts("FAIL arg ctor"); }
 
     // Bare decl of struct with arg ctor: no ctor call
-    WithArg x;
+    let mut x: WithArg;
     if (x.val == 0) { puts("PASS"); } else { puts("FAIL bare arg no ctor"); }
 
     return 0;

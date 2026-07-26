@@ -1,15 +1,15 @@
 // PASS: error.Name(expr) carries a payload accessible via e.payload in the except handler.
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
-auto maybe_fail(i32 x) !i32 {
+fn maybe_fail(x: i32) !i32 {
     if (x == 0) {
         return error.BadInput("zero is not allowed");
     }
     return x * 2;
 }
 
-i32 main() {
-    i32 result = 0;
+pub fn main() i32 {
+    let mut result: i32= 0;
 
     // Error path: payload should be non-null
     maybe_fail(0) catch |e| {
@@ -17,7 +17,7 @@ i32 main() {
     }
 
     // Success path: result should be 10, handler should not run
-    i32 v = maybe_fail(5) catch |e| { result = result + 99; };
+    let mut v: i32= maybe_fail(5) catch |e| { result = result + 99; };
     if (v != 10) { return 2; }
 
     if (result != 1) { return 3; }

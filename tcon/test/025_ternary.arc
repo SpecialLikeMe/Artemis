@@ -1,11 +1,11 @@
-i32 main() {
-    i32 a = 10;
-    i32 b = 20;
-    i32 mx = a > b ? a : b;
+pub fn main() i32 {
+    let mut a: i32= 10;
+    let mut b: i32= 20;
+    let mut mx: i32= a > b ? a : b;
     if (mx != 20) { return 1; }
-    i32 mn = a < b ? a : b;
+    let mut mn: i32= a < b ? a : b;
     if (mn != 10) { return 2; }
-    i32 c = 0 ? 99 : 42;
+    let mut c: i32= 0 ? 99 : 42;
     if (c != 42)  { return 3; }
     return 0;
 }

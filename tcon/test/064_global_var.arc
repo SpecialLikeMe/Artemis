@@ -1,9 +1,9 @@
-i32 counter = 0;
+let mut counter: i32= 0;
 
-void inc() { counter = counter + 1; }
-void reset() { counter = 0; }
+fn inc() void { counter = counter + 1; }
+fn reset() void { counter = 0; }
 
-i32 main() {
+pub fn main() i32 {
     if (counter != 0) { return 1; }
     inc(); inc(); inc();
     if (counter != 3) { return 2; }

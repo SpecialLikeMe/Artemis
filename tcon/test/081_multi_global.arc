@@ -1,10 +1,10 @@
-i32 g_a = 1;
-i32 g_b = 2;
-i32 g_c = 3;
+let mut g_a: i32= 1;
+let mut g_b: i32= 2;
+let mut g_c: i32= 3;
 
-i32 sum_globals() { return g_a + g_b + g_c; }
+fn sum_globals() i32 { return g_a + g_b + g_c; }
 
-i32 main() {
+pub fn main() i32 {
     if (sum_globals() != 6) { return 1; }
     g_a = 10;
     g_b = 20;

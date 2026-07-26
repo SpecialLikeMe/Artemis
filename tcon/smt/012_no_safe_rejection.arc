@@ -16,39 +16,39 @@
 //   4. Pointer returned from a function, then dereferenced — UNKNOWN, passes
 //   5. Index derived from runtime conditional — SMT cannot track; UNKNOWN, passes
 //   6. Index derived from another array element — UNKNOWN, passes
-extern i32 printf(i8* fmt, ...);
+@unsafe extern fn printf(fmt: *i8, ...) i32;
 
 // Pattern 1: parameter as index
-i32 get_at(i32* arr, i32 idx) { return arr[idx]; }
+fn get_at(arr: *i32, idx: i32) i32 { return arr[idx]; }
 
 // Pattern 2: computed expression as index
-i32 get_mid(i32* arr, i32 n) { return arr[n/2]; }
+fn get_mid(arr: *i32, n: i32) i32 { return arr[n/2]; }
 
 // Pattern 3: loop induction variable (caller guarantees i < size)
-i32 sum_loop(i32* arr, i32 n) {
-    i32 s = 0; i32 i = 0;
+fn sum_loop(arr: *i32, n: i32) i32 {
+    let mut s: i32= 0; let mut i: i32= 0;
     while (i < n) { s = s + arr[i]; i = i + 1; }
     return s;
 }
 
 // Pattern 4: pointer returned from helper
-i32* nth(i32* arr, i32 n) { return arr + n; }
+fn nth(arr: *i32, n: i32) *i32 { return arr + n; }
 
 // Pattern 5: index from runtime conditional
-i32 conditional_index(i32* arr, i32 flag) {
-    i32 idx = 0;
+fn conditional_index(arr: *i32, flag: i32) i32 {
+    let mut idx: i32= 0;
     if (flag > 0) { idx = 1; } else { idx = 2; }
     return arr[idx];   // UNKNOWN: idx ∈ {1,2}; SMT cannot prove ∈ [0,N-1] without N
 }
 
 // Pattern 6: index from another array element
-i32 indirect_index(i32* arr, i32* indices, i32 which) {
-    i32 idx = indices[which];   // UNKNOWN: dynamic
+fn indirect_index(arr: *i32, indices: *i32, which: i32) i32 {
+    let mut idx: i32= indices[which];   // UNKNOWN: dynamic
     return arr[idx];            // UNKNOWN: double-dynamic; safe at runtime
 }
 
-i32 main() {
-    i32 arr[8];
+pub fn main() i32 {
+    let mut arr: [8]i32;
     arr[0]=100; arr[1]=200; arr[2]=300; arr[3]=400;
     arr[4]=500; arr[5]=600; arr[6]=700; arr[7]=800;
 
@@ -68,7 +68,7 @@ i32 main() {
     if (sum_loop(arr, 1) != 100)  { printf("FAIL sum_loop 1\n"); return 9; }
 
     // Pattern 4: pointer from helper — UNKNOWN (deref of returned ptr), passes
-    i32* mid = nth(arr, 3);
+    let mut mid: *i32= nth(arr, 3);
     if ((*mid) != 400) { printf("FAIL nth\n"); return 10; }
 
     // Pattern 5: conditional index — UNKNOWN, result ∈ {arr[1], arr[2]}
@@ -76,7 +76,7 @@ i32 main() {
     if (conditional_index(arr, -1) != 300) { printf("FAIL cond idx neg\n"); return 12; }
 
     // Pattern 6: indirect index from another array — UNKNOWN, in-range values used
-    i32 idxs[4]; idxs[0]=0; idxs[1]=3; idxs[2]=7; idxs[3]=5;
+    let mut idxs: [4]i32; idxs[0]=0; idxs[1]=3; idxs[2]=7; idxs[3]=5;
     if (indirect_index(arr, idxs, 0) != 100) { printf("FAIL indirect 0\n"); return 13; }
     if (indirect_index(arr, idxs, 1) != 400) { printf("FAIL indirect 1\n"); return 14; }
     if (indirect_index(arr, idxs, 2) != 800) { printf("FAIL indirect 2\n"); return 15; }

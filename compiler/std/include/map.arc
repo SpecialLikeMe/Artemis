@@ -7,21 +7,21 @@ comptime i32 MAP_RED   = 0;
 comptime i32 MAP_BLACK = 1;
 
 istruc map_node<K, V> {
-    K           key;
-    V           val;
-    i32         color;
-    map_node<K,V>* left;
-    map_node<K,V>* right;
-    map_node<K,V>* parent;
+    let mut key: K;
+    let mut val: V;
+    let mut color: i32;
+    let mut left: *map_node<K,V>;
+    let mut right: *map_node<K,V>;
+    let mut parent: *map_node<K,V>;
 }
 
 istruc map<K, V> {
-    map_node<K,V>* root;
-    map_node<K,V>* nil_sentinel;  // sentinel nil node (BLACK, null children)
-    i32            size_count;
+    let mut root: *map_node<K,V>;
+    let mut nil_sentinel: *map_node<K,V>;  // sentinel nil node (BLACK, null children)
+    let mut size_count: i32;
 
-    map_node<K,V>* make_node(map* self, K key, V val, &memstr a) {
-        map_node<K,V>* n = (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>));
+    fn make_node(self: *map, key: K, val: V, a: &memstr) *map_node<K,V> {
+        let mut n: *map_node<K,V>= (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>));
         (*n).key    = key;
         (*n).val    = val;
         (*n).color  = MAP_RED;
@@ -31,7 +31,7 @@ istruc map<K, V> {
         return n;
     }
 
-    void __construct__(map* self, &memstr a) {
+    fn __construct__(self: *map, a: &memstr) void {
         self.nil_sentinel = (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>));
         (*self.nil_sentinel).color  = MAP_BLACK;
         (*self.nil_sentinel).left   = self.nil_sentinel;
@@ -41,8 +41,8 @@ istruc map<K, V> {
         self.size_count = 0;
     }
 
-    void rotate_left(map* self, map_node<K,V>* x) {
-        map_node<K,V>* y = (*x).right;
+    fn rotate_left(self: *map, x: *map_node<K,V>) void {
+        let mut y: *map_node<K,V>= (*x).right;
         (*x).right = (*y).left;
         if ((*y).left != self.nil_sentinel) (*(*y).left).parent = x;
         (*y).parent = (*x).parent;
@@ -53,8 +53,8 @@ istruc map<K, V> {
         (*x).parent = y;
     }
 
-    void rotate_right(map* self, map_node<K,V>* y) {
-        map_node<K,V>* x = (*y).left;
+    fn rotate_right(self: *map, y: *map_node<K,V>) void {
+        let mut x: *map_node<K,V>= (*y).left;
         (*y).left = (*x).right;
         if ((*x).right != self.nil_sentinel) (*(*x).right).parent = y;
         (*x).parent = (*y).parent;
@@ -65,10 +65,10 @@ istruc map<K, V> {
         (*y).parent = x;
     }
 
-    void fix_insert(map* self, map_node<K,V>* z) {
+    fn fix_insert(self: *map, z: *map_node<K,V>) void {
         while ((*(*z).parent).color == MAP_RED) {
             if ((*z).parent == (*(*(*z).parent).parent).left) {
-                map_node<K,V>* y = (*(*(*z).parent).parent).right;
+                let mut y: *map_node<K,V>= (*(*(*z).parent).parent).right;
                 if ((*y).color == MAP_RED) {
                     (*(*z).parent).color = MAP_BLACK;
                     (*y).color = MAP_BLACK;
@@ -84,7 +84,7 @@ istruc map<K, V> {
                     self.rotate_right((*(*z).parent).parent);
                 }
             } else {
-                map_node<K,V>* y = (*(*(*z).parent).parent).left;
+                let mut y: *map_node<K,V>= (*(*(*z).parent).parent).left;
                 if ((*y).color == MAP_RED) {
                     (*(*z).parent).color = MAP_BLACK;
                     (*y).color = MAP_BLACK;
@@ -104,10 +104,10 @@ istruc map<K, V> {
         (*self.root).color = MAP_BLACK;
     }
 
-    void insert(map* self, K key, V val, &memstr a) {
-        map_node<K,V>* z = self.make_node(key, val, a);
-        map_node<K,V>* y = self.nil_sentinel;
-        map_node<K,V>* x = self.root;
+    fn insert(self: *map, key: K, val: V, a: &memstr) void {
+        let mut z: *map_node<K,V>= self.make_node(key, val, a);
+        let mut y: *map_node<K,V>= self.nil_sentinel;
+        let mut x: *map_node<K,V>= self.root;
         while (x != self.nil_sentinel) {
             y = x;
             if (key < (*x).key)       x = (*x).left;
@@ -122,8 +122,8 @@ istruc map<K, V> {
         self.size_count = self.size_count + 1;
     }
 
-    map_node<K,V>* find_node(map* self, K key) {
-        map_node<K,V>* x = self.root;
+    fn find_node(self: *map, key: K) *map_node<K,V> {
+        let mut x: *map_node<K,V>= self.root;
         while (x != self.nil_sentinel) {
             if (key < (*x).key)       x = (*x).left;
             else if (key > (*x).key)  x = (*x).right;
@@ -132,26 +132,26 @@ istruc map<K, V> {
         return self.nil_sentinel;
     }
 
-    bool contains(map* self, K key) { return self.find_node(key) != self.nil_sentinel; }
+    fn contains(self: *map, key: K) bool { return self.find_node(key) != self.nil_sentinel; }
 
-    V* get(map* self, K key) {
-        map_node<K,V>* n = self.find_node(key);
+    fn get(self: *map, key: K) *V {
+        let mut n: *map_node<K,V>= self.find_node(key);
         if (n == self.nil_sentinel) { return (V*)0; }
         return &(*n).val;
     }
 
-    i32  size(map* self)     { return self.size_count; }
-    bool is_empty(map* self) { return self.size_count == 0; }
+    fn size(self: *map) i32     { return self.size_count; }
+    fn is_empty(self: *map) bool { return self.size_count == 0; }
 
     // In-order traversal via callback
-    void inorder(map* self, map_node<K,V>* n, void(K, V)* cb) {
+    fn inorder(self: *map, n: *map_node<K,V>, cb: void(K, V)*) void {
         if (n == self.nil_sentinel) { return; }
         self.inorder((*n).left, cb);
         cb((*n).key, (*n).val);
         self.inorder((*n).right, cb);
     }
 
-    void each(map* self, void(K, V)* cb) { self.inorder(self.root, cb); }
+    fn each(self: *map, cb: void(K, V)*) void { self.inorder(self.root, cb); }
 }
 
 } // std

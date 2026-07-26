@@ -1,16 +1,16 @@
 // Static local variables: persist across function calls
-i32 counter() {
-    static i32 count = 0;
+fn counter() i32 {
+    let mut count: static i32= 0;
     count = count + 1;
     return count;
 }
 
-i32 fib_memo(i32 n) {
+fn fib_memo(n: i32) i32 {
     // Static locals in different functions are independent
-    static i32 last_n = -1;
-    static i32 last_result = 0;
+    let mut last_n: static i32= -1;
+    let mut last_result: static i32= 0;
     if (n == last_n) { return last_result; }
-    i32 r = 0;
+    let mut r: i32= 0;
     if (n <= 1) { r = n; }
     else { r = fib_memo(n - 1) + fib_memo(n - 2); }
     last_n = n;
@@ -18,7 +18,7 @@ i32 fib_memo(i32 n) {
     return r;
 }
 
-i32 main() {
+pub fn main() i32 {
     // counter() should increment each call
     if (counter() != 1) { return 1; }
     if (counter() != 2) { return 2; }
