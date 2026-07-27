@@ -205,16 +205,84 @@ struct __vtable__ {
     let destroy: [](*void)void;
 }
 
-// memstr — fat pointer carrying a data pointer and a vtable pointer.
-// Field renamed from 'data' to 'ptr' (Task 2/3).
-// NOTE (Task 2 deviation): The spec calls for converting memstr from struct to istruc
-// with helper methods (mmap, rsmap, rmap, free, deinit). However, doing so would
-// break all existing stdlib code that calls ms.mmap(n), ms.free(p), etc. with different
-// argument counts and no implicit-self dispatch. The istruc method migration is deferred
-// until the stdlib dispatch sites are updated. The struct_meta is registered as
-// is_istruc=true in ensure_memstr_types (see compiler/ir/decls.arc) for type_info
-// introspection, but no istruc methods are declared here yet.
-struct memstr {
+// memstr — the allocator fat pointer: a metadata pointer plus its vtable.
+//
+// This is a compiler builtin and carries its own helper methods; it is not a stdlib
+// type and must not be split behind a wrapper. The five vtable operations keep their
+// names (mmap/rsmap/rmap/free/destroy) and forward through the vtable; the remaining
+// methods are the human-usable layer on top of them.
+istruc memstr {
     let ptr:    *void;
     let vtable: *__vtable__;
+
+    // ---- The five vtable operations ----
+    // Each forwards to its slot, passing the allocator's own metadata pointer as the
+    // implicit first argument so callers never handle it.
+    //
+    // A memstr may implement only the operations that make sense for it (a bump
+    // allocator has no per-object free), leaving those slots null. Calling an
+    // unimplemented operation is a no-op, not a crash.
+
+    fn mmap(self: *memstr, size: u64) *void {
+        if (self.vtable.mmap == (void*)0) { return (void*)0; }
+        return self.vtable.mmap(self.ptr, size);
+    }
+
+    // Resize in place. Returns false if it could not be done, in which case the
+    // memory is guaranteed unchanged.
+    fn rsmap(self: *memstr, data: *void, size: iofs) bool {
+        if (self.vtable.rsmap == (void*)0) { return false; }
+        return self.vtable.rsmap(self.ptr, data, size);
+    }
+
+    // Resize, moving the allocation if an in-place resize is not possible.
+    // Returns the (possibly new) pointer, or null on failure.
+    fn rmap(self: *memstr, data: *void, size: iofs) *void {
+        if (self.rsmap(data, size)) { return data; }
+        if (self.vtable.rmap == (void*)0) { return (void*)0; }
+        return self.vtable.rmap(self.ptr, data, size);
+    }
+
+    fn free(self: *memstr, data: *void) void {
+        if (data == (void*)0) { return; }            // freeing null is a no-op
+        if (self.vtable.free == (void*)0) { return; } // allocator has no per-object free
+        self.vtable.free(self.ptr, data);
+    }
+
+    // Release everything the allocator is holding.
+    fn destroy(self: *memstr) void {
+        if (self.vtable.destroy == (void*)0) { return; }
+        self.vtable.destroy(self.ptr);
+    }
+
+    fn deinit(self: *memstr) void {   // spelling used by `defer a.deinit()`
+        self.destroy();
+    }
+
+    // ---- Human-usable layer ----
+
+    // Allocate storage for one T and return a typed pointer, or null.
+    // This is the type-safe form of mmap: the size comes from the type.
+    fn create(self: *memstr, comptime T: type) *T {
+        return (T*)self.vtable.mmap(self.ptr, (u64)@csizeof(T));
+    }
+
+    // Allocate storage for `n` contiguous T.
+    fn create_n(self: *memstr, comptime T: type, n: u64) *T {
+        return (T*)self.vtable.mmap(self.ptr, (u64)@csizeof(T) * n);
+    }
+
+    // Allocate `size` bytes and zero them.
+    fn zeroed(self: *memstr, size: u64) *void {
+        let mut p: *void= self.vtable.mmap(self.ptr, size);
+        if (p == (void*)0) { return p; }
+        let mut b: *u8= (u8*)p;
+        let mut i: u64= 0;
+        while (i < size) { b[i] = (u8)0; i = i + 1; }
+        return p;
+    }
+
+    // True when the last allocation request could not be served. Callers that want a
+    // hard failure can branch on this instead of comparing against null themselves.
+    fn failed(self: *memstr, p: *void) bool { return p == (void*)0; }
 }

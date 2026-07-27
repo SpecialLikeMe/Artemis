@@ -882,11 +882,31 @@ fn ensure_memstr_types(ctx: *ir_context) void {
     svm.name = "__vtable__"; svm.is_union = false; svm.is_istruc = false;
     name_list_init(&svm.field_names); type_list_init(&svm.field_types);
     bool_list_init(&svm.field_unsigned); type_list_init(&svm.field_pointee);
-    name_list_push(&svm.field_names, "mmap");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, (i8*)0);
-    name_list_push(&svm.field_names, "rsmap");   type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, (i8*)0);
-    name_list_push(&svm.field_names, "rmap");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, (i8*)0);
-    name_list_push(&svm.field_names, "free");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, (i8*)0);
-    name_list_push(&svm.field_names, "destroy"); type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, (i8*)0);
+    // field_pointee must hold each slot's *function* type, not null: that is what the
+    // fn-ptr-field call path reads to build the call. With null here, `self.vtable.mmap(..)`
+    // inside memstr's own methods silently lowers to undef.
+    let mut i64_t_v: *i8= LLVMInt64TypeInContext(ctx.llvm_ctx);
+    let mut i1_t_v:  *i8= LLVMInt1TypeInContext(ctx.llvm_ctx);
+    let mut void_t_v: *i8= LLVMVoidTypeInContext(ctx.llvm_ctx);
+    // mmap: (meta, size) -> ptr
+    let mut mmap_ps: [2]*i8; mmap_ps[0] = ptr_t; mmap_ps[1] = i64_t_v;
+    let mut mmap_ft: *i8= LLVMFunctionType(ptr_t, mmap_ps, 2, 0);
+    // rsmap: (meta, data, size) -> i1
+    let mut rsmap_ps: [3]*i8; rsmap_ps[0] = ptr_t; rsmap_ps[1] = ptr_t; rsmap_ps[2] = i64_t_v;
+    let mut rsmap_ft: *i8= LLVMFunctionType(i1_t_v, rsmap_ps, 3, 0);
+    // rmap: (meta, data, size) -> ptr
+    let mut rmap_ft: *i8= LLVMFunctionType(ptr_t, rsmap_ps, 3, 0);
+    // free: (meta, data) -> void
+    let mut free_ps: [2]*i8; free_ps[0] = ptr_t; free_ps[1] = ptr_t;
+    let mut free_ft: *i8= LLVMFunctionType(void_t_v, free_ps, 2, 0);
+    // destroy: (meta) -> void
+    let mut dtor_ps: [1]*i8; dtor_ps[0] = ptr_t;
+    let mut dtor_ft: *i8= LLVMFunctionType(void_t_v, dtor_ps, 1, 0);
+    name_list_push(&svm.field_names, "mmap");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, mmap_ft);
+    name_list_push(&svm.field_names, "rsmap");   type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, rsmap_ft);
+    name_list_push(&svm.field_names, "rmap");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, rmap_ft);
+    name_list_push(&svm.field_names, "free");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, free_ft);
+    name_list_push(&svm.field_names, "destroy"); type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, dtor_ft);
     struct_meta_vec_push(&ctx.struct_meta_tbl, svm);
 
     // memstr fat pointer — { ptr data, ptr vtable }.

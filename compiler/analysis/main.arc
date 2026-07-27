@@ -1361,9 +1361,21 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                         // memstr allocator's `free(self, p)` would make the global `free(p)`
                         // look like it takes two arguments.
                         let mut is_method: bool= nd.is_istruc || nd.is_memstr;
-                        if (!is_method || !ctx.scope.exists(cfd.name)) {
-                            let mut cfd_is_void: bool= (cfd.ret_type == (parser.type_node*)0) ||
-                                               (cfd.ret_type.is_primitive && cfd.ret_type.prim == (i32)void_t);
+                        let mut cfd_is_void: bool= (cfd.ret_type == (parser.type_node*)0) ||
+                                           (cfd.ret_type.is_primitive && cfd.ret_type.prim == (i32)void_t);
+                        if (is_method) {
+                            // Register under the qualified name only. Under the bare name a
+                            // method would collide with a same-named global in *either* order:
+                            // seen first it claims the name and the real global is then
+                            // reported as a duplicate definition; seen second it was already
+                            // skipped. memstr's `free(self, p)` beside libc's `free(p)` is the
+                            // case that matters. Method calls are checked against the type's
+                            // own method table, so the bare name is never needed here.
+                            let mut qn_m: [512]i8;
+                            snprintf(qn_m, (u64)512, "%s__NS_%s",
+                                     nd.name != (i8*)0 ? nd.name : "?", cfd.name);
+                            ctx.scope.declare_func_v(qn_m, (i8*)cfd, cfd.params_len, cfd.is_variadic, cfd_is_void);
+                        } else {
                             ctx.scope.declare_func_v(cfd.name, (i8*)cfd, cfd.params_len, cfd.is_variadic, cfd_is_void);
                         }
                     }

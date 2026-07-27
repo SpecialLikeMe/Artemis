@@ -42,7 +42,7 @@ istruc unordered_set<K> {
         for (let mut i: i32 = 0; i < old_cap; i = i + 1)
             if (old_slots[i].hash != USET_EMPTY && old_slots[i].hash != USET_DELETED)
                 self.insert(old_slots[i].key, a);
-        if (old_slots != (uset_slot<K>*)0) a.rmap((void*)old_slots, (u64)(sizeof(uset_slot<K>) * (u64)old_cap));
+        if (old_slots != (uset_slot<K>*)0) a.free((void*)old_slots);
     }
 
     fn insert(self: *unordered_set, key: K, a: &memstr) void {
@@ -100,7 +100,7 @@ istruc unordered_set<K> {
     }
 
     fn deinit(self: *unordered_set, a: &memstr) void {
-        if (self.slots != (uset_slot<K>*)0) a.rmap((void*)self.slots, (u64)(sizeof(uset_slot<K>) * (u64)self.cap));
+        if (self.slots != (uset_slot<K>*)0) a.free((void*)self.slots);
         self.slots = (uset_slot<K>*)0; self.count = 0; self.cap = 0;
     }
 }

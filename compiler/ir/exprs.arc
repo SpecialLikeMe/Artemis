@@ -2571,56 +2571,11 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
         }
 
         if (struct_name != (i8*)0 && method_name != (i8*)0) {
-            // &memstr fat-pointer vtable dispatch: a.mmap(n), a.rmap(p), a.deinit()
-            if ((strcmp(struct_name, "__memstr_fat__") == 0 || strcmp(struct_name, "memstr") == 0) && ctx.memstr_fat_type != (i8*)0) {
-                // obj_ptr is the alloca holding the fat struct; load to get the fat value.
-                let mut fat_val: *i8= LLVMBuildLoad2(ctx.llvm_builder, ctx.memstr_fat_type, obj_ptr, "fat");
-                let mut ms_data: *i8= LLVMBuildExtractValue(ctx.llvm_builder, fat_val, 0, "ms_data");
-                let mut ms_vtbl: *i8= LLVMBuildExtractValue(ctx.llvm_builder, fat_val, 1, "ms_vtbl");
-                // 5-slot vtable: 0=mmap, 1=rsmap, 2=rmap, 3=free, 4=destroy
-                let mut vslot: i32= -1;
-                if (strcmp(method_name, "mmap")    == 0) { vslot = 0; }
-                if (strcmp(method_name, "rsmap")   == 0) { vslot = 1; }
-                if (strcmp(method_name, "rmap")    == 0) { vslot = 2; }
-                if (strcmp(method_name, "free")    == 0) { vslot = 3; }
-                if (strcmp(method_name, "destroy") == 0) { vslot = 4; }
-                if (strcmp(method_name, "deinit")  == 0) { vslot = 4; }
-                if (vslot >= 0 && ctx.memstr_vtable_type != (i8*)0) {
-                    let mut idx_vals: [2]*i8;
-                    idx_vals[0] = LLVMConstInt(LLVMInt32TypeInContext(ctx.llvm_ctx), 0, 0);
-                    idx_vals[1] = LLVMConstInt(LLVMInt32TypeInContext(ctx.llvm_ctx), (u64)vslot, 0);
-                    let mut slot_ptr: *i8= LLVMBuildGEP2(ctx.llvm_builder, ctx.memstr_vtable_type,
-                                                  ms_vtbl, idx_vals, 2, "vtslot");
-                    let mut fn_ptr: *i8= LLVMBuildLoad2(ctx.llvm_builder,
-                                                 LLVMPointerTypeInContext(ctx.llvm_ctx, 0),
-                                                 slot_ptr, "fnptr");
-                    // Build call type: (ptr self [, extra args...]) -> return type
-                    let mut ncall_args: i32= e.args_len + 1;
-                    let mut call_args: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)ncall_args);
-                    call_args[0] = ms_data;
-                    let mut call_param_ts: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)ncall_args);
-                    let mut ptr_t: *i8= LLVMPointerTypeInContext(ctx.llvm_ctx, 0);
-                    call_param_ts[0] = ptr_t;
-                    let mut cai: i32= 0;
-                    while (cai < e.args_len) {
-                        let mut av: *i8= visit_expr(e.args[cai], ctx);
-                        call_args[cai + 1] = av;
-                        call_param_ts[cai + 1] = (av != (i8*)0) ? LLVMTypeOf(av) : ptr_t;
-                        cai = cai + 1;
-                    }
-                    // Return types: mmap/rmap→ptr, rsmap→i1, free/destroy→void
-                    let mut call_ret: *i8= LLVMVoidTypeInContext(ctx.llvm_ctx);
-                    if (vslot == 0 || vslot == 2) { call_ret = ptr_t; }
-                    else if (vslot == 1) { call_ret = LLVMInt1TypeInContext(ctx.llvm_ctx); }
-                    let mut call_fty: *i8= LLVMFunctionType(call_ret, call_param_ts, ncall_args, 0);
-                    let mut call_res: *i8= LLVMBuildCall2(ctx.llvm_builder, call_fty, fn_ptr,
-                                                   call_args, ncall_args, "");
-                    arc_free((i8*)call_args);
-                    arc_free((i8*)call_param_ts);
-                    return call_res;
-                }
-                return (i8*)0;
-            }
+            // memstr dispatch is no longer special-cased here. memstr is an istruc in
+            // compiler/builtin/struct.arc carrying its own mmap/rsmap/rmap/free/destroy
+            // methods, so it resolves through ordinary istruc method dispatch and the
+            // helper layer (create, zeroed, ...) is reachable the same way. Hardcoding
+            // a name whitelist here shadowed those methods.
 
             // Interface fat-pointer vtable dispatch: d.method() where d: SomeInterface
             let mut iface_vtbl_ty: *i8= st_map_get(&ctx.iface_vtable_types, struct_name);
@@ -2881,8 +2836,29 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                     if (fn_ty_fp != (i8*)0 && LLVMGetTypeKind(fn_ty_fp) == LLVMFunctionTypeKind) {
                         let mut struct_t_fp: *i8= st_map_get(&ctx.struct_types, struct_name);
                         if (struct_t_fp != (i8*)0) {
+                            // When the object is itself a pointer-valued field (`self.vt.f(..)`),
+                            // visit_lvalue yields the *address of* that field. GEPing into the
+                            // struct from there would index the field slot rather than the
+                            // object it points at, so load through it first.
+                            let mut base_fp: *i8= obj_ptr;
+                            if (obj_expr != (parser.expr_node*)0 && obj_expr.kind == ek_member) {
+                                let mut par_st_fp: *i8= (i8*)0;
+                                let mut par_ptr_fp: *i8= resolve_struct_base(obj_expr.object, ctx, &par_st_fp);
+                                if (par_ptr_fp != (i8*)0 && par_st_fp != (i8*)0) {
+                                    let mut pname_fp: *i8= LLVMGetStructName(par_st_fp);
+                                    if (pname_fp != (i8*)0) {
+                                        let mut pfidx_fp: i32= ctx_field_index(ctx, pname_fp, obj_expr.member_name);
+                                        if (pfidx_fp >= 0) {
+                                            let mut pft_fp: *i8= ctx_field_type(ctx, pname_fp, pfidx_fp);
+                                            if (pft_fp != (i8*)0 && LLVMGetTypeKind(pft_fp) == LLVMPointerTypeKind) {
+                                                base_fp = LLVMBuildLoad2(ctx.llvm_builder, pft_fp, obj_ptr, "fp_obj");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             let mut field_ptr_fp: *i8= LLVMBuildStructGEP2(ctx.llvm_builder, struct_t_fp,
-                                                            obj_ptr, (u32)fidx_fp, "fp_field");
+                                                            base_fp, (u32)fidx_fp, "fp_field");
                             let mut ptr_t_fp: *i8= LLVMPointerTypeInContext(ctx.llvm_ctx, 0);
                             let mut fn_ptr_fp: *i8= LLVMBuildLoad2(ctx.llvm_builder, ptr_t_fp, field_ptr_fp, "fp_val");
                             let mut nargs_fp: i32= e.args_len;
@@ -2894,6 +2870,11 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                                     args_fp[iai] = visit_expr(e.args[iai], ctx);
                                     iai = iai + 1;
                                 }
+                                // Coerce to the field's declared signature. Every other call
+                                // path does this; without it an argument keeps whatever type
+                                // its expression produced (an integer literal stays i32) and
+                                // the call fails verification against a u64/i64 parameter.
+                                coerce_args_full(fn_ty_fp, args_fp, nargs_fp, ctx);
                             }
                             let mut call_res_fp: *i8= LLVMBuildCall2(ctx.llvm_builder, fn_ty_fp,
                                                           fn_ptr_fp, args_fp, nargs_fp, "");

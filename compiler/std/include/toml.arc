@@ -91,7 +91,7 @@ fn table_set(tbl: *val, key: *i8, value: *val, a: &memstr) void {
         let mut nc: i32= (*tbl).tbl_cap==0?8:(*tbl).tbl_cap*2;
         let mut np: *pair= (pair*)a.mmap((u64)(sizeof(pair)*(u64)nc));
         for(let mut i: i32=0;i<(*tbl).tbl_len;i=i+1) np[i]=(*tbl).tbl_pairs[i];
-        if((*tbl).tbl_pairs!=(pair*)0) a.rmap((void*)(*tbl).tbl_pairs, (u64)(sizeof(pair)*(u64)(*tbl).tbl_cap));
+        if((*tbl).tbl_pairs!=(pair*)0) a.free((void*)(*tbl).tbl_pairs);
         (*tbl).tbl_pairs=np; (*tbl).tbl_cap=nc;
     }
     (*tbl).tbl_pairs[(*tbl).tbl_len].key=key;
@@ -368,7 +368,7 @@ fn parse(src: *i8, len: i32, a: &memstr) *val {
             let mut new_arr: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)((*aot).arr_len+1)));
             for(let mut i: i32=0;i<(*aot).arr_len;i=i+1) new_arr[i]=(*aot).arr_items[i];
             new_arr[(*aot).arr_len]=new_tbl;
-            if((*aot).arr_items!=(val**)0) a.rmap((void*)(*aot).arr_items, (u64)(sizeof(val*)*(u64)(*aot).arr_len));
+            if((*aot).arr_items!=(val**)0) a.free((void*)(*aot).arr_items);
             (*aot).arr_items=new_arr;(*aot).arr_len=(*aot).arr_len+1;
             cur_table=new_tbl;
             continue;

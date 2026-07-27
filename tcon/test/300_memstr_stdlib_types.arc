@@ -1,5 +1,4 @@
-// PASS: __vtable__ and memstr types are available as stdlib types via memstr.arc.
-@include <alloc/memstr.arc>
+// PASS: __vtable__ and memstr are compiler builtins — available with no include.
 
 @unsafe extern fn malloc(size: u64) *void;
 @unsafe extern fn free(ptr: *void) void;
