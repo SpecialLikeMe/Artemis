@@ -6,13 +6,13 @@ extern std.dll;
 memstr Bump {
     let mut base: *void; let mut used: u64; let mut cap: u64;
     fn __construct__(self: *Bump, n: u64) void { self.base=malloc(n); self.used=0; self.cap=n; }
-    fn mmap(self: *Bump, n: u64) *void {
+    fn mmap(self: *Bump, align: usize, n: usize) !*void {
         let mut al: u64=(n+7)&~(u64)7;
         if (self.used+al>self.cap) { return (void*)0; }
         let mut p: *void=(void*)((u8*)self.base+self.used); self.used=self.used+al; return p;
     }
-    fn rmap(self: *Bump, p: *void, n: u64) void {}
-    fn deinit(self: *Bump) void { free(self.base); }
+    fn rmap(self: *Bump, align: usize, p: *void, n: iofs) !*void { return error.Unsupported; }
+    fn deinit(self: *Bump) !void { free(self.base); }
 }
 
 pub fn main() i32 {

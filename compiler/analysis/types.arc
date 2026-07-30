@@ -37,23 +37,23 @@ fn type_to_str(t: *parser.type_node) *i8 {
         if (depth == 0) {
             return lexer.str_dup(base);
         }
-        snprintf(buf, (u64)256, "%s", base);
+        afmt(buf, (u64)256, "%s", .{ base });
         let mut i: i32= 0;
         while (i < depth) {
             let mut tmp: [256]i8;
-            snprintf(tmp, (u64)256, "%s*", buf);
-            snprintf(buf, (u64)256, "%s", tmp);
+            afmt(tmp, (u64)256, "%s*", .{ buf });
+            afmt(buf, (u64)256, "%s", .{ tmp });
             i = i + 1;
         }
         return lexer.str_dup(buf);
     }
     if (t.name != (i8*)0) {
-        snprintf(buf, (u64)256, "%s", t.name);
+        afmt(buf, (u64)256, "%s", .{ t.name });
         let mut i: i32= 0;
         while (i < t.pointer_depth) {
             let mut tmp: [256]i8;
-            snprintf(tmp, (u64)256, "%s*", buf);
-            snprintf(buf, (u64)256, "%s", tmp);
+            afmt(tmp, (u64)256, "%s*", .{ buf });
+            afmt(buf, (u64)256, "%s", .{ tmp });
             i = i + 1;
         }
         return lexer.str_dup(buf);

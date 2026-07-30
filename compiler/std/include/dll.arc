@@ -20,7 +20,7 @@ istruc dll<T> {
     }
 
     fn make_node(self: *dll, val: T, a: &memstr) *dll_node<T> {
-        let mut n: *dll_node<T>= (dll_node<T>*)a.mmap(sizeof(dll_node<T>));
+        let mut n: *dll_node<T>= (dll_node<T>*)a.mmap(sizeof(dll_node<T>)) catch |e| { };
         (*n).val  = val;
         (*n).prev = (dll_node<T>*)0;
         (*n).next = (dll_node<T>*)0;

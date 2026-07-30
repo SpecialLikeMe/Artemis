@@ -10,14 +10,14 @@ istruc vector<T> {
     fn __construct__(vector* self, i32 initial_cap, &memstr a) void {
         self.cap    = initial_cap;
         self.length = 0;
-        self.data   = (T*)a.mmap((u64)(sizeof(T) * initial_cap));
+        self.data   = (T*)a.mmap((u64)(sizeof(T) * initial_cap)) catch |e| { };
     }
 
     fn grow(vector* self, &memstr a) void {
         let mut new_cap: i32= self.cap == 0 ? 8 : self.cap * 2;
-        let mut new_data: *T= (T*)a.mmap((u64)(sizeof(T) * new_cap));
+        let mut new_data: *T= (T*)a.mmap((u64)(sizeof(T) * new_cap)) catch |e| { };
         for (let mut i: i32 = 0; i < self.length; i = i + 1) new_data[i] = self.data[i];
-        if (self.data != (T*)0) { a.free(self.data); }
+        if (self.data != (T*)0) { a.free(self.data) catch |e| { }; }
         self.data = new_data;
         self.cap  = new_cap;
     }
@@ -73,9 +73,9 @@ istruc vector<T> {
 
     fn reserve(vector* self, i32 new_cap, &memstr a) void {
         if (new_cap <= self.cap) { return; }
-        let mut nd: *T= (T*)a.mmap((u64)(sizeof(T) * new_cap));
+        let mut nd: *T= (T*)a.mmap((u64)(sizeof(T) * new_cap)) catch |e| { };
         for (let mut i: i32 = 0; i < self.length; i = i + 1) nd[i] = self.data[i];
-        if (self.data != (T*)0) a.free(self.data);
+        if (self.data != (T*)0) a.free(self.data) catch |e| { };
         self.data = nd;
         self.cap  = new_cap;
     }
@@ -97,7 +97,7 @@ istruc vector<T> {
     }
 
     fn deinit(vector* self, &memstr a) void {
-        if (self.data != (T*)0) { a.free(self.data); }
+        if (self.data != (T*)0) { a.free(self.data) catch |e| { }; }
         self.data   = (T*)0;
         self.length = 0;
         self.cap    = 0;

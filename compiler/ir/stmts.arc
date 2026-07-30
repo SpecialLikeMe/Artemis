@@ -106,8 +106,8 @@ fn visit_local_var_decl(d: *parser.var_decl, ctx: *ir_context) void {
         let mut gname: [256]i8;
         let mut fname: [256]i8;
         ctx.static_local_count = ctx.static_local_count + 1;
-        snprintf(gname, (u64)256, "__stloc_%s_%d", d.name, ctx.static_local_count);
-        snprintf(fname, (u64)256, "__stloc_%s_%d_init", d.name, ctx.static_local_count);
+        afmt(gname, (u64)256, "__stloc_%s_%d", .{ d.name, ctx.static_local_count });
+        afmt(fname, (u64)256, "__stloc_%s_%d_init", .{ d.name, ctx.static_local_count });
 
         // Create or reuse the global variable
         let mut gv: *i8= LLVMGetNamedGlobal(ctx.llvm_mod, gname);
@@ -341,7 +341,7 @@ fn visit_local_var_decl(d: *parser.var_decl, ctx: *ir_context) void {
             apply_istruc_defaults(alloca, sname, alloca_t, ctx);
 
             let mut ctor_name: [512]i8;
-            snprintf(ctor_name, (u64)512, "%s__NS___construct__", sname);
+            afmt(ctor_name, (u64)512, "%s__NS___construct__", .{ sname });
             let mut ctor_fn: *i8= sv_map_get(&ctx.global_funcs, ctor_name);
             let mut ctor_ft: *i8= st_map_get(&ctx.global_func_types, ctor_name);
             if (ctor_fn != (i8*)0 && ctor_ft != (i8*)0) {
@@ -711,16 +711,16 @@ fn visit_for_range_stmt(s: *parser.for_range_stmt, ctx: *ir_context) void {
                 // Look for begin method: SNAME__MT_begin or SNAME__NS_begin
                 let mut begin_name: [256]i8;
                 let mut end_name: [256]i8;
-                snprintf(begin_name, (u64)256, "%s__MT_begin", sname);
-                snprintf(end_name,   (u64)256, "%s__MT_end",   sname);
+                afmt(begin_name, (u64)256, "%s__MT_begin", .{ sname });
+                afmt(end_name, (u64)256, "%s__MT_end", .{ sname });
                 let mut begin_fn: *i8= sv_map_get(&ctx.global_funcs,      begin_name);
                 let mut begin_fn_ty: *i8= st_map_get(&ctx.global_func_types, begin_name);
                 let mut end_fn: *i8= sv_map_get(&ctx.global_funcs,      end_name);
                 let mut end_fn_ty: *i8= st_map_get(&ctx.global_func_types, end_name);
                 // Fallback: istruc/namespace methods use __NS_ prefix
                 if (begin_fn == (i8*)0 || begin_fn_ty == (i8*)0) {
-                    snprintf(begin_name, (u64)256, "%s__NS_begin", sname);
-                    snprintf(end_name,   (u64)256, "%s__NS_end",   sname);
+                    afmt(begin_name, (u64)256, "%s__NS_begin", .{ sname });
+                    afmt(end_name, (u64)256, "%s__NS_end", .{ sname });
                     begin_fn    = sv_map_get(&ctx.global_funcs,      begin_name);
                     begin_fn_ty = st_map_get(&ctx.global_func_types, begin_name);
                     end_fn      = sv_map_get(&ctx.global_funcs,      end_name);
@@ -1128,7 +1128,7 @@ fn visit_return_stmt(s: *parser.return_stmt, ctx: *ir_context) void {
             // Bare 'return;' — error if the enclosing function's return type is non-void.
             if (ctx.current_ret_type != (i8*)0 &&
                     LLVMGetTypeKind(ctx.current_ret_type) != LLVMVoidTypeKind) {
-                printf("error at line %llu: 'return' with no value in non-void function\n", s.line);
+                aprint("error at line %llu: 'return' with no value in non-void function\n", .{ s.line });
                 ctx.had_error = true;
             }
             LLVMBuildRetVoid(ctx.llvm_builder);
@@ -1286,7 +1286,7 @@ fn emit_pat_match(pat: *parser.pat_node, subj_val: *i8, subj_type: *i8, ctx: *ir
         if (tag_idx < 0) { return true1; }
         let mut tag_val: *i8= LLVMBuildExtractValue(ctx.llvm_builder, subj_val, (u32)tag_idx, "__tag_x");
         let mut vname_buf: [512]i8;
-        snprintf(vname_buf, 512u, "%s__%s", sname2, pat.name);
+        afmt(vname_buf, 512u, "%s__%s", .{ sname2, pat.name });
         let mut vgv: *i8= sv_map_get(&ctx.global_vars, vname_buf);
         if (vgv == (i8*)0) { vgv = sv_map_get(&ctx.global_vars, pat.name); }
         if (vgv == (i8*)0) { return true1; }
@@ -1362,20 +1362,30 @@ fn emit_pat_match(pat: *parser.pat_node, subj_val: *i8, subj_type: *i8, ctx: *ir
                     }
                 }
 
+                // Pointee type for a pointer payload field. Without it a binding like
+                // `Struct(_, flds, ..)` is only `ptr`, so `flds[i].offset` has no struct
+                // to index: codegen falls back to a byte GEP and a constant 0, and the
+                // read silently yields zero instead of the field.
+                let mut vptee3: *i8= (vsmeta != (struct_meta*)0 && fi3 < vsmeta.field_pointee.len)
+                    ? vsmeta.field_pointee.data[fi3] : (i8*)0;
+
                 let mut sub_pat3: *parser.pat_node= (parser.pat_node*)pf3.pat;
                 if (sub_pat3 != (parser.pat_node*)0) {
                     let mut sub_r3: *i8= emit_pat_match(sub_pat3, vfval, vft, ctx);
                     field_result = LLVMBuildAnd(ctx.llvm_builder, field_result, sub_r3, "vf_and");
                     // `Variant(name)` parses the binding as a pk_ident sub-pattern with
                     // no field name, so attach the signature to that name here.
-                    if (fnty3 != (i8*)0 && sub_pat3.kind == pk_ident && sub_pat3.name != (i8*)0) {
-                        ctx_declare_local_func_type(ctx, sub_pat3.name, fnty3);
-                        ctx_declare_local_func_depth(ctx, sub_pat3.name, 1);
+                    if (sub_pat3.kind == pk_ident && sub_pat3.name != (i8*)0) {
+                        if (fnty3 != (i8*)0) {
+                            ctx_declare_local_func_type(ctx, sub_pat3.name, fnty3);
+                            ctx_declare_local_func_depth(ctx, sub_pat3.name, 1);
+                        }
+                        ctx_set_local_deref_type(ctx, sub_pat3.name, vptee3);
                     }
                 } else if (pf3.name != (i8*)0) {
                     let mut bind_a3: *i8= LLVMBuildAlloca(ctx.llvm_builder, vft, pf3.name);
                     LLVMBuildStore(ctx.llvm_builder, vfval, bind_a3);
-                    ctx_declare_local(ctx, pf3.name, bind_a3, vft, (i8*)0, false);
+                    ctx_declare_local(ctx, pf3.name, bind_a3, vft, vptee3, false);
                     if (fnty3 != (i8*)0) {
                         ctx_declare_local_func_type(ctx, pf3.name, fnty3);
                         ctx_declare_local_func_depth(ctx, pf3.name, 1);
@@ -1628,25 +1638,25 @@ fn visit_stmt(node: *parser.ast_node, ctx: *ir_context) void {
                         if (si < sp_len && sp[si] == ')') { si = si + 1; }
                         if (is_out || sec == 2) {
                             if (out_cnt < 4) {
-                                snprintf(out_cstr_buf + out_cnt * 64, (u64)64, "%s", cstr);
-                                snprintf(out_var_buf  + out_cnt * 64, (u64)64, "%s", vname);
+                                afmt(out_cstr_buf + out_cnt * 64, (u64)64, "%s", .{ cstr });
+                                afmt(out_var_buf  + out_cnt * 64, (u64)64, "%s", .{ vname });
                                 out_cnt = out_cnt + 1;
                             }
                         } else {
                             if (in_cnt < 4) {
-                                snprintf(in_cstr_buf + in_cnt * 64, (u64)64, "%s", cstr);
-                                snprintf(in_var_buf  + in_cnt * 64, (u64)64, "%s", vname);
+                                afmt(in_cstr_buf + in_cnt * 64, (u64)64, "%s", .{ cstr });
+                                afmt(in_var_buf  + in_cnt * 64, (u64)64, "%s", .{ vname });
                                 in_cnt = in_cnt + 1;
                             }
                         }
                     } else {
-                        if (clob_cnt < 4) { snprintf(clob_buf + clob_cnt * 64, (u64)64, "%s", cstr); clob_cnt = clob_cnt + 1; }
+                        if (clob_cnt < 4) { afmt(clob_buf + clob_cnt * 64, (u64)64, "%s", .{ cstr }); clob_cnt = clob_cnt + 1; }
                     }
                 } else if (sp[si] != 0) {
                     let mut tok: [64]i8; let mut ti: i32= 0;
                     while (si < sp_len && sp[si] != ' ' && sp[si] != '\t' && sp[si] != ',' && sp[si] != '\n' && ti < 63) { tok[ti] = sp[si]; ti = ti + 1; si = si + 1; }
                     tok[ti] = 0;
-                    if (ti > 0 && clob_cnt < 4) { snprintf(clob_buf + clob_cnt * 64, (u64)64, "%s", tok); clob_cnt = clob_cnt + 1; }
+                    if (ti > 0 && clob_cnt < 4) { afmt(clob_buf + clob_cnt * 64, (u64)64, "%s", .{ tok }); clob_cnt = clob_cnt + 1; }
                 } else { si = si + 1; }
             }
             sec = sec + 1;
@@ -1670,7 +1680,7 @@ fn visit_stmt(node: *parser.ast_node, ctx: *ir_context) void {
                 ki = 0;
                 while (ki < in_cnt && idx < 0) { if (strcmp(in_var_buf + ki*64, vn) == 0) { idx = out_cnt + ki; } ki = ki + 1; }
                 if (idx >= 0) {
-                    let mut repl: [16]i8; snprintf(repl, (u64)16, "$%d", idx);
+                    let mut repl: [16]i8; afmt(repl, (u64)16, "$%d", .{ idx });
                     let mut rl: i64= (i64)strlen(repl); let mut ri2: i64= 0;
                     while (ri2 < rl && is_off < 2045) { instr_subst[is_off] = repl[ri2]; is_off = is_off + 1; ri2 = ri2 + 1; }
                 } else {

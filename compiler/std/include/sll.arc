@@ -19,7 +19,7 @@ istruc sll<T> {
     }
 
     fn make_node(self: *sll, val: T, a: &memstr) *sll_node<T> {
-        let mut n: *sll_node<T>= (sll_node<T>*)a.mmap(sizeof(sll_node<T>));
+        let mut n: *sll_node<T>= (sll_node<T>*)a.mmap(sizeof(sll_node<T>)) catch |e| { };
         (*n).val  = val;
         (*n).next = (sll_node<T>*)0;
         return n;

@@ -18,9 +18,9 @@ istruc array<T> {
 
     fn reserve(array* self, i32 n, &memstr a) void {
         if (n <= self.cap) { return; }
-        let mut nd: *T= (T*)a.mmap((u64)(sizeof(T) * n));
+        let mut nd: *T= (T*)a.mmap((u64)(sizeof(T) * n)) catch |e| { };
         for (let mut i: i32 = 0; i < self.len; i = i + 1) nd[i] = self.data[i];
-        if (self.data != (T*)0) { a.free(self.data); }
+        if (self.data != (T*)0) { a.free(self.data) catch |e| { }; }
         self.data = nd; self.cap = n;
     }
 
@@ -49,7 +49,7 @@ istruc array<T> {
     }
 
     fn deinit(array* self, &memstr a) void {
-        if (self.data != (T*)0) { a.free(self.data); }
+        if (self.data != (T*)0) { a.free(self.data) catch |e| { }; }
         self.data = (T*)0; self.len = 0; self.cap = 0;
     }
 }
@@ -161,9 +161,9 @@ istruc particle {
     }
 
     fn deinit(particle* self, &memstr a) void {
-        self.px.deinit(a); self.py.deinit(a); self.pz.deinit(a);
-        self.vx.deinit(a); self.vy.deinit(a); self.vz.deinit(a);
-        self.life.deinit(a); self.color.deinit(a); self.len=0;
+        self.px.deinit(a) catch |e| { }; self.py.deinit(a); self.pz.deinit(a);
+        self.vx.deinit(a) catch |e| { }; self.vy.deinit(a); self.vz.deinit(a);
+        self.life.deinit(a) catch |e| { }; self.color.deinit(a); self.len=0;
     }
 }
 
@@ -198,9 +198,9 @@ istruc transform {
     }
 
     fn deinit(transform* self, &memstr a) void {
-        self.px.deinit(a); self.py.deinit(a); self.pz.deinit(a);
-        self.sx.deinit(a); self.sy.deinit(a); self.sz.deinit(a);
-        self.qx.deinit(a); self.qy.deinit(a); self.qz.deinit(a); self.qw.deinit(a);
+        self.px.deinit(a) catch |e| { }; self.py.deinit(a); self.pz.deinit(a);
+        self.sx.deinit(a) catch |e| { }; self.sy.deinit(a); self.sz.deinit(a);
+        self.qx.deinit(a) catch |e| { }; self.qy.deinit(a); self.qz.deinit(a); self.qw.deinit(a);
         self.len=0;
     }
 }
@@ -326,7 +326,7 @@ fn make_soa(src: *void, info: *type_info, count: i32, scratch: &memstr) soa_layo
             total = total + row_bytes;
         }
     
-        let mut block: *u8= (u8*)scratch.mmap(total);
+        let mut block: *u8= (u8*)scratch.mmap(total) catch |e| { };
         if (block == (u8*)0) {
             layout.field_count = 0;
             return layout;

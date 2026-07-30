@@ -5,9 +5,20 @@ namespace ir {
 // Entry point: lower a fully analysed program_node to LLVM IR.
 // Returns the populated module (caller must dispose it).
 fn ir_main(prog: *parser.program_node, module_name: *i8) *i8 {
+    return ir_main_t(prog, module_name, (i8*)0, (i8*)0);
+}
+
+// As ir_main, but with the target triple and data layout established up front.
+//
+// Layout-dependent codegen (@typeinfo sizes/offsets, @alignof) has to run against the
+// ABI the module is actually compiled for. Attaching the layout afterwards left those
+// queries answering for LLVM's default layout instead.
+fn ir_main_t(prog: *parser.program_node, module_name: *i8, triple: *i8, data_layout: *i8) *i8 {
     if (module_name == (i8*)0) { module_name = "artemis_module"; }
     let mut ctx: *ir_context= make_ir_context(module_name);
     ctx.had_error = false;
+    if (triple != (i8*)0)      { LLVMSetTarget(ctx.llvm_mod, triple); }
+    if (data_layout != (i8*)0) { LLVMSetDataLayout(ctx.llvm_mod, data_layout); }
     // Pre-register compiler builtin types — always available without @include.
     ensure_typeinfo_types(ctx);
     ensure_memstr_types(ctx);

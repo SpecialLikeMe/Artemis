@@ -70,7 +70,7 @@ istruc lex {
 // ---- Helper: alloc a val node ----
 
 fn alloc_val(a: &memstr, kind: i32) *val {
-    let mut v: *val= (val*)a.mmap(sizeof(val));
+    let mut v: *val= (val*)a.mmap(sizeof(val)) catch |e| { };
     (*v).kind=kind; (*v).b_val=false; (*v).i_val=0; (*v).f_val=0.0;
     (*v).s_val=(i8*)0; (*v).arr_items=(val**)0; (*v).arr_len=0;
     (*v).tbl_pairs=(pair*)0; (*v).tbl_len=0; (*v).tbl_cap=0;
@@ -89,9 +89,9 @@ fn table_set(tbl: *val, key: *i8, value: *val, a: &memstr) void {
     }
     if((*tbl).tbl_len >= (*tbl).tbl_cap) {
         let mut nc: i32= (*tbl).tbl_cap==0?8:(*tbl).tbl_cap*2;
-        let mut np: *pair= (pair*)a.mmap((u64)(sizeof(pair)*(u64)nc));
+        let mut np: *pair= (pair*)a.mmap((u64)(sizeof(pair)*(u64)nc)) catch |e| { };
         for(let mut i: i32=0;i<(*tbl).tbl_len;i=i+1) np[i]=(*tbl).tbl_pairs[i];
-        if((*tbl).tbl_pairs!=(pair*)0) a.free((void*)(*tbl).tbl_pairs);
+        if((*tbl).tbl_pairs!=(pair*)0) a.free((void*)(*tbl).tbl_pairs) catch |e| { };
         (*tbl).tbl_pairs=np; (*tbl).tbl_cap=nc;
     }
     (*tbl).tbl_pairs[(*tbl).tbl_len].key=key;
@@ -120,7 +120,7 @@ fn parse_bare_key(l: *lex, a: &memstr) *i8 {
         else break;
     }
     let mut n: i32= (*l).pos - start;
-    let mut s: *i8= (i8*)a.mmap((u64)(n+1));
+    let mut s: *i8= (i8*)a.mmap((u64)(n+1)) catch |e| { };
     for(let mut i: i32=0;i<n;i=i+1) s[i]=(*l).src[start+i];
     s[n]=0;
     return s;
@@ -134,7 +134,7 @@ fn parse_quoted_key(l: *lex, a: &memstr) *i8 {
         (*l).pos=(*l).pos+1;
     }
     let mut n: i32=(*l).pos-start;
-    let mut s: *i8=(i8*)a.mmap((u64)(n+1));
+    let mut s: *i8=(i8*)a.mmap((u64)(n+1)) catch |e| { };
     for(let mut i: i32=0;i<n;i=i+1) s[i]=(*l).src[start+i];
     s[n]=0;
     (*l).next(); // consume closing "
@@ -164,7 +164,7 @@ fn parse_string(l: *lex, a: &memstr) *val {
         }
     }
     let mut n: i32=(*l).pos-start;
-    let mut s: *i8=(i8*)a.mmap((u64)(n+1));
+    let mut s: *i8=(i8*)a.mmap((u64)(n+1)) catch |e| { };
     for(let mut i: i32=0;i<n;i=i+1) s[i]=(*l).src[start+i];
     s[n]=0;
     if(ml){(*l).next();(*l).next();(*l).next();}else(*l).next();
@@ -188,7 +188,7 @@ fn parse_literal_string(l: *lex, a: &memstr) *val {
         while(!(*l).at_end()&&(*l).src[(*l).pos]!='\'') (*l).pos=(*l).pos+1;
     }
     let mut n: i32=(*l).pos-start;
-    let mut s: *i8=(i8*)a.mmap((u64)(n+1));
+    let mut s: *i8=(i8*)a.mmap((u64)(n+1)) catch |e| { };
     for(let mut i: i32=0;i<n;i=i+1) s[i]=(*l).src[start+i];
     s[n]=0;
     if(ml){(*l).next();(*l).next();(*l).next();}else(*l).next();
@@ -202,14 +202,14 @@ fn parse_array(l: *lex, a: &memstr) *val {
     // Allocator-backed and growable: a fixed stack buffer here overflows on
     // large arrays, and a fixed cap would reject valid documents.
     let mut cap: i32=16;
-    let mut items: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)cap));
+    let mut items: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)cap)) catch |e| { };
     if(items==(val**)0) return v;
     let mut count: i32=0;
     (*l).skip_ws_nl();
     while(!(*l).at_end()&&(*l).peek()!=']') {
         if (count >= cap) {
             let mut ncap: i32=cap*2;
-            let mut grown: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)ncap));
+            let mut grown: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)ncap)) catch |e| { };
             if(grown==(val**)0) break;
             for(let mut gi: i32=0;gi<count;gi=gi+1) grown[gi]=items[gi];
             items=grown; cap=ncap;
@@ -365,10 +365,10 @@ fn parse(src: *i8, len: i32, a: &memstr) *val {
             }
             let mut new_tbl: *val=alloc_val(a,TOML_TABLE);
             // Append to array
-            let mut new_arr: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)((*aot).arr_len+1)));
+            let mut new_arr: **val=(val**)a.mmap((u64)(sizeof(val*)*(u64)((*aot).arr_len+1))) catch |e| { };
             for(let mut i: i32=0;i<(*aot).arr_len;i=i+1) new_arr[i]=(*aot).arr_items[i];
             new_arr[(*aot).arr_len]=new_tbl;
-            if((*aot).arr_items!=(val**)0) a.free((void*)(*aot).arr_items);
+            if((*aot).arr_items!=(val**)0) a.free((void*)(*aot).arr_items) catch |e| { };
             (*aot).arr_items=new_arr;(*aot).arr_len=(*aot).arr_len+1;
             cur_table=new_tbl;
             continue;

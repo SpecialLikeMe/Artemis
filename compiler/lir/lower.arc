@@ -151,10 +151,10 @@ fn lower_mir(mir_mod: *mir.mir_module) *lir_module {
 // ---- Textual dump (for --emit-lir) ----
 
 fn lir_val_str(v: *lir_val, buf: *i8, cap: u64) void {
-    if (v == (lir_val*)0) { snprintf(buf, cap, "_"); return; }
-    if (v.kind == 0) { snprintf(buf, cap, "%lld", v.iconst); return; }
-    if (v.kind == 1) { snprintf(buf, cap, "%f", v.fconst); return; }
-    snprintf(buf, cap, "%s", v.name != (i8*)0 ? v.name : "_");
+    if (v == (lir_val*)0) { afmt(buf, cap, "_", .{}); return; }
+    if (v.kind == 0) { afmt(buf, cap, "%lld", .{ v.iconst }); return; }
+    if (v.kind == 1) { afmt(buf, cap, "%f", .{ v.fconst }); return; }
+    afmt(buf, cap, "%s", .{ v.name != (i8*)0 ? v.name : "_" });
 }
 
 fn lir_print_instr(ins: *lir_instr, fp: *void) void {
@@ -165,43 +165,51 @@ fn lir_print_instr(ins: *lir_instr, fp: *void) void {
     let mut k: i32= ins.kind;
     let mut op: *i8= ins.fn_name != (i8*)0 ? ins.fn_name : "?";
     let mut lb: *i8= ins.label != (i8*)0 ? ins.label : "?";
-    @unsafe {
-        if      (k == 1)  { fprintf(fp, "    %s = %s\n", d, a); }
-        else if (k == 2)  { fprintf(fp, "    %s = load %s\n", d, a); }
-        else if (k == 3)  { fprintf(fp, "    store %s, %s\n", a, b); }
-        else if (k == 4)  { fprintf(fp, "    %s = gep %s\n", d, a); }
-        else if (k == 5)  { fprintf(fp, "    %s = binop.%s %s, %s\n", d, op, a, b); }
-        else if (k == 6)  { fprintf(fp, "    %s = unop.%s %s\n", d, op, a); }
-        else if (k == 7)  { fprintf(fp, "    %s = call %s/%d\n", d, op, ins.args_len); }
-        else if (k == 8)  { fprintf(fp, "    br %s\n", lb); }
-        else if (k == 9)  { fprintf(fp, "    cbr %s, %s, %s\n", a, lb, op); }
-        else if (k == 10) { if (ins.src1 != (lir_val*)0) { fprintf(fp, "    ret %s\n", a); } else { fprintf(fp, "    ret\n"); } }
-        else if (k == 12) { fprintf(fp, "    %s = alloca\n", d); }
-        else if (k == 13) { fprintf(fp, "    %s = cast %s\n", d, a); }
-        else if (k == 20) { fprintf(fp, "    rtcheck.null %s\n", a); }
-        else if (k == 21) { fprintf(fp, "    rtcheck.bounds %s, %s\n", a, b); }
-        else              { fprintf(fp, "    nop\n"); }
+    if      (k == 1)  { afprint(fp, "    %s = %s\n", .{ d, a }); }
+    else if (k == 2)  { afprint(fp, "    %s = load %s\n", .{ d, a }); }
+    else if (k == 3)  { afprint(fp, "    store %s, %s\n", .{ a, b }); }
+    else if (k == 4)  {
+        // A GEP is either a field access (name in the label slot) or an index (the
+        // index value in src2). Print whichever it carries, so the dump is enough to
+        // tell the two apart.
+        if (ins.label != (i8*)0)          { afprint(fp, "    %s = gep %s . %s\n", .{ d, a, lb }); }
+        else if (ins.src2 != (lir_val*)0) { afprint(fp, "    %s = gep %s [%s]\n", .{ d, a, b }); }
+        else                              { afprint(fp, "    %s = gep %s\n", .{ d, a }); }
     }
+    else if (k == 5)  { afprint(fp, "    %s = binop.%s %s, %s\n", .{ d, op, a, b }); }
+    else if (k == 6)  { afprint(fp, "    %s = unop.%s %s\n", .{ d, op, a }); }
+    else if (k == 7)  { afprint(fp, "    %s = call %s/%d\n", .{ d, op, ins.args_len }); }
+    else if (k == 8)  { afprint(fp, "    br %s\n", .{ lb }); }
+    else if (k == 9)  { afprint(fp, "    cbr %s, %s, %s\n", .{ a, lb, op }); }
+    else if (k == 10) { if (ins.src1 != (lir_val*)0) { afprint(fp, "    ret %s\n", .{ a }); } else { afprint(fp, "    ret\n", .{}); } }
+    else if (k == 12) {
+        if (ins.src1 != (lir_val*)0) { afprint(fp, "    %s = alloca [%s]\n", .{ d, a }); }
+        else                         { afprint(fp, "    %s = alloca\n", .{ d }); }
+    }
+    else if (k == 13) { afprint(fp, "    %s = cast %s\n", .{ d, a }); }
+    else if (k == 20) { afprint(fp, "    rtcheck.null %s\n", .{ a }); }
+    else if (k == 21) { afprint(fp, "    rtcheck.bounds %s, %s\n", .{ a, b }); }
+    else              { afprint(fp, "    nop\n", .{}); }
 }
 
 fn lir_print_module(m: *lir_module, fp: *void) void {
     if (m == (lir_module*)0 || fp == (void*)0) { return; }
-    @unsafe { fprintf(fp, "; Artemis LIR\n"); }
+    afprint(fp, "; Artemis LIR\n", .{});
     let mut fi: i32= 0;
     while (fi < m.funcs_len) {
         let mut f: *lir_func= m.funcs[fi];
         let mut fname: *i8= f.name != (i8*)0 ? f.name : "<anon>";
-        @unsafe { fprintf(fp, "\nfunc %s {\n", fname); }
+        afprint(fp, "\nfunc %s {\n", .{ fname });
         let mut bi: i32= 0;
         while (bi < f.blocks_len) {
             let mut b: *lir_block= f.blocks[bi];
             let mut bname: *i8= b.name != (i8*)0 ? b.name : "?";
-            @unsafe { fprintf(fp, "  %s:\n", bname); }
+            afprint(fp, "  %s:\n", .{ bname });
             let mut ii: i32= 0;
             while (ii < b.instrs_len) { lir_print_instr(b.instrs[ii], fp); ii = ii + 1; }
             bi = bi + 1;
         }
-        @unsafe { fprintf(fp, "}\n"); }
+        afprint(fp, "}\n", .{});
         fi = fi + 1;
     }
 }

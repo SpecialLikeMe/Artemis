@@ -31,7 +31,7 @@ memstr Pool {
         }
     }
 
-    fn deinit(self: *Pool) void { free(self.block); }
+    fn deinit(self: *Pool) !void { free(self.block); }
 }
 
 pub fn main() i32 {

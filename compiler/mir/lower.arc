@@ -56,7 +56,7 @@ fn lctx_cont_lbl(ctx: *lower_ctx) *i8 {
 // Allocate a new temporary name.
 fn fresh_temp(ctx: *lower_ctx) *i8 {
     let mut buf: [32]i8;
-    snprintf(buf, 32u, "%%t%d", ctx.temp_counter);
+    afmt(buf, 32u, "%%t%d", .{ ctx.temp_counter });
     ctx.temp_counter = ctx.temp_counter + 1;
     return lexer.str_dup(buf);
 }
@@ -64,7 +64,7 @@ fn fresh_temp(ctx: *lower_ctx) *i8 {
 // Allocate a new label name.
 fn fresh_label(ctx: *lower_ctx, prefix: *i8) *i8 {
     let mut buf: [64]i8;
-    snprintf(buf, 64u, "%s%d", prefix != (i8*)0 ? prefix : "lbl", ctx.label_counter);
+    afmt(buf, 64u, "%s%d", .{ prefix != (i8*)0 ? prefix : "lbl", ctx.label_counter });
     ctx.label_counter = ctx.label_counter + 1;
     return lexer.str_dup(buf);
 }
@@ -148,6 +148,56 @@ fn make_instr(kind: i32, dst: *mir_val, s1: *mir_val, s2: *mir_val, ln: u64) *mi
 // emitting any needed temporaries into ctx.cur_block.
 
 fn lower_expr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val;
+fn lower_addr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val;
+
+// Lower an expression in *address* position — the destination of a store, or the base
+// of a load. Returns a value denoting a location rather than the contents of one.
+//
+// Assignment used to assume its left side was a bare identifier and substituted "_"
+// for anything else, so `a[i] = v` and `p.f = v` both lowered to a store to nothing.
+// Every location form the analysis cares about is produced here instead.
+fn lower_addr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val {
+    if (e == (parser.expr_node*)0) { return make_val_name("_", 1); }
+    let mut k: i32= e.kind;
+
+    // Plain variable: the alloca slot itself is the address.
+    if (k == 5) {
+        return make_val_name(e.str_val != (i8*)0 ? e.str_val : "_", 1);
+    }
+
+    // a[i] — GEP from the base with the index as the second operand.
+    if (k == 9) {
+        let mut base: *mir_val= (e.object != (parser.expr_node*)0 && e.object.kind == 5)
+            ? make_val_name(e.object.str_val != (i8*)0 ? e.object.str_val : "_", 1)
+            : lower_expr(e.object, ctx);
+        let mut idx: *mir_val= lower_expr(e.index, ctx);
+        let mut dst: *mir_val= make_val_name(fresh_temp(ctx), 1);
+        let mut ins: *mir_instr= make_instr(4, dst, base, idx, e.line); // MI_GEP
+        ins.label = (i8*)0;   // no field name: this is an index, held in src2
+        block_push(ctx.cur_block, ins);
+        return dst;
+    }
+
+    // s.field — GEP with the field name in the label slot.
+    if (k == 10) {
+        let mut base_m: *mir_val= (e.object != (parser.expr_node*)0 && e.object.kind == 5)
+            ? make_val_name(e.object.str_val != (i8*)0 ? e.object.str_val : "_", 1)
+            : lower_expr(e.object, ctx);
+        let mut dst_m: *mir_val= make_val_name(fresh_temp(ctx), 1);
+        let mut ins_m: *mir_instr= make_instr(4, dst_m, base_m, (mir_val*)0, e.line); // MI_GEP
+        ins_m.label = e.str_val;
+        block_push(ctx.cur_block, ins_m);
+        return dst_m;
+    }
+
+    // *p — the pointer value is the address.
+    if (k == 6 && e.uop == uop_deref) {
+        return lower_expr(e.operand, ctx);
+    }
+
+    // Anything else: evaluate it and treat the result as the location.
+    return lower_expr(e, ctx);
+}
 
 fn lower_expr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val {
     if (e == (parser.expr_node*)0) { return make_val_const_i(0); }
@@ -175,7 +225,7 @@ fn lower_expr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val {
         ins.label = (i8*)0;
         // Store op kind in fn_name slot (repurposed for binop opcode)
         let mut opbuf: [8]i8;
-        snprintf(opbuf, 8u, "%d", e.bop);
+        afmt(opbuf, 8u, "%d", .{ e.bop });
         ins.fn_name = lexer.str_dup(opbuf);
         block_push(ctx.cur_block, ins);
         return dst;
@@ -188,16 +238,28 @@ fn lower_expr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val {
         let mut dst: *mir_val= make_val_name(dst_name, 1);
         let mut ins: *mir_instr= make_instr(6, dst, sv, (mir_val*)0, e.line); // MI_UNOP
         let mut opbuf: [8]i8;
-        snprintf(opbuf, 8u, "%d", e.uop);
+        afmt(opbuf, 8u, "%d", .{ e.uop });
         ins.fn_name = lexer.str_dup(opbuf);
         block_push(ctx.cur_block, ins);
         return dst;
     }
 
+    // Subscript: a[i] — address then load.
+    // The GEP keeps the base and the index as operands so a consumer can see which
+    // array is indexed by what. Dropping this is why `a[i]` used to lower to the
+    // constant 0 and an out-of-range index was invisible downstream.
+    if (k == 9) { // ek_subscript
+        let mut addr: *mir_val= lower_addr(e, ctx);
+        let mut dst_l: *mir_val= make_val_name(fresh_temp(ctx), 1);
+        let mut ld: *mir_instr= make_instr(2, dst_l, addr, (mir_val*)0, e.line); // MI_LOAD
+        block_push(ctx.cur_block, ld);
+        return dst_l;
+    }
+
     // Assignment
     if (k == 14) { // ek_assign
         let mut val: *mir_val= lower_expr(e.rhs, ctx);
-        let mut ptr: *mir_val= make_val_name(e.lhs != (parser.expr_node*)0 && e.lhs.str_val != (i8*)0 ? e.lhs.str_val : "_", 1);
+        let mut ptr: *mir_val= lower_addr(e.lhs, ctx);
         let mut ins: *mir_instr= make_instr(3, (mir_val*)0, ptr, val, e.line); // MI_STORE
         block_push(ctx.cur_block, ins);
         return val;
@@ -205,8 +267,7 @@ fn lower_expr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val {
     // bop_assign embedded in binary
     if (k == 7 && e.bop == 18) {
         let mut val: *mir_val= lower_expr(e.rhs, ctx);
-        let mut lhs_name: *i8= (e.lhs != (parser.expr_node*)0 && e.lhs.str_val != (i8*)0) ? e.lhs.str_val : "_";
-        let mut ptr: *mir_val= make_val_name(lhs_name, 1);
+        let mut ptr: *mir_val= lower_addr(e.lhs, ctx);
         let mut ins: *mir_instr= make_instr(3, (mir_val*)0, ptr, val, e.line); // MI_STORE
         block_push(ctx.cur_block, ins);
         return val;
@@ -232,7 +293,7 @@ fn lower_expr(e: *parser.expr_node, ctx: *lower_ctx) *mir_val {
             // member call: base.method — join as "base.method"
             let mut mbuf: [128]i8;
             let mut base_name: *i8= (e.callee.object != (parser.expr_node*)0 && e.callee.object.str_val != (i8*)0) ? e.callee.object.str_val : "";
-            snprintf(mbuf, 128u, "%s.%s", base_name, e.callee.str_val != (i8*)0 ? e.callee.str_val : "");
+            afmt(mbuf, 128u, "%s.%s", .{ base_name, e.callee.str_val != (i8*)0 ? e.callee.str_val : "" });
             callee_name = lexer.str_dup(mbuf);
         }
         ins.fn_name = callee_name;
@@ -294,8 +355,16 @@ fn lower_stmt(node: *parser.ast_node, ctx: *lower_ctx) void {
     if (k == 13) {
         let mut vd: *parser.var_decl= (parser.var_decl*)node;
         let mut dst: *mir_val= make_val_name(vd.name != (i8*)0 ? vd.name : "_", 1);
-        // Alloca
-        let mut alloc_ins: *mir_instr= make_instr(12, dst, (mir_val*)0, (mir_val*)0, vd.line); // MI_ALLOCA
+        // Alloca. A fixed-size array records its element count as src1, so a bounds
+        // check has a length to compare against — without it the declared extent is
+        // lost at this point and can never be recovered from the MIR.
+        let mut elem_count: i64= 0;
+        if (vd.type != (parser.type_node*)0 && vd.type.array_size_ptr != (i8*)0) {
+            let mut sz_e: *parser.expr_node= (parser.expr_node*)vd.type.array_size_ptr;
+            if (sz_e != (parser.expr_node*)0 && sz_e.kind == 0) { elem_count = sz_e.int_val; }
+        }
+        let mut alloc_sz: *mir_val= (elem_count > 0) ? make_val_const_i(elem_count) : (mir_val*)0;
+        let mut alloc_ins: *mir_instr= make_instr(12, dst, alloc_sz, (mir_val*)0, vd.line); // MI_ALLOCA
         block_push(ctx.cur_block, alloc_ins);
         // Init
         if (vd.has_init && vd.init != (parser.expr_node*)0) {
@@ -505,7 +574,11 @@ fn lower_stmt(node: *parser.ast_node, ctx: *lower_ctx) void {
             } else {
                 let mut cval: *mir_val= make_val_const_i(0);
                 if (sw.case_vals != (parser.expr_node***)0 && sw.case_vals[ci] != (parser.expr_node**)0) {
-                    cval = lower_expr(sw.case_vals[ci][0], ctx);
+                    // parse_switch stores the case value as the expr_node itself, cast
+                    // to expr_node** (see n.case_vals[...] = (expr_node**)case_val).
+                    // Indexing it as an array read the node's first field as a pointer,
+                    // which crashed on any case value that was not an int literal.
+                    cval = lower_expr((parser.expr_node*)sw.case_vals[ci], ctx);
                 }
                 let mut cmp_dst: *mir_val= make_val_name(fresh_temp(ctx), 1);
                 let mut cmp_ins: *mir_instr= make_instr(5, cmp_dst, subj, cval, sw.line);
@@ -645,9 +718,9 @@ fn lower_program(prog_node: *i8) *mir_module {
 // Mnemonics match the mir_instr_kind enum.
 
 fn mir_val_str(v: *mir_val, buf: *i8, cap: u64) void {
-    if (v == (mir_val*)0) { snprintf(buf, cap, "_"); return; }
-    if (v.kind == 0) { snprintf(buf, cap, "%lld", v.iconst); return; }
-    snprintf(buf, cap, "%s", v.name != (i8*)0 ? v.name : "_");
+    if (v == (mir_val*)0) { afmt(buf, cap, "_", .{}); return; }
+    if (v.kind == 0) { afmt(buf, cap, "%lld", .{ v.iconst }); return; }
+    afmt(buf, cap, "%s", .{ v.name != (i8*)0 ? v.name : "_" });
 }
 
 fn mir_print_instr(ins: *mir_instr, fp: *void) void {
@@ -658,41 +731,39 @@ fn mir_print_instr(ins: *mir_instr, fp: *void) void {
     let mut k: i32= ins.kind;
     let mut op: *i8= ins.fn_name != (i8*)0 ? ins.fn_name : "?";
     let mut lb: *i8= ins.label != (i8*)0 ? ins.label : "?";
-    @unsafe {
-        if      (k == 1)  { fprintf(fp, "    %s = copy %s\n", d, a); }
-        else if (k == 2)  { fprintf(fp, "    %s = load %s\n", d, a); }
-        else if (k == 3)  { fprintf(fp, "    store %s, %s\n", a, b); }
-        else if (k == 4)  { fprintf(fp, "    %s = gep %s, .%s\n", d, a, lb); }
-        else if (k == 5)  { fprintf(fp, "    %s = binop.%s %s, %s\n", d, op, a, b); }
-        else if (k == 6)  { fprintf(fp, "    %s = unop.%s %s\n", d, op, a); }
-        else if (k == 7)  { fprintf(fp, "    %s = call %s/%d\n", d, op, ins.args_len); }
-        else if (k == 8)  { fprintf(fp, "    br %s\n", lb); }
-        else if (k == 9)  { fprintf(fp, "    cbr %s, %s, %s\n", a, lb, op); }
-        else if (k == 10) { if (ins.src1 != (mir_val*)0) { fprintf(fp, "    ret %s\n", a); } else { fprintf(fp, "    ret\n"); } }
-        else if (k == 12) { fprintf(fp, "    %s = alloca\n", d); }
-        else if (k == 13) { fprintf(fp, "    %s = cast %s\n", d, a); }
-        else              { fprintf(fp, "    nop\n"); }
-    }
+    if      (k == 1)  { afprint(fp, "    %s = copy %s\n", .{ d, a }); }
+    else if (k == 2)  { afprint(fp, "    %s = load %s\n", .{ d, a }); }
+    else if (k == 3)  { afprint(fp, "    store %s, %s\n", .{ a, b }); }
+    else if (k == 4)  { afprint(fp, "    %s = gep %s, .%s\n", .{ d, a, lb }); }
+    else if (k == 5)  { afprint(fp, "    %s = binop.%s %s, %s\n", .{ d, op, a, b }); }
+    else if (k == 6)  { afprint(fp, "    %s = unop.%s %s\n", .{ d, op, a }); }
+    else if (k == 7)  { afprint(fp, "    %s = call %s/%d\n", .{ d, op, ins.args_len }); }
+    else if (k == 8)  { afprint(fp, "    br %s\n", .{ lb }); }
+    else if (k == 9)  { afprint(fp, "    cbr %s, %s, %s\n", .{ a, lb, op }); }
+    else if (k == 10) { if (ins.src1 != (mir_val*)0) { afprint(fp, "    ret %s\n", .{ a }); } else { afprint(fp, "    ret\n", .{}); } }
+    else if (k == 12) { afprint(fp, "    %s = alloca\n", .{ d }); }
+    else if (k == 13) { afprint(fp, "    %s = cast %s\n", .{ d, a }); }
+    else              { afprint(fp, "    nop\n", .{}); }
 }
 
 fn mir_print_module(m: *mir_module, fp: *void) void {
     if (m == (mir_module*)0 || fp == (void*)0) { return; }
-    @unsafe { fprintf(fp, "; Artemis MIR\n"); }
+    afprint(fp, "; Artemis MIR\n", .{});
     let mut fi: i32= 0;
     while (fi < m.funcs_len) {
         let mut f: *mir_func= m.funcs[fi];
         let mut fname: *i8= f.name != (i8*)0 ? f.name : "<anon>";
-        @unsafe { fprintf(fp, "\nfunc %s {\n", fname); }
+        afprint(fp, "\nfunc %s {\n", .{ fname });
         let mut bi: i32= 0;
         while (bi < f.blocks_len) {
             let mut b: *mir_block= f.blocks[bi];
             let mut bname: *i8= b.name != (i8*)0 ? b.name : "?";
-            @unsafe { fprintf(fp, "  %s:\n", bname); }
+            afprint(fp, "  %s:\n", .{ bname });
             let mut ii: i32= 0;
             while (ii < b.instrs_len) { mir_print_instr(b.instrs[ii], fp); ii = ii + 1; }
             bi = bi + 1;
         }
-        @unsafe { fprintf(fp, "}\n"); }
+        afprint(fp, "}\n", .{});
         fi = fi + 1;
     }
 }

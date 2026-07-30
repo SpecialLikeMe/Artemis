@@ -181,3 +181,99 @@ fn afmt_v(buf: *i8, cap: u64, fmt: *i8, argp: *u8, fields: *type_info_field, nfi
     }
     return (i32)len;
 }
+
+// ---- Public entry points ----
+//
+// These replace snprintf/printf. Arguments go in an anonymous struct, so the compiler
+// records each one's type and offset and the formatter reads them back with the type
+// the specifier names — no C varargs, and therefore no unsafe context needed.
+//
+//     afmt(buf, 256u, "%s: line %d", .{ name, line });
+//     aprint("%s: line %d\n", .{ name, line });
+
+// snprintf replacement. Returns the length that would have been written.
+fn afmt(buf: *i8, cap: u64, fmt: *i8, args: anytype) i32 {
+    let mut ti: *type_info= @typeinfo(@typeof(args));
+    match (*ti) {
+        type_info::Struct(nm, flds, nf, sz, al, tup, pk) => {
+            let mut argp: *u8= (u8*)&args;
+            return afmt_v(buf, cap, fmt, argp, flds, (i32)nf);
+        },
+        _ => {
+            // Not an argument struct (e.g. `.{}` lowered away) — format with no arguments.
+            return afmt_v(buf, cap, fmt, (u8*)0, (type_info_field*)0, 0);
+        }
+    }
+}
+
+// fprintf replacement: format, then write the bytes to `f`.
+fn afprint(f: *void, fmt: *i8, args: anytype) i32 {
+    let mut ti: *type_info= @typeinfo(@typeof(args));
+    let mut argp: *u8= (u8*)&args;
+    let mut flds0: *type_info_field= (type_info_field*)0;
+    let mut nf0: i32= 0;
+    match (*ti) {
+        type_info::Struct(nm, flds, nf, sz, al, tup, pk) => {
+            flds0 = flds;
+            nf0   = (i32)nf;
+        },
+        _ => { argp = (u8*)0; }
+    }
+    let mut sbuf: [4096]i8;
+    let mut n: i32= afmt_v(sbuf, 4096u, fmt, argp, flds0, nf0);
+    if (n < 0) { return n; }
+    if ((u64)n < 4096u) {
+        fwrite((void*)sbuf, 1u, (u64)n, f);
+        return n;
+    }
+    let mut need: u64= (u64)n + 1u;
+    let mut hbuf: *i8= (i8*)arc_malloc(need);
+    if (hbuf == (i8*)0) {
+        fwrite((void*)sbuf, 1u, 4095u, f);
+        return n;
+    }
+    let mut n2: i32= afmt_v(hbuf, need, fmt, argp, flds0, nf0);
+    fwrite((void*)hbuf, 1u, (u64)n2, f);
+    arc_free(hbuf);
+    return n2;
+}
+
+// printf replacement: format, then write the bytes to stdout.
+//
+// Formats into a stack buffer first and falls back to the heap only when the result does
+// not fit, so the common case does not allocate. Output goes through fwrite rather than
+// puts because the formatted text may contain NULs and is not implicitly newline-terminated.
+// Note this resolves the argument struct itself and calls afmt_v, rather than
+// delegating to afmt. afmt is generic over `args`, and calling one generic from inside
+// another is not supported by the backend, so delegating would silently format nothing.
+fn aprint(fmt: *i8, args: anytype) i32 {
+    let mut ti: *type_info= @typeinfo(@typeof(args));
+    let mut argp: *u8= (u8*)&args;
+    let mut flds0: *type_info_field= (type_info_field*)0;
+    let mut nf0: i32= 0;
+    match (*ti) {
+        type_info::Struct(nm, flds, nf, sz, al, tup, pk) => {
+            flds0 = flds;
+            nf0   = (i32)nf;
+        },
+        _ => { argp = (u8*)0; }
+    }
+    let mut sbuf: [4096]i8;
+    let mut n: i32= afmt_v(sbuf, 4096u, fmt, argp, flds0, nf0);
+    if (n < 0) { return n; }
+    if ((u64)n < 4096u) {
+        fwrite((void*)sbuf, 1u, (u64)n, stdout_file());
+        return n;
+    }
+    // Truncated: redo into an exactly-sized heap buffer.
+    let mut need: u64= (u64)n + 1u;
+    let mut hbuf: *i8= (i8*)arc_malloc(need);
+    if (hbuf == (i8*)0) {
+        fwrite((void*)sbuf, 1u, 4095u, stdout_file());
+        return n;
+    }
+    let mut n2: i32= afmt_v(hbuf, need, fmt, argp, flds0, nf0);
+    fwrite((void*)hbuf, 1u, (u64)n2, stdout_file());
+    arc_free(hbuf);
+    return n2;
+}

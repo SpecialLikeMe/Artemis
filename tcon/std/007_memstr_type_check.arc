@@ -20,7 +20,7 @@ memstr MyAlloc {
         return p;
     }
 
-    fn deinit(self: *MyAlloc) void { free(self.base); }
+    fn deinit(self: *MyAlloc) !void { free(self.base); }
 }
 
 pub fn main() i32 {

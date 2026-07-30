@@ -6,10 +6,13 @@
 //   - Designed as direct input to the SMT analysis and bounds-check injector
 //   - All aggregate operations are split into element-wise scalar ops
 //
-// Pipeline: MIR → LIR (this file) → SMT → LLVM IR emit
+// Pipeline: AST → MIR → LIR (this file) → SMT, then AST → LLVM IR emit.
 //
-// Gated behind the --use-mir flag; the default pipeline lowers the AST straight to
-// LLVM IR and does not build MIR/LIR.
+// The MIR/LIR lowering and the SMT pass over it run on every compilation — see
+// smt/lir.arc. --use-mir only asks for the MIR/LIR text dumps.
+//
+// Code generation still lowers the AST directly to LLVM IR; making LIR the input to
+// codegen as well is the remaining step.
 
 namespace lir {
 

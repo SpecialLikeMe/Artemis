@@ -14,15 +14,15 @@ memstr HeapBump {
         self.used = 0;
         self.cap  = capacity;
     }
-    fn mmap(self: *HeapBump, n: u64) *void {
+    fn mmap(self: *HeapBump, align: usize, n: usize) !*void {
         let mut aligned: u64= (n + 7) & ~(u64)7;
         if (self.used + aligned > self.cap) { return (void*)0; }
         let mut p: *void= (void*)((u8*)self.base + self.used);
         self.used = self.used + aligned;
         return p;
     }
-    fn rmap(self: *HeapBump, p: *void, n: u64) void {}
-    fn deinit(self: *HeapBump) void { free(self.base); }
+    fn rmap(self: *HeapBump, align: usize, p: *void, n: iofs) !*void { return error.Unsupported; }
+    fn deinit(self: *HeapBump) !void { free(self.base); }
 }
 
 pub fn main() i32 {

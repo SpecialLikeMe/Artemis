@@ -93,7 +93,7 @@ fn pp_set(t: *pp_table, name: *i8, value: *i8) void {
         t.values[t.count] = value;
         t.count = t.count + 1;
     } else {
-        printf("warning: preprocessor macro table full (512 entries); ignoring definition of '%s'\n", name);
+        aprint("warning: preprocessor macro table full (512 entries); ignoring definition of '%s'\n", .{ name });
     }
 }
 
@@ -151,7 +151,7 @@ fn pp_func_set(t: *pp_func_table, name: *i8, arity: i32, repl: *i8) void {
         t.replacements[t.count] = repl;
         t.count = t.count + 1;
     } else {
-        printf("warning: function-like macro table full (64 entries); ignoring definition of '%s'\n", name);
+        aprint("warning: function-like macro table full (64 entries); ignoring definition of '%s'\n", .{ name });
     }
 }
 
@@ -587,7 +587,7 @@ fn preprocess_inner(src: *i8, base_dir: *i8, macros: *pp_table, funcs: *pp_func_
                     if (fstart != (i8*)0) {
                         let mut fname: *i8= pp_substr_dup(fstart, flen);
                         let mut fpath: [2048]i8;
-                        snprintf(fpath, 2048u, "%s/%s", base_dir, fname);
+                        afmt(fpath, 2048u, "%s/%s", .{ base_dir, fname });
                         arc_free(fname);
                         if (included == (pp_table*)0 || !pp_defined(included, fpath)) {
                             if (included != (pp_table*)0) { pp_set(included, pp_substr_dup(fpath, (i32)strlen(fpath)), "1"); }
@@ -603,7 +603,7 @@ fn preprocess_inner(src: *i8, base_dir: *i8, macros: *pp_table, funcs: *pp_func_
                 }
             } else if (strcmp(kw, "error") == 0) {
                 if (pp_all_active(&cs)) {
-                    printf("preprocessor error: %s\n", rest);
+                    aprint("preprocessor error: %s\n", .{ rest });
                     exit(1);
                 }
             }
@@ -642,12 +642,12 @@ fn preprocess_inner(src: *i8, base_dir: *i8, macros: *pp_table, funcs: *pp_func_
                             }
                             // Dedup key: "std/modname.arc"
                             let mut dedup_key: [2048]i8;
-                            snprintf(dedup_key, 2048u, "std/%s.arc", modname);
+                            afmt(dedup_key, 2048u, "std/%s.arc", .{ modname });
                             if (included == (pp_table*)0 || !pp_defined(included, dedup_key)) {
                                 if (included != (pp_table*)0) { pp_set(included, pp_substr_dup(dedup_key, (i32)strlen(dedup_key)), "1"); }
                                 // Emit safe @import splice — parser handles file resolution
                                 let mut import_line: [2048]i8;
-                                snprintf(import_line, 2048u, "- = @import(\"std/%s.arc\");\n", modname);
+                                afmt(import_line, 2048u, "- = @import(\"std/%s.arc\");\n", .{ modname });
                                 strbuf_append_cstr(&out, import_line);
                             }
                             arc_free(modname);
@@ -678,25 +678,25 @@ fn preprocess_inner(src: *i8, base_dir: *i8, macros: *pp_table, funcs: *pp_func_
                             let mut pkgname: *i8= pp_substr_dup(line + ac_name_start, ac_name_end - ac_name_start);
                             // Dedup key
                             let mut dedup_key2: [512]i8;
-                            snprintf(dedup_key2, 512u, "aciso/%s", pkgname);
+                            afmt(dedup_key2, 512u, "aciso/%s", .{ pkgname });
                             if (included == (pp_table*)0 || !pp_defined(included, dedup_key2)) {
                                 if (included != (pp_table*)0) { pp_set(included, pp_substr_dup(dedup_key2, (i32)strlen(dedup_key2)), "1"); }
                                 // Determine entry file (PKG.arc preferred, then main.arc)
                                 let mut arc_subpath: [512]i8;
-                                snprintf(arc_subpath, 512u, "modules/%s/%s.arc", pkgname, pkgname);
+                                afmt(arc_subpath, 512u, "modules/%s/%s.arc", .{ pkgname, pkgname });
                                 if (base_dir != (i8*)0) {
                                     let mut fpath2: [2048]i8;
-                                    snprintf(fpath2, 2048u, "%s/%s", base_dir, arc_subpath);
+                                    afmt(fpath2, 2048u, "%s/%s", .{ base_dir, arc_subpath });
                                     let mut probe: *i8= pp_read_file(fpath2);
                                     if (probe == (i8*)0) {
-                                        snprintf(arc_subpath, 512u, "modules/%s/main.arc", pkgname);
+                                        afmt(arc_subpath, 512u, "modules/%s/main.arc", .{ pkgname });
                                     } else {
                                         arc_free(probe);
                                     }
                                 }
                                 // Emit safe @import splice — parser handles file resolution
                                 let mut import_line2: [2048]i8;
-                                snprintf(import_line2, 2048u, "- = @import(\"%s\");\n", arc_subpath);
+                                afmt(import_line2, 2048u, "- = @import(\"%s\");\n", .{ arc_subpath });
                                 strbuf_append_cstr(&out, import_line2);
                             }
                             arc_free(pkgname);

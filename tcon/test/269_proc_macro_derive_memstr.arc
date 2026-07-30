@@ -40,7 +40,7 @@ memstr Buffer {
         }
     }
     fn get(self: *Buffer, i: i32) i8 { return self.data[i]; }
-    fn deinit(self: *Buffer) void { free((void*)self.data); }
+    fn deinit(self: *Buffer) !void { free((void*)self.data); }
 }
 
 pub fn main() i32 {

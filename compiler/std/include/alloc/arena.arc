@@ -51,7 +51,7 @@ memstr arena {
 
     fn remaining(self: *arena) u64 { return self.cap - self.used; }
 
-    fn deinit(self: *arena) void { free(self.base); }
+    fn deinit(self: *arena) !void { free(self.base); }
 }
 
 } // alloc

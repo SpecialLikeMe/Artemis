@@ -110,7 +110,7 @@ fn llvm_float_for_width(bw: u32, llvm_ctx: *i8) *i8 {
 fn rational_llvm_type(bw: u32, llvm_ctx: *i8) *i8 {
     let mut w: u32= (bw == 0) ? (u32)64 : bw;
     let mut name: [64]i8;
-    snprintf(name, (u64)64, "__rational_%d", (i32)w);
+    afmt(name, (u64)64, "__rational_%d", .{ (i32)w });
     let mut existing: *i8= LLVMGetTypeByName2(llvm_ctx, name);
     if (existing != (i8*)0) { return existing; }
     let mut st: *i8= LLVMStructCreateNamed(llvm_ctx, name);
@@ -126,7 +126,7 @@ fn rational_llvm_type(bw: u32, llvm_ctx: *i8) *i8 {
 fn complex_llvm_type(bw: u32, llvm_ctx: *i8) *i8 {
     let mut w: u32= (bw == 0) ? (u32)64 : bw;
     let mut name: [64]i8;
-    snprintf(name, (u64)64, "__complex_%d", (i32)w);
+    afmt(name, (u64)64, "__complex_%d", .{ (i32)w });
     let mut existing: *i8= LLVMGetTypeByName2(llvm_ctx, name);
     if (existing != (i8*)0) { return existing; }
     let mut st: *i8= LLVMStructCreateNamed(llvm_ctx, name);
@@ -292,12 +292,13 @@ fn llvm_type_of(t: *parser.type_node, ctx: *ir_context) *i8 {
         if ((t.prim == arb_complex || t.prim == arb_rational) && base != (i8*)0) {
             let mut bw: u32= (t.bit_width == 0) ? (u32)64 : (u32)t.bit_width;
             let mut sname: [64]i8;
-            if (t.prim == arb_complex)  { snprintf(sname, (u64)64, "__complex_%d",  (i32)bw); }
-            else                         { snprintf(sname, (u64)64, "__rational_%d", (i32)bw); }
+            if (t.prim == arb_complex)  { afmt(sname, (u64)64, "__complex_%d", .{ (i32)bw }); }
+            else                         { afmt(sname, (u64)64, "__rational_%d", .{ (i32)bw }); }
             // Register in struct_types if not already there
             if (st_map_get(&ctx.struct_types, sname) == (i8*)0) {
                 st_map_set(&ctx.struct_types, lexer.str_dup(sname), base);
                 let mut sm: struct_meta;
+                struct_meta_init(&sm);
                 sm.name = lexer.str_dup(sname);
                 name_list_init(&sm.field_names);
                 type_list_init(&sm.field_types);
@@ -373,7 +374,7 @@ fn llvm_type_of(t: *parser.type_node, ctx: *ir_context) *i8 {
             // Try namespace-qualified lookup
             if (ctx.current_namespace != (i8*)0) {
                 let mut ns_name: [512]i8;
-                snprintf(ns_name, (u64)512, "%s__NS_%s", ctx.current_namespace, name);
+                afmt(ns_name, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, name });
                 found_struct = st_map_get(&ctx.struct_types, ns_name);
                 if (found_struct != (i8*)0) {
                     base = found_struct;

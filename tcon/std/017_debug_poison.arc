@@ -5,8 +5,10 @@ extern  std.debug;
 @unsafe extern fn printf(fmt: *i8, ...) i32;
 
 memstr SysAlloc {
-    fn mmap(self: *SysAlloc, n: u64) *void         { return malloc(n); }
-    fn rmap(self: *SysAlloc, p: *void, n: u64) void { free(p); }
+    fn mmap(self: *SysAlloc, align: usize, n: usize) !*void { return malloc(n); }
+    // Releasing an allocation is the `free` slot; rmap is a resize and must return
+    // storage. This used to call free() from rmap and fall off the end of a !*void.
+    fn free(self: *SysAlloc, p: *void) !void                { free(p); }
 }
 
 // Zero a byte buffer — kept in a helper to avoid the pre-existing
@@ -20,12 +22,12 @@ pub @unsafe fn main() i32 {
     let mut sa: SysAlloc;
 
     // std.debug.poison fills memory with a pattern
-    let mut p: *void= sa.mmap((u64)16);
+    let mut p: *void= sa.mmap((usize)16) catch |e| { return 1; };
     if (p == (void*)0) { return 1; }
     std.debug.poison(p, (u64)16);
     if (!std.debug.is_poisoned(p, (u64)16)) {
         printf("FAIL std.debug.is_poisoned after std.debug.poison\n");
-        sa.rmap(p, (u64)16);
+        sa.free(p) catch |e| { };
         return 2;
     }
 
@@ -33,19 +35,19 @@ pub @unsafe fn main() i32 {
     zero_buf((u8*)p, 16);
     if (std.debug.is_poisoned(p, (u64)16)) {
         printf("FAIL std.debug.is_poisoned after clear\n");
-        sa.rmap(p, (u64)16);
+        sa.free(p) catch |e| { };
         return 3;
     }
 
-    sa.rmap(p, (u64)16);
+    sa.free(p) catch |e| { };
 
     // std.debug.assert with true condition is a no-op (doesn't panic)
     std.debug.assert(true, "should not panic");
 
     // std.debug.null_check with non-null pointer is a no-op
-    let mut q: *void= sa.mmap((u64)1);
+    let mut q: *void= sa.mmap((usize)1) catch |e| { return 4; };
     std.debug.null_check(q, "017_debug");
-    sa.rmap(q, (u64)1);
+    sa.free(q) catch |e| { };
 
     return 0;
 }

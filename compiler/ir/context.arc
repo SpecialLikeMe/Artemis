@@ -1,5 +1,6 @@
 // IR context for the Artemis self-hosting compiler.
-// Uses linear-search tables instead of hash maps for simplicity.
+// Name lookup goes through a hash index over an insertion-ordered array
+// (see compiler/hash.arc); the array order is preserved because passes iterate it.
 
 namespace ir {
 
@@ -13,43 +14,73 @@ struct sv_map {
     let data: *sv_entry;
     let len: i32;
     let cap: i32;
+    // Hash index over `data`; `data` keeps insertion order because several
+    // passes walk these maps by index (ctx.global_funcs, ctx.using_ns_map and
+    // each scope's alloca_ptrs). See compiler/hash.arc.
+    let head: *i32;
+    let next: *i32;
+    let nbuckets: i32;
 }
 
 fn sv_map_init(m: *sv_map) void {
     m.data = (sv_entry*)0;
     m.len  = 0;
     m.cap  = 0;
+    m.head = (i32*)0;
+    m.next = (i32*)0;
+    m.nbuckets = 0;
+}
+
+fn sv_map_reindex(m: *sv_map, nb: i32) void {
+    m.nbuckets = nb;
+    m.head = (i32*)arc_realloc((i8*)m.head, sizeof(i32) * (u64)nb);
+    let mut b: i32= 0;
+    while (b < nb) { m.head[b] = -1; b = b + 1; }
+    let mut i: i32= 0;
+    while (i < m.len) {
+        let mut h: i32= (i32)(str_hash32(m.data[i].key) & (u32)(nb - 1));
+        m.next[i] = m.head[h];
+        m.head[h] = i;
+        i = i + 1;
+    }
+}
+
+// Index of the entry for `key`, or -1. Keys are unique here — set() updates in place —
+// so there is at most one.
+fn sv_map_find(m: *sv_map, key: *i8) i32 {
+    if (m.nbuckets == 0 || key == (i8*)0) { return -1; }
+    let mut i: i32= m.head[(i32)(str_hash32(key) & (u32)(m.nbuckets - 1))];
+    while (i >= 0) {
+        if (strcmp(m.data[i].key, key) == 0) { return i; }
+        i = m.next[i];
+    }
+    return -1;
 }
 
 fn sv_map_set(m: *sv_map, key: *i8, val: *i8) void {
-    // Update existing key
-    let mut i: i32= 0;
-    while (i < m.len) {
-        if (strcmp(m.data[i].key, key) == 0) {
-            m.data[i].val = val;
-            return;
-        }
-        i = i + 1;
+    let mut f: i32= sv_map_find(m, key);
+    if (f >= 0) {
+        m.data[f].val = val;
+        return;
     }
-    // Insert new
     if (m.len >= m.cap) {
         let mut nc: i32= m.cap == 0 ? 32 : m.cap * 2;
         m.data = (sv_entry*)arc_realloc((i8*)m.data, sizeof(ir__NS_sv_entry) * (u64)nc);
+        m.next = (i32*)arc_realloc((i8*)m.next, sizeof(i32) * (u64)nc);
         m.cap  = nc;
     }
     m.data[m.len].key = key;
     m.data[m.len].val = val;
+    if (m.nbuckets == 0 || m.len + 1 > m.nbuckets) { sv_map_reindex(m, hash_cap_for(m.len + 1)); }
+    let mut h: i32= (i32)(str_hash32(key) & (u32)(m.nbuckets - 1));
+    m.next[m.len] = m.head[h];
+    m.head[h]     = m.len;
     m.len = m.len + 1;
 }
 
 fn sv_map_get(m: *sv_map, key: *i8) *i8 {
-    let mut i: i32= m.len - 1;
-    while (i >= 0) {
-        if (strcmp(m.data[i].key, key) == 0) {
-            return m.data[i].val;
-        }
-        i = i - 1;
-    }
+    let mut i: i32= sv_map_find(m, key);
+    if (i >= 0) { return m.data[i].val; }
     return (i8*)0;
 }
 
@@ -67,41 +98,73 @@ struct st_map {
     let data: *st_entry;
     let len: i32;
     let cap: i32;
+    // Hash index over `data`; `data` keeps insertion order because several
+    // passes walk these maps by index (ctx.global_funcs, ctx.using_ns_map and
+    // each scope's alloca_ptrs). See compiler/hash.arc.
+    let head: *i32;
+    let next: *i32;
+    let nbuckets: i32;
 }
 
 fn st_map_init(m: *st_map) void {
     m.data = (st_entry*)0;
     m.len  = 0;
     m.cap  = 0;
+    m.head = (i32*)0;
+    m.next = (i32*)0;
+    m.nbuckets = 0;
+}
+
+fn st_map_reindex(m: *st_map, nb: i32) void {
+    m.nbuckets = nb;
+    m.head = (i32*)arc_realloc((i8*)m.head, sizeof(i32) * (u64)nb);
+    let mut b: i32= 0;
+    while (b < nb) { m.head[b] = -1; b = b + 1; }
+    let mut i: i32= 0;
+    while (i < m.len) {
+        let mut h: i32= (i32)(str_hash32(m.data[i].key) & (u32)(nb - 1));
+        m.next[i] = m.head[h];
+        m.head[h] = i;
+        i = i + 1;
+    }
+}
+
+// Index of the entry for `key`, or -1. Keys are unique here — set() updates in place —
+// so there is at most one.
+fn st_map_find(m: *st_map, key: *i8) i32 {
+    if (m.nbuckets == 0 || key == (i8*)0) { return -1; }
+    let mut i: i32= m.head[(i32)(str_hash32(key) & (u32)(m.nbuckets - 1))];
+    while (i >= 0) {
+        if (strcmp(m.data[i].key, key) == 0) { return i; }
+        i = m.next[i];
+    }
+    return -1;
 }
 
 fn st_map_set(m: *st_map, key: *i8, llvm_type: *i8) void {
-    let mut i: i32= 0;
-    while (i < m.len) {
-        if (strcmp(m.data[i].key, key) == 0) {
-            m.data[i].type = llvm_type;
-            return;
-        }
-        i = i + 1;
+    let mut f: i32= st_map_find(m, key);
+    if (f >= 0) {
+        m.data[f].type = llvm_type;
+        return;
     }
     if (m.len >= m.cap) {
         let mut nc: i32= m.cap == 0 ? 32 : m.cap * 2;
         m.data = (st_entry*)arc_realloc((i8*)m.data, sizeof(ir__NS_st_entry) * (u64)nc);
+        m.next = (i32*)arc_realloc((i8*)m.next, sizeof(i32) * (u64)nc);
         m.cap  = nc;
     }
     m.data[m.len].key  = key;
     m.data[m.len].type = llvm_type;
+    if (m.nbuckets == 0 || m.len + 1 > m.nbuckets) { st_map_reindex(m, hash_cap_for(m.len + 1)); }
+    let mut h: i32= (i32)(str_hash32(key) & (u32)(m.nbuckets - 1));
+    m.next[m.len] = m.head[h];
+    m.head[h]     = m.len;
     m.len = m.len + 1;
 }
 
 fn st_map_get(m: *st_map, key: *i8) *i8 {
-    let mut i: i32= m.len - 1;
-    while (i >= 0) {
-        if (strcmp(m.data[i].key, key) == 0) {
-            return m.data[i].type;
-        }
-        i = i - 1;
-    }
+    let mut i: i32= st_map_find(m, key);
+    if (i >= 0) { return m.data[i].type; }
     return (i8*)0;
 }
 
@@ -119,41 +182,73 @@ struct sb_map {
     let data: *sb_entry;
     let len: i32;
     let cap: i32;
+    // Hash index over `data`; `data` keeps insertion order because several
+    // passes walk these maps by index (ctx.global_funcs, ctx.using_ns_map and
+    // each scope's alloca_ptrs). See compiler/hash.arc.
+    let head: *i32;
+    let next: *i32;
+    let nbuckets: i32;
 }
 
 fn sb_map_init(m: *sb_map) void {
     m.data = (sb_entry*)0;
     m.len  = 0;
     m.cap  = 0;
+    m.head = (i32*)0;
+    m.next = (i32*)0;
+    m.nbuckets = 0;
+}
+
+fn sb_map_reindex(m: *sb_map, nb: i32) void {
+    m.nbuckets = nb;
+    m.head = (i32*)arc_realloc((i8*)m.head, sizeof(i32) * (u64)nb);
+    let mut b: i32= 0;
+    while (b < nb) { m.head[b] = -1; b = b + 1; }
+    let mut i: i32= 0;
+    while (i < m.len) {
+        let mut h: i32= (i32)(str_hash32(m.data[i].key) & (u32)(nb - 1));
+        m.next[i] = m.head[h];
+        m.head[h] = i;
+        i = i + 1;
+    }
+}
+
+// Index of the entry for `key`, or -1. Keys are unique here — set() updates in place —
+// so there is at most one.
+fn sb_map_find(m: *sb_map, key: *i8) i32 {
+    if (m.nbuckets == 0 || key == (i8*)0) { return -1; }
+    let mut i: i32= m.head[(i32)(str_hash32(key) & (u32)(m.nbuckets - 1))];
+    while (i >= 0) {
+        if (strcmp(m.data[i].key, key) == 0) { return i; }
+        i = m.next[i];
+    }
+    return -1;
 }
 
 fn sb_map_set(m: *sb_map, key: *i8, val: bool) void {
-    let mut i: i32= 0;
-    while (i < m.len) {
-        if (strcmp(m.data[i].key, key) == 0) {
-            m.data[i].val = val;
-            return;
-        }
-        i = i + 1;
+    let mut f: i32= sb_map_find(m, key);
+    if (f >= 0) {
+        m.data[f].val = val;
+        return;
     }
     if (m.len >= m.cap) {
         let mut nc: i32= m.cap == 0 ? 16 : m.cap * 2;
         m.data = (sb_entry*)arc_realloc((i8*)m.data, sizeof(ir__NS_sb_entry) * (u64)nc);
+        m.next = (i32*)arc_realloc((i8*)m.next, sizeof(i32) * (u64)nc);
         m.cap  = nc;
     }
     m.data[m.len].key = key;
     m.data[m.len].val = val;
+    if (m.nbuckets == 0 || m.len + 1 > m.nbuckets) { sb_map_reindex(m, hash_cap_for(m.len + 1)); }
+    let mut h: i32= (i32)(str_hash32(key) & (u32)(m.nbuckets - 1));
+    m.next[m.len] = m.head[h];
+    m.head[h]     = m.len;
     m.len = m.len + 1;
 }
 
 fn sb_map_get(m: *sb_map, key: *i8) bool {
-    let mut i: i32= m.len - 1;
-    while (i >= 0) {
-        if (strcmp(m.data[i].key, key) == 0) {
-            return m.data[i].val;
-        }
-        i = i - 1;
-    }
+    let mut i: i32= sb_map_find(m, key);
+    if (i >= 0) { return m.data[i].val; }
     return false;
 }
 
@@ -244,6 +339,30 @@ struct struct_meta_vec {
     let data: *struct_meta;
     let len: i32;
     let cap: i32;
+}
+
+// Bring a stack-allocated struct_meta to a fully defined state.
+//
+// struct_meta is declared as a bare local at ~30 sites and filled in field by field.
+// Each site set the fields it cared about and left the rest as stack residue —
+// including `is_interface` and `iface_method_names`, which the interface-dispatch
+// paths read for *every* struct (collect_iface_slots in decls.arc, the vtable lookup
+// in exprs.arc). A garbage `is_interface` sent an ordinary struct down the interface
+// path to walk a garbage name_list, so compiler behaviour depended on stack residue
+// and varied from run to run.
+//
+// Call this immediately after declaring a struct_meta, before setting any field.
+fn struct_meta_init(m: *struct_meta) void {
+    m.name         = (i8*)0;
+    m.is_union     = false;
+    m.is_istruc    = false;
+    m.is_interface = false;
+    name_list_init(&m.field_names);
+    type_list_init(&m.field_types);
+    bool_list_init(&m.field_unsigned);
+    type_list_init(&m.field_pointee);
+    name_list_init(&m.field_pointee_names);
+    name_list_init(&m.iface_method_names);
 }
 
 fn struct_meta_vec_init(v: *struct_meta_vec) void {
@@ -495,7 +614,8 @@ struct ir_context {
 
     // memstr fat-pointer dispatch support
     let memstr_fat_type: *i8;       // %__memstr_fat__ = { ptr data, ptr vtable }
-    let memstr_vtable_type: *i8;    // { ptr mmap_fn, ptr rmap_fn, ptr deinit_fn }
+    let memstr_vtable_type: *i8;
+    let memstr_slot_types: [5]*i8;  // expected fn type per vtable slot, for validation    // { ptr mmap_fn, ptr rmap_fn, ptr deinit_fn }
     let memstr_vtables: sv_map;     // class_name -> vtable global (LLVMValueRef as i8*)
 
     // Interface fat-pointer dispatch support
@@ -677,6 +797,17 @@ fn ctx_lookup_local(ctx: *ir_context, name: *i8) *i8 {
     return (i8*)0;
 }
 
+// Attach a pointee type to an already-declared local.
+//
+// Needed for match bindings: the binding alloca is created before the pointee type is
+// known, and without it `binding[i].field` has no struct to index — codegen falls back
+// to a byte GEP and a constant, so the read silently yields zero.
+fn ctx_set_local_deref_type(ctx: *ir_context, name: *i8, deref_type: *i8) void {
+    if (deref_type == (i8*)0 || ctx.scopes.len == 0) { return; }
+    let mut idx: i32= ctx.scopes.len - 1;
+    st_map_set(&ctx.scopes.data[idx].deref_types, name, deref_type);
+}
+
 fn ctx_lookup_local_type(ctx: *ir_context, name: *i8) *i8 {
     let mut i: i32= ctx.scopes.len - 1;
     while (i >= 0) {
@@ -717,7 +848,7 @@ fn ctx_declare_local_func_depth(ctx: *ir_context, name: *i8, depth: i32) void {
     if (ctx.scopes.len == 0) { ctx_push_scope(ctx); }
     let mut idx: i32= ctx.scopes.len - 1;
     let mut buf: [16]i8;
-    snprintf(buf, (u64)16, "%d", depth);
+    afmt(buf, (u64)16, "%d", .{ depth });
     sv_map_set(&ctx.scopes.data[idx].local_func_depths, name, lexer.str_dup(buf));
 }
 
@@ -745,7 +876,7 @@ fn ctx_declare_local_var_depth(ctx: *ir_context, name: *i8, depth: i32) void {
     if (ctx.scopes.len == 0) { ctx_push_scope(ctx); }
     let mut idx: i32= ctx.scopes.len - 1;
     let mut buf: [16]i8;
-    snprintf(buf, (u64)16, "%d", depth);
+    afmt(buf, (u64)16, "%d", .{ depth });
     sv_map_set(&ctx.scopes.data[idx].alloca_var_depths, name, lexer.str_dup(buf));
 }
 
@@ -849,7 +980,7 @@ fn ctx_resolve_func(ctx: *ir_context, name: *i8) *i8 {
     let mut ubuf: [512]i8;
     let mut ui: i32= 0;
     while (ui < ctx.using_ns_map.len) {
-        snprintf(ubuf, (u64)512, "%s%s", ctx.using_ns_map.data[ui].key, name);
+        afmt(ubuf, (u64)512, "%s%s", .{ ctx.using_ns_map.data[ui].key, name });
         v = sv_map_get(&ctx.global_funcs, ubuf);
         if (v != (i8*)0) { return v; }
         ui = ui + 1;
@@ -865,7 +996,7 @@ fn ctx_resolve_var(ctx: *ir_context, name: *i8) *i8 {
     let mut ubuf: [512]i8;
     let mut ui: i32= 0;
     while (ui < ctx.using_ns_map.len) {
-        snprintf(ubuf, (u64)512, "%s%s", ctx.using_ns_map.data[ui].key, name);
+        afmt(ubuf, (u64)512, "%s%s", .{ ctx.using_ns_map.data[ui].key, name });
         v = sv_map_get(&ctx.global_vars, ubuf);
         if (v != (i8*)0) { return v; }
         ui = ui + 1;

@@ -149,7 +149,7 @@ fn eval_expr(e: *parser.expr_node) macro_val {
     let mut k: i32= e.kind;
     if (k == 0) {  // int_lit
         let mut buf: [32]i8;
-        snprintf(buf, 32u, "%ld", e.int_val);
+        afmt(buf, 32u, "%ld", .{ e.int_val });
         return mv_str(lexer.str_dup(buf));
     }
     if (k == 2) {  // string_lit
@@ -383,7 +383,7 @@ fn splice_quote(token_src: *i8, stdlib_path: *i8) *parser.program_node {
     let mut prog: *parser.program_node= prs.parse();
 
     if (prs.had_parse_error) {
-        printf("warning: proc macro output failed to parse\n");
+        aprint("warning: proc macro output failed to parse\n", .{});
         return (parser.program_node*)0;
     }
     return prog;
@@ -407,7 +407,7 @@ fn try_exec_macro(macro_name: *i8,
 
     let mut fd: *parser.func_decl= find_macro_fn(prog, macro_name);
     if (fd == (parser.func_decl*)0) {
-        printf("warning: proc macro '%s' not found in current translation unit\n", macro_name);
+        aprint("warning: proc macro '%s' not found in current translation unit\n", .{ macro_name });
         return false;
     }
 

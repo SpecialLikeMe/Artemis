@@ -4,6 +4,8 @@
 
 @include <bind/llvm.arc>
 @include <alloc.arc>
+@include <fmt.arc>
+@include <hash.arc>
 @include <preproc.arc>
 @include <lexer/main.arc>
 @include <parser/expr.arc>
@@ -24,6 +26,7 @@
 @include <mir/lower.arc>
 @include <lir/main.arc>
 @include <lir/lower.arc>
+@include <smt/lir.arc>
 @include <ast/print.arc>
 @include <macro/exec.arc>
 
@@ -46,6 +49,7 @@ struct cli_opts {
     let stdlib_path: *i8;
     let target: *i8;
     let no_std: bool;
+    let time_phases: bool;   // --time-phases: report per-stage timings
 }
 
 fn cli_opts_init(opts: *cli_opts) void {
@@ -65,6 +69,7 @@ fn cli_opts_init(opts: *cli_opts) void {
     opts.stdlib_path = (i8*)0;
     opts.target      = (i8*)0;
     opts.no_std      = false;
+    opts.time_phases = false;
 }
 
 // Parse command line arguments.
@@ -75,7 +80,7 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
         if (strcmp(arg, "-o") == 0) {
             i = i + 1;
             if (i >= argc) {
-                printf("error: -o requires an argument\n");
+                aprint("error: -o requires an argument\n", .{});
                 return false;
             }
             opts.output = argv[i];
@@ -93,12 +98,14 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
         } else if (strcmp(arg, "--target") == 0) {
             i = i + 1;
             if (i >= argc) {
-                printf("error: --target requires an argument\n");
+                aprint("error: --target requires an argument\n", .{});
                 return false;
             }
             opts.target = argv[i];
         } else if (strcmp(arg, "--no-std") == 0) {
             opts.no_std = true;
+        } else if (strcmp(arg, "--time-phases") == 0) {
+            opts.time_phases = true;
         } else if (strcmp(arg, "-O0") == 0) {
             opts.opt_level = 0;
         } else if (strcmp(arg, "-O1") == 0) {
@@ -112,9 +119,12 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
         } else if (strcmp(arg, "--unsafe") == 0) {
             // Treat the whole translation unit as an unsafe context, so calls to
             // @unsafe functions need no per-site annotation. Intended for low-level
-            // code written directly against C/FFI — the compiler's own source is
-            // built this way, since libc and the LLVM C API are its base vocabulary
-            // and wrapping ~2600 call sites would obscure more than it documents.
+            // code written directly against C/FFI.
+            //
+            // The compiler's own source no longer needs it: every raw libc/LLVM entry
+            // point is wrapped in compiler/bind/llvm.arc, and the printf family — which
+            // cannot be wrapped, because Arc has no va_list to forward — was replaced by
+            // the type-safe afmt/aprint/afprint in compiler/fmt.arc.
             opts.unsafe_unit = true;
         } else if (strcmp(arg, "--use-mir") == 0) {
             opts.use_mir = true;
@@ -130,44 +140,44 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
         } else if (arg[0] == '-' && arg[1] == 'I') {
             if (opts.stdlib_path == (i8*)0) { opts.stdlib_path = arg + 2; }
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-            printf("Usage: artemis <input.arc> [options]\n");
-            printf("\nOptions:\n");
-            printf("  -o <file>        Set output file path\n");
-            printf("  -S               Emit LLVM IR (.ll)\n");
-            printf("  -c               Compile to object file (.o)\n");
-            printf("  --emit-ir        Emit LLVM IR (.ll)\n");
-            printf("  --emit-asm       Emit native assembly (.s)\n");
-            printf("  --emit-ast       Emit AST text and stop\n");
-            printf("  -O0/-O1/-O2/-O3  Set optimization level\n");
-            printf("  -I <path>        Set stdlib include path\n");
-            printf("  --no-std         Skip stdlib auto-detection\n");
-            printf("  --unsafe         Treat the whole file as an unsafe context (FFI-heavy code)\n");
-            printf("  --target <t>     Set target triple (e.g. x86_64-pc-linux-gnu)\n");
-            printf("  -v               Verbose output\n");
-            printf("  --use-mir        Run the MIR/LIR pipeline\n");
-            printf("  --emit-mir       Emit MIR text and stop\n");
-            printf("  --emit-lir       Emit LIR text and stop\n");
-            printf("  --version        Print compiler version\n");
-            printf("  --help           Print this help\n");
+            aprint("Usage: artemis <input.arc> [options]\n", .{});
+            aprint("\nOptions:\n", .{});
+            aprint("  -o <file>        Set output file path\n", .{});
+            aprint("  -S               Emit LLVM IR (.ll)\n", .{});
+            aprint("  -c               Compile to object file (.o)\n", .{});
+            aprint("  --emit-ir        Emit LLVM IR (.ll)\n", .{});
+            aprint("  --emit-asm       Emit native assembly (.s)\n", .{});
+            aprint("  --emit-ast       Emit AST text and stop\n", .{});
+            aprint("  -O0/-O1/-O2/-O3  Set optimization level\n", .{});
+            aprint("  -I <path>        Set stdlib include path\n", .{});
+            aprint("  --no-std         Skip stdlib auto-detection\n", .{});
+            aprint("  --unsafe         Treat the whole file as an unsafe context (FFI-heavy code)\n", .{});
+            aprint("  --target <t>     Set target triple (e.g. x86_64-pc-linux-gnu)\n", .{});
+            aprint("  -v               Verbose output\n", .{});
+            aprint("  --use-mir        Also build the MIR/LIR text dumps (the pipeline itself always runs)\n", .{});
+            aprint("  --emit-mir       Emit MIR text and stop\n", .{});
+            aprint("  --emit-lir       Emit LIR text and stop\n", .{});
+            aprint("  --version        Print compiler version\n", .{});
+            aprint("  --help           Print this help\n", .{});
             return false;
         } else if (strcmp(arg, "--version") == 0) {
-            printf("artemis 0.1.0 (self-hosted Arc compiler)\n");
+            aprint("artemis 0.1.0 (self-hosted Arc compiler)\n", .{});
             return false;
         } else if (arg[0] != '-') {
             // Input file
             if (opts.input != (i8*)0) {
-                printf("error: multiple input files not supported\n");
+                aprint("error: multiple input files not supported\n", .{});
                 return false;
             }
             opts.input = arg;
         } else {
-            printf("warning: unknown flag '%s' (ignored)\n", arg);
+            aprint("warning: unknown flag '%s' (ignored)\n", .{ arg });
         }
         i = i + 1;
     }
     if (opts.input == (i8*)0) {
-        printf("usage: artemis <input.arc> [-S] [-o <output>] [-O0..O3] [-I <stdlib>]\n");
-        printf("       artemis --help  for full options\n");
+        aprint("usage: artemis <input.arc> [-S] [-o <output>] [-O0..O3] [-I <stdlib>]\n", .{});
+        aprint("       artemis --help  for full options\n", .{});
         return false;
     }
     return true;
@@ -177,7 +187,7 @@ fn parse_args(opts: *cli_opts, argc: i32, argv: **i8) bool {
 fn read_file(path: *i8, out_len: *u64) *i8 {
     let mut fp: *void= fopen(path, "rb");
     if (fp == (void*)0) {
-        printf("error: cannot open '%s'\n", path);
+        aprint("error: cannot open '%s'\n", .{ path });
         return (i8*)0;
     }
     fseek(fp, (i64)0, 2);
@@ -212,7 +222,7 @@ fn default_output_path(input: *i8, ext: *i8) *i8 {
     }
     buf[j] = 0;
     let mut result: [1024]i8;
-    snprintf(result, (u64)1024, "%s%s", buf, ext);
+    afmt(result, (u64)1024, "%s%s", .{ buf, ext });
     return lexer.str_dup(result);
 }
 
@@ -221,17 +231,21 @@ fn run_opt_passes(llvm_mod: *i8, tm: *i8, opt_level: i32) void {
     if (opt_level <= 0) { return; }
 
     let mut opts: *i8= LLVMCreatePassBuilderOptions();
+    // The new pass manager wants a pipeline description, not a bare level: "O2" is not
+    // a pass name, so LLVMRunPasses rejected it and every -O1/-O2/-O3 build failed.
     let mut pass_name: [32]i8;
-    if (opt_level == 1) { snprintf(pass_name, (u64)32, "O1"); }
-    else if (opt_level == 2) { snprintf(pass_name, (u64)32, "O2"); }
-    else { snprintf(pass_name, (u64)32, "O3"); }
+    if (opt_level == 1)      { afmt(pass_name, (u64)32, "default<O1>", .{}); }
+    else if (opt_level == 2) { afmt(pass_name, (u64)32, "default<O2>", .{}); }
+    else                     { afmt(pass_name, (u64)32, "default<O3>", .{}); }
 
     let mut err: *i8= LLVMRunPasses(llvm_mod, pass_name, tm, opts);
     if (err != (i8*)0) {
+        // LLVMGetErrorMessage consumes the error and hands over the string. Calling
+        // LLVMConsumeError afterwards consumed it a second time and corrupted the heap,
+        // which is what turned a failed pipeline into a crash with no diagnostic.
         let mut msg: *i8= LLVMGetErrorMessage(err);
-        printf("warning: optimization failed: %s\n", msg);
+        aprint("warning: optimization failed: %s\n", .{ msg != (i8*)0 ? msg : "?" });
         LLVMDisposeErrorMessage(msg);
-        LLVMConsumeError(err);
     }
     LLVMDisposePassBuilderOptions(opts);
 }
@@ -259,17 +273,17 @@ pub fn main(argc: i32, argv: **i8) i32 {
                 // Probe a known file inside the candidate directory (fopen on a directory fails on Windows).
                 // Try <exedir>/../compiler/std/include (dev build: exe in build/, stdlib in compiler/)
                 let mut try1: [2048]i8;
-                snprintf(try1, 2048u, "%.*s/../compiler/std/include", ei, exe_buf);
+                afmt(try1, 2048u, "%.*s/../compiler/std/include", .{ ei, exe_buf });
                 let mut try1_probe: [2048]i8;
-                snprintf(try1_probe, 2048u, "%s/fmt.arc", try1);
+                afmt(try1_probe, 2048u, "%s/fmt.arc", .{ try1 });
                 let mut fp1: *void= fopen(try1_probe, "r");
                 if (fp1 != (void*)0) { fclose(fp1); opts.stdlib_path = lexer.str_dup(try1); auto_found = true; }
                 if (!auto_found) {
                     // Try <exedir>/std/include (installed build)
                     let mut try2: [2048]i8;
-                    snprintf(try2, 2048u, "%.*s/std/include", ei, exe_buf);
+                    afmt(try2, 2048u, "%.*s/std/include", .{ ei, exe_buf });
                     let mut try2_probe: [2048]i8;
-                    snprintf(try2_probe, 2048u, "%s/fmt.arc", try2);
+                    afmt(try2_probe, 2048u, "%s/fmt.arc", .{ try2 });
                     let mut fp2: *void= fopen(try2_probe, "r");
                     if (fp2 != (void*)0) { fclose(fp2); opts.stdlib_path = lexer.str_dup(try2); auto_found = true; }
                 }
@@ -290,7 +304,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
     }
 
     if (opts.verbose) {
-        printf("artemis_boot: compiling '%s'\n", opts.input);
+        aprint("artemis_boot: compiling '%s'\n", .{ opts.input });
     }
 
     // Inject compiler/builtin/struct.arc as a preamble so builtin types
@@ -301,7 +315,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
         let mut blen: u64= 0;
         if (opts.stdlib_path != (i8*)0) {
             let mut bpath: [2048]i8;
-            snprintf(bpath, 2048u, "%s/../../builtin/struct.arc", opts.stdlib_path);
+            afmt(bpath, 2048u, "%s/../../builtin/struct.arc", .{ opts.stdlib_path });
             bsrc = read_file(bpath, &blen);
         }
         if (bsrc == (i8*)0) {
@@ -321,14 +335,24 @@ pub fn main(argc: i32, argv: **i8) i32 {
         }
     }
 
+    // Per-stage timings. Each t_* is a cumulative process-CPU millisecond mark; the
+    // report at the end differences them.
+    let mut t_start: i64= clock_ms();
+    let mut t_pp: i64= t_start; let mut t_lex: i64= t_start; let mut t_parse: i64= t_start;
+    let mut t_macro: i64= t_start; let mut t_ana: i64= t_start; let mut t_smt: i64= t_start;
+    let mut t_lir: i64= t_start; let mut t_ir: i64= t_start; let mut t_opt: i64= t_start;
+    let mut t_emit: i64= t_start;
+
     // Preprocess
     let mut pp_src: *i8= preproc.preprocess(src, opts.input, opts.stdlib_path);
+    t_pp = clock_ms();
 
     // Lex
     let mut lxr: lexer.lexer_t;
     let mut pp_len: u64= (u64)strlen(pp_src);
     lxr.init(pp_src, pp_len);
     let mut toks: lexer.token_vec= lxr.tokenize();
+    t_lex = clock_ms();
 
     // Parse
     let mut prs: parser.parser_t;
@@ -336,9 +360,10 @@ pub fn main(argc: i32, argv: **i8) i32 {
     prs.import_src_path    = opts.input;
     prs.import_stdlib_path = opts.stdlib_path;
     let mut prog: *parser.program_node= prs.parse();
+    t_parse = clock_ms();
 
     if (prs.had_parse_error) {
-        printf("error: parsing failed\n");
+        aprint("error: parsing failed\n", .{});
         arc_free(src);
         return 1;
     }
@@ -399,10 +424,13 @@ pub fn main(argc: i32, argv: **i8) i32 {
         prog.decls_len = new_cap;
     }
     arc_free((i8*)macro_new_decls);
+    t_macro = clock_ms();
 
     // Analysis (runs after macro expansion so injected decls are visible)
     let mut ana_errs: i32= analysis.analyze_unsafe(prog, opts.unsafe_unit);
+    t_ana = clock_ms();
     let mut smt_errs: i32= smt.smt_analyze(prog);
+    t_smt = clock_ms();
     if (ana_errs > 0 || smt_errs > 0) {
         arc_free(src);
         return 1;
@@ -415,7 +443,25 @@ pub fn main(argc: i32, argv: **i8) i32 {
         return 0;
     }
 
-    // Optional MIR → LIR pipeline (gated behind --use-mir)
+    // MIR → LIR → SMT.
+    //
+    // The lowered form is where the pointer/bounds analysis is meant to run: in LIR
+    // every memory access is an explicit instruction, so a construct cannot dodge the
+    // check by being spelled differently in source. This runs unconditionally — the
+    // pipeline is not an experiment behind a flag any more. --use-mir now only selects
+    // whether the *dumps* are produced.
+    let mut smt_lir_mod: *mir.mir_module= mir.lower_program((i8*)prog);
+    let mut smt_lir_lir: *lir.lir_module= lir.lower_mir(smt_lir_mod);
+    let mut lir_errs: i32= smt.smt_analyze_lir(smt_lir_lir);
+    t_lir = clock_ms();
+    mir.mir_module_free(smt_lir_mod);
+    lir.lir_module_free(smt_lir_lir);
+    if (lir_errs > 0) {
+        arc_free(src);
+        return 1;
+    }
+
+    // Optional MIR/LIR text dumps
     if (opts.use_mir) {
         let mut mir_mod: *mir.mir_module= mir.lower_program((i8*)prog);
         let mut lir_mod: *lir.lir_module= lir.lower_mir(mir_mod);
@@ -437,11 +483,52 @@ pub fn main(argc: i32, argv: **i8) i32 {
         }
     }
 
+    // Resolve the target's data layout *before* IR generation.
+    //
+    // It used to be attached after visit_program, so every layout query during codegen
+    // ran against LLVM's default layout, where i64 is 4-byte aligned. @typeinfo then
+    // described an ABI the code is not compiled for: { ptr, i32, i64 } reported field
+    // offsets 0/8/12 instead of the real 0/8/16.
+    LLVMInitializeAllTargetInfos_shim();
+    LLVMInitializeAllTargets_shim();
+    LLVMInitializeAllTargetMCs_shim();
+    LLVMInitializeAllAsmPrinters_shim();
+    LLVMInitializeAllAsmParsers_shim();
+
+    let mut pre_triple: *i8;
+    let mut pre_triple_free: bool= false;
+    if (opts.target != (i8*)0) {
+        pre_triple = opts.target;
+    } else {
+        pre_triple = LLVMGetDefaultTargetTriple();
+        pre_triple_free = true;
+    }
+    let mut pre_dl: *i8= (i8*)0;
+    let mut pre_target: *i8= (i8*)0;
+    let mut pre_err: *i8= (i8*)0;
+    if (LLVMGetTargetFromTriple(pre_triple, &pre_target, &pre_err) == 0) {
+        let mut pre_tm: *i8= LLVMCreateTargetMachine(pre_target, pre_triple, "", "",
+                                                     LLVMCodeGenLevelNone, LLVMRelocDefault, 0);
+        if (pre_tm != (i8*)0) {
+            let mut pre_td: *i8= LLVMCreateTargetDataLayout(pre_tm);
+            if (pre_td != (i8*)0) {
+                pre_dl = LLVMCopyStringRepOfTargetData(pre_td);
+                LLVMDisposeTargetData(pre_td);
+            }
+            LLVMDisposeTargetMachine(pre_tm);
+        }
+    } else if (pre_err != (i8*)0) {
+        LLVMDisposeMessage(pre_err);
+    }
+
     // IR generation
     let mut module_name: *i8= opts.input != (i8*)0 ? opts.input : "artemis_boot";
-    let mut llvm_mod: *i8= ir.ir_main(prog, module_name);
+    let mut llvm_mod: *i8= ir.ir_main_t(prog, module_name, pre_triple, pre_dl);
+    t_ir = clock_ms();
+    if (pre_dl != (i8*)0) { LLVMDisposeMessage(pre_dl); }
+    if (pre_triple_free) { LLVMDisposeMessage(pre_triple); }
     if (llvm_mod == (i8*)0) {
-        printf("error: IR generation failed\n");
+        aprint("error: IR generation failed\n", .{});
         arc_free(src);
         return 1;
     }
@@ -483,7 +570,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
     let mut err_msg: *i8= (i8*)0;
     let mut rc: i32= LLVMGetTargetFromTriple(triple, &target_ref, &err_msg);
     if (rc != 0) {
-        printf("error: cannot find target for '%s': %s\n", triple, err_msg);
+        aprint("error: cannot find target for '%s': %s\n", .{ triple, err_msg });
         LLVMDisposeMessage(err_msg);
         if (triple_needs_free) { LLVMDisposeMessage(triple); }
         LLVMDisposeModule(llvm_mod);
@@ -524,16 +611,17 @@ pub fn main(argc: i32, argv: **i8) i32 {
             run_opt_passes(llvm_mod, tm, opts.opt_level);
         }
     }
+    t_opt = clock_ms();
 
     // Verify module — hard error: malformed IR must not be codegen'd
     let mut verify_err: *i8= (i8*)0;
     let mut verify_rc: i32= LLVMVerifyModule(llvm_mod, LLVMReturnStatusAction, &verify_err);
     if (verify_rc != 0) {
         if (verify_err != (i8*)0) {
-            printf("error: module verification failed:\n%s\n", verify_err);
+            aprint("error: module verification failed:\n%s\n", .{ verify_err });
             LLVMDisposeMessage(verify_err);
         } else {
-            printf("error: module verification failed (no details)\n");
+            aprint("error: module verification failed (no details)\n", .{});
         }
         if (tm != (i8*)0) { LLVMDisposeTargetMachine(tm); }
         LLVMDisposeModule(llvm_mod);
@@ -547,7 +635,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
         let mut write_err: *i8= (i8*)0;
         let mut write_rc: i32= LLVMPrintModuleToFile(llvm_mod, output, &write_err);
         if (write_rc != 0) {
-            printf("error: cannot write IR to '%s': %s\n", output, write_err);
+            aprint("error: cannot write IR to '%s': %s\n", .{ output, write_err });
             LLVMDisposeMessage(write_err);
             if (tm != (i8*)0) { LLVMDisposeTargetMachine(tm); }
             LLVMDisposeModule(llvm_mod);
@@ -557,7 +645,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
     } else if (opts.emit_asm) {
         // Write native assembly
         if (tm == (i8*)0) {
-            printf("error: cannot emit assembly: no target machine\n");
+            aprint("error: cannot emit assembly: no target machine\n", .{});
             LLVMDisposeModule(llvm_mod);
             arc_free(src);
             return 1;
@@ -566,7 +654,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
         let mut emit_rc: i32= LLVMTargetMachineEmitToFile(tm, llvm_mod, output,
                                                     LLVMAssemblyFile, &emit_err);
         if (emit_rc != 0) {
-            printf("error: cannot emit assembly to '%s': %s\n", output, emit_err);
+            aprint("error: cannot emit assembly to '%s': %s\n", .{ output, emit_err });
             LLVMDisposeMessage(emit_err);
             LLVMDisposeTargetMachine(tm);
             LLVMDisposeModule(llvm_mod);
@@ -575,7 +663,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
         }
     } else if (opts.emit_obj) {
         if (tm == (i8*)0) {
-            printf("error: cannot emit object file: no target machine\n");
+            aprint("error: cannot emit object file: no target machine\n", .{});
             LLVMDisposeModule(llvm_mod);
             arc_free(src);
             return 1;
@@ -584,7 +672,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
         let mut emit_rc: i32= LLVMTargetMachineEmitToFile(tm, llvm_mod, output,
                                                     LLVMObjectFile, &emit_err);
         if (emit_rc != 0) {
-            printf("error: cannot emit object to '%s': %s\n", output, emit_err);
+            aprint("error: cannot emit object to '%s': %s\n", .{ output, emit_err });
             LLVMDisposeMessage(emit_err);
             LLVMDisposeTargetMachine(tm);
             LLVMDisposeModule(llvm_mod);
@@ -594,21 +682,21 @@ pub fn main(argc: i32, argv: **i8) i32 {
     } else {
         // Default: compile to object then link into executable.
         if (tm == (i8*)0) {
-            printf("error: cannot link: no target machine\n");
+            aprint("error: cannot link: no target machine\n", .{});
             LLVMDisposeModule(llvm_mod);
             arc_free(src);
             return 1;
         }
         // Build temp object path alongside the output.
         let mut tmp_obj: [2048]i8;
-        snprintf(tmp_obj, (u64)2048, "%s.tmp.o", output);
+        afmt(tmp_obj, (u64)2048, "%s.tmp.o", .{ output });
 
         let mut emit_err: *i8= (i8*)0;
         let mut emit_rc: i32= LLVMTargetMachineEmitToFile(tm, llvm_mod,
                                                     tmp_obj,
                                                     LLVMObjectFile, &emit_err);
         if (emit_rc != 0) {
-            printf("error: cannot emit object to '%s': %s\n", tmp_obj, emit_err);
+            aprint("error: cannot emit object to '%s': %s\n", .{ tmp_obj, emit_err });
             LLVMDisposeMessage(emit_err);
             if (tm != (i8*)0) { LLVMDisposeTargetMachine(tm); }
             LLVMDisposeModule(llvm_mod);
@@ -619,7 +707,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
         // Invoke system linker.  Use g++ as the driver so it pulls in CRT.
         // On Windows: if output has no .exe extension, append it so the binary is findable.
         let mut link_out: [2048]i8;
-        snprintf(link_out, (u64)2048, "%s", output);
+        afmt(link_out, (u64)2048, "%s", .{ output });
 @ifdef _WIN32
         let mut out_len: i32= (i32)strlen(link_out);
         let mut has_exe: bool= false;
@@ -630,15 +718,15 @@ pub fn main(argc: i32, argv: **i8) i32 {
                 has_exe = true;
             }
         }
-        if (!has_exe) { snprintf(link_out, (u64)2048, "%s.exe", output); }
+        if (!has_exe) { afmt(link_out, (u64)2048, "%s.exe", .{ output }); }
 @endif
         let mut link_cmd: [4096]i8;
-        snprintf(link_cmd, (u64)4096, "g++ \"%s\" -o \"%s\" -lm", tmp_obj, link_out);
-        if (opts.verbose) { printf("Link: %s\n", link_cmd); }
+        afmt(link_cmd, (u64)4096, "g++ \"%s\" -o \"%s\" -lm", .{ tmp_obj, link_out });
+        if (opts.verbose) { aprint("Link: %s\n", .{ link_cmd }); }
         let mut link_rc: i32= system(link_cmd);
         remove(tmp_obj);
         if (link_rc != 0) {
-            printf("error: linker failed (exit %d)\n", link_rc);
+            aprint("error: linker failed (exit %d)\n", .{ link_rc });
             if (tm != (i8*)0) { LLVMDisposeTargetMachine(tm); }
             LLVMDisposeModule(llvm_mod);
             arc_free(src);
@@ -647,7 +735,7 @@ pub fn main(argc: i32, argv: **i8) i32 {
     }
 
     if (opts.verbose) {
-        printf("artemis_boot: output written to '%s'\n", output);
+        aprint("artemis_boot: output written to '%s'\n", .{ output });
     }
 
     // Cleanup
@@ -655,5 +743,35 @@ pub fn main(argc: i32, argv: **i8) i32 {
     LLVMDisposeModule(llvm_mod);
     arc_free(src);
 
+    t_emit = clock_ms();
+    if (opts.time_phases) {
+        aprint("
+--- phase timings (ms of process CPU) ---
+", .{});
+        aprint("  preprocess   %lld
+", .{ t_pp    - t_start });
+        aprint("  lex          %lld
+", .{ t_lex   - t_pp    });
+        aprint("  parse        %lld
+", .{ t_parse - t_lex   });
+        aprint("  macro        %lld
+", .{ t_macro - t_parse });
+        aprint("  analyze      %lld
+", .{ t_ana   - t_macro });
+        aprint("  smt (AST)    %lld
+", .{ t_smt   - t_ana   });
+        aprint("  mir+lir+smt  %lld
+", .{ t_lir   - t_smt   });
+        aprint("  llvm ir gen  %lld
+", .{ t_ir    - t_lir   });
+        aprint("  llvm opt     %lld
+", .{ t_opt   - t_ir    });
+        aprint("  emit/link    %lld
+", .{ t_emit  - t_opt   });
+        aprint("  -----------------
+", .{});
+        aprint("  total        %lld
+", .{ t_emit  - t_start });
+    }
     return 0;
 }

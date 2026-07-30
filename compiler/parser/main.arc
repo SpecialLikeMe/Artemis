@@ -561,13 +561,11 @@ istruc parser_t {
         let mut errbuf: [512]i8;
         let mut tok_name: *i8= lexer.tok_type_name(cur.type);
         if ((cur.type == id) && cur.value != (i8*)0 && cur.value[0] != 0) {
-            snprintf(errbuf, (u64)512, "error at line %d: %s; got %s '%s'",
-                     cur.line, err_msg, tok_name, cur.value);
+            afmt(errbuf, (u64)512, "error at line %d: %s; got %s '%s'", .{ cur.line, err_msg, tok_name, cur.value });
         } else {
-            snprintf(errbuf, (u64)512, "error at line %d: %s; got %s",
-                     cur.line, err_msg, tok_name);
+            afmt(errbuf, (u64)512, "error at line %d: %s; got %s", .{ cur.line, err_msg, tok_name });
         }
-        printf("%s\n", errbuf);
+        aprint("%s\n", .{ errbuf });
         self.had_parse_error = true;
         return cur;
     }
@@ -583,9 +581,8 @@ istruc parser_t {
         let mut cur: lexer.token_t= self.peek_tok();
         let mut errbuf: [512]i8;
         let mut tok_name: *i8= lexer.tok_type_name(cur.type);
-        snprintf(errbuf, (u64)512, "error at line %d: %s; got %s",
-                 cur.line, err_msg, tok_name);
-        printf("%s\n", errbuf);
+        afmt(errbuf, (u64)512, "error at line %d: %s; got %s", .{ cur.line, err_msg, tok_name });
+        aprint("%s\n", .{ errbuf });
         self.had_parse_error = true;
         return cur;
     }
@@ -1257,7 +1254,7 @@ istruc parser_t {
 
                     // Build qualified name: old__NS_sub
                     let mut newname: [1024]i8;
-                    snprintf(newname, (u64)1024, "%s__NS_%s", t.name, sub.value);
+                    afmt(newname, (u64)1024, "%s__NS_%s", .{ t.name, sub.value });
                     arc_free(t.name);
                     t.name = lexer.str_dup(newname);
                 } else {
@@ -1522,7 +1519,7 @@ istruc parser_t {
         // A ':' here is a parse error.
         if (self.check_tok(colon)) {
             let mut colon_tok: lexer.token_t= self.peek_tok();
-            printf("error at line %d: member initializer lists not supported; assign fields in the constructor body instead\n", (i32)colon_tok.line);
+            aprint("error at line %d: member initializer lists not supported; assign fields in the constructor body instead\n", .{ (i32)colon_tok.line });
             self.had_parse_error = true;
             // Skip the malformed init list so we can continue parsing
             self.advance_tok(); // consume ':'
@@ -1562,12 +1559,12 @@ istruc parser_t {
             if ((tt2 == assign || tt2 == lt || tt2 == gt || tt2 == not_ || tt2 == plus || tt2 == minus || tt2 == ast || tt2 == slash) &&
                     (tt3 == assign)) {
                 self.advance_tok();
-                snprintf(op_name2, (u64)64, "operator%s=", op_tok2.value);
+                afmt(op_name2, (u64)64, "operator%s=", .{ op_tok2.value });
             } else if (tt2 == obracket) {
                 self.advance_tok();
-                snprintf(op_name2, (u64)64, "operator[]");
+                afmt(op_name2, (u64)64, "operator[]", .{});
             } else {
-                snprintf(op_name2, (u64)64, "operator%s", op_tok2.value);
+                afmt(op_name2, (u64)64, "operator%s", .{ op_tok2.value });
             }
             fd.name = lexer.str_dup(op_name2);
         } else {
@@ -1862,19 +1859,19 @@ istruc parser_t {
             if ((tt2 == assign || tt2 == lt || tt2 == gt || tt2 == not_ || tt2 == plus || tt2 == minus || tt2 == ast || tt2 == slash) &&
                     (tt3 == assign)) {
                 self.advance_tok();
-                snprintf(op_name, (u64)64, "operator%s=", op_tok.value);
+                afmt(op_name, (u64)64, "operator%s=", .{ op_tok.value });
             } else if (tt2 == obracket) {
                 // operator[] — subscript operator; consume the closing ']'
                 self.advance_tok();
-                snprintf(op_name, (u64)64, "operator[]");
+                afmt(op_name, (u64)64, "operator[]", .{});
             } else if (tt2 == ty_arb_int) {
-                snprintf(op_name, (u64)64, "operator_i%s", op_tok.value);
+                afmt(op_name, (u64)64, "operator_i%s", .{ op_tok.value });
             } else if (tt2 == ty_arb_uint) {
-                snprintf(op_name, (u64)64, "operator_u%s", op_tok.value);
+                afmt(op_name, (u64)64, "operator_u%s", .{ op_tok.value });
             } else if (tt2 == ty_arb_float) {
-                snprintf(op_name, (u64)64, "operator_f%s", op_tok.value);
+                afmt(op_name, (u64)64, "operator_f%s", .{ op_tok.value });
             } else {
-                snprintf(op_name, (u64)64, "operator%s", op_tok.value);
+                afmt(op_name, (u64)64, "operator%s", .{ op_tok.value });
             }
             let mut name_tok2: lexer.token_t;
             name_tok2.type  = id;
@@ -2498,7 +2495,7 @@ istruc parser_t {
         if (self.check_tok(obrace)) {
             // Generate synthetic name: __anon_istruc_N
             let mut syn_name: [32]i8;
-            snprintf(syn_name, (u64)32, "__anon_istruc_%d", self.anon_istruc_count);
+            afmt(syn_name, (u64)32, "__anon_istruc_%d", .{ self.anon_istruc_count });
             self.anon_istruc_count = self.anon_istruc_count + 1;
             class_name.type  = id;
             class_name.value = lexer.str_dup(syn_name);
@@ -2605,11 +2602,11 @@ istruc parser_t {
                     let mut conv_ret: *type_node= self.parse_type();
                     let mut conv_name: [64]i8;
                     if (op_tt == ty_arb_int) {
-                        snprintf(conv_name, (u64)64, "operator_i%d", (i32)conv_ret.bit_width);
+                        afmt(conv_name, (u64)64, "operator_i%d", .{ (i32)conv_ret.bit_width });
                     } else if (op_tt == ty_arb_uint) {
-                        snprintf(conv_name, (u64)64, "operator_u%d", (i32)conv_ret.bit_width);
+                        afmt(conv_name, (u64)64, "operator_u%d", .{ (i32)conv_ret.bit_width });
                     } else {
-                        snprintf(conv_name, (u64)64, "operator_f%d", (i32)conv_ret.bit_width);
+                        afmt(conv_name, (u64)64, "operator_f%d", .{ (i32)conv_ret.bit_width });
                     }
                     let mut conv_nt: lexer.token_t;
                     conv_nt.type  = id;
@@ -2689,7 +2686,7 @@ istruc parser_t {
                 if (mvd.is_static) {
                     // Static field: emit as module global named TYPENAME__static_FIELDNAME
                     let mut sname: [512]i8;
-                    snprintf(sname, (u64)512, "%s__static_%s", nd.name, mvd.name);
+                    afmt(sname, (u64)512, "%s__static_%s", .{ nd.name, mvd.name });
                     mvd.name = lexer.str_dup(sname);
                     if (out.decls_len >= out.decls_cap) {
                         out.decls_cap = out.decls_cap * 2;
@@ -2766,7 +2763,7 @@ istruc parser_t {
 
         let mut path_tok: lexer.token_t= self.advance_tok();
         if (path_tok.type != string_lit) {
-            printf("error: @import expects a string literal path\n");
+            aprint("error: @import expects a string literal path\n", .{});
             self.had_parse_error = true;
             self.consume_tok(cparen, "Expected ')'");
             let mut empty_nd: *namespace_decl= (namespace_decl*)arc_malloc(sizeof(parser__NS_namespace_decl));
@@ -2802,17 +2799,17 @@ istruc parser_t {
         let mut full_path_buf: [2048]i8;
         let mut is_std_path: bool= (rel_path[0]=='s' && rel_path[1]=='t' && rel_path[2]=='d' && rel_path[3]=='/');
         if (is_std_path && self.import_stdlib_path != (i8*)0) {
-            snprintf(full_path_buf, 2048u, "%s/%s", self.import_stdlib_path, rel_path + 4);
+            afmt(full_path_buf, 2048u, "%s/%s", .{ self.import_stdlib_path, rel_path + 4 });
         } else if (rel_path[0] == '/' || rel_path[0] == '\\') {
-            snprintf(full_path_buf, 2048u, "%s", rel_path);
+            afmt(full_path_buf, 2048u, "%s", .{ rel_path });
         } else {
-            snprintf(full_path_buf, 2048u, "%s%s", base_dir_buf, rel_path);
+            afmt(full_path_buf, 2048u, "%s%s", .{ base_dir_buf, rel_path });
         }
 
         // Read source
         let mut file_src: *i8= preproc.pp_read_file(full_path_buf);
         if (file_src == (i8*)0) {
-            printf("error: @import: cannot open '%s'\n", full_path_buf);
+            aprint("error: @import: cannot open '%s'\n", .{ full_path_buf });
             self.had_parse_error = true;
             let mut empty_nd2: *namespace_decl= (namespace_decl*)arc_malloc(sizeof(parser__NS_namespace_decl));
             memset((i8*)empty_nd2, 0, sizeof(parser__NS_namespace_decl));
@@ -2874,11 +2871,11 @@ istruc parser_t {
         let mut full_path_buf: [2048]i8;
         let mut is_std_path: bool= (rel_path[0]=='s' && rel_path[1]=='t' && rel_path[2]=='d' && rel_path[3]=='/');
         if (is_std_path && self.import_stdlib_path != (i8*)0) {
-            snprintf(full_path_buf, 2048u, "%s/%s", self.import_stdlib_path, rel_path + 4);
+            afmt(full_path_buf, 2048u, "%s/%s", .{ self.import_stdlib_path, rel_path + 4 });
         } else if (rel_path[0] == '/' || rel_path[0] == '\\') {
-            snprintf(full_path_buf, 2048u, "%s", rel_path);
+            afmt(full_path_buf, 2048u, "%s", .{ rel_path });
         } else {
-            snprintf(full_path_buf, 2048u, "%s%s", base_dir_buf, rel_path);
+            afmt(full_path_buf, 2048u, "%s%s", .{ base_dir_buf, rel_path });
         }
         let mut err_nd: *namespace_decl= (namespace_decl*)arc_malloc(sizeof(parser__NS_namespace_decl));
         memset((i8*)err_nd, 0, sizeof(parser__NS_namespace_decl));
@@ -2888,7 +2885,7 @@ istruc parser_t {
         err_nd.decls_len = 0; err_nd.decls_cap = 8;
         let mut file_src: *i8= preproc.pp_read_file(full_path_buf);
         if (file_src == (i8*)0) {
-            printf("error: extern import: cannot open '%s'\n", full_path_buf);
+            aprint("error: extern import: cannot open '%s'\n", .{ full_path_buf });
             self.had_parse_error = true;
             return err_nd;
         }
@@ -2946,7 +2943,7 @@ istruc parser_t {
                 if (ln_tok.type == string_lit && ln_tok.value != (i8*)0) {
                     link_name_tl = lexer.str_dup(ln_tok.value);
                 } else {
-                    printf("error at line %d: @link_name expects a string literal\n", (i32)ln_tok.line);
+                    aprint("error at line %d: @link_name expects a string literal\n", .{ (i32)ln_tok.line });
                     self.had_parse_error = true;
                 }
                 self.consume_tok(cparen, "Expected ')' after @link_name symbol");
@@ -3062,7 +3059,7 @@ istruc parser_t {
                     // Parse dotted segments: bar.mymacro → "bar.mymacro"
                     if (macro_name != (i8*)0 && macro_name[0] != 0) {
                         let mut full_mn: [256]i8;
-                        snprintf(full_mn, (u64)256, "%s", macro_name);
+                        afmt(full_mn, (u64)256, "%s", .{ macro_name });
                         let mut dot_loop: bool= true;
                         while (dot_loop && self.check_tok(dot) && !self.is_at_end_p()) {
                             self.advance_tok(); // consume '.'
@@ -3070,8 +3067,8 @@ istruc parser_t {
                                 let mut seg2: lexer.token_t= self.advance_tok();
                                 if (seg2.value != (i8*)0 && seg2.value[0] != 0) {
                                     let mut tmp2: [256]i8;
-                                    snprintf(tmp2, (u64)256, "%s.%s", full_mn, seg2.value);
-                                    snprintf(full_mn, (u64)256, "%s", tmp2);
+                                    afmt(tmp2, (u64)256, "%s.%s", .{ full_mn, seg2.value });
+                                    afmt(full_mn, (u64)256, "%s", .{ tmp2 });
                                 }
                             } else { dot_loop = false; }
                         }
@@ -3337,10 +3334,10 @@ istruc parser_t {
                     // aciso packages live in modules/PKG/ relative to source dir
                     let mut is_aciso: bool= (pkg_tok.value[0]=='a' && pkg_tok.value[1]=='c' && pkg_tok.value[2]=='i' && pkg_tok.value[3]=='s' && pkg_tok.value[4]=='o' && pkg_tok.value[5]==0);
                     if (is_aciso) {
-                        snprintf(ext_path_buf, 512u, "modules/%s/%s.arc", mod_tok.value, mod_tok.value);
+                        afmt(ext_path_buf, 512u, "modules/%s/%s.arc", .{ mod_tok.value, mod_tok.value });
                     } else {
                         // std/ prefix is recognized by parse_import_splice → resolves via stdlib path
-                        snprintf(ext_path_buf, 512u, "%s/%s.arc", pkg_tok.value, mod_tok.value);
+                        afmt(ext_path_buf, 512u, "%s/%s.arc", .{ pkg_tok.value, mod_tok.value });
                     }
                     return (ast_node*)self.parse_import_splice(ext_path_buf);
                 }
@@ -3361,7 +3358,7 @@ istruc parser_t {
             if (wc_path_tok.type == string_lit && wc_path_tok.value != (i8*)0) {
                 return (ast_node*)self.parse_import_splice(wc_path_tok.value);
             }
-            printf("error: @import expects a string literal path\n");
+            aprint("error: @import expects a string literal path\n", .{});
             self.had_parse_error = true;
             return (ast_node*)0;
         }
@@ -3397,7 +3394,7 @@ istruc parser_t {
         // Reject leading-type declarations: use 'fn', 'let', 'const', etc. instead.
         if (self.is_type_start()) {
             let mut err_ln: i32= self.peek_line();
-            printf("error at line %d: leading-type declarations are not allowed; use 'fn name(params) RetType' or 'let name: Type = ...'\n", err_ln);
+            aprint("error at line %d: leading-type declarations are not allowed; use 'fn name(params) RetType' or 'let name: Type = ...'\n", .{ err_ln });
             self.had_parse_error = true;
             // Skip to next ';' or end of '{...}' block to resync
             while (!self.is_at_end_p() && !self.check_tok(sm) && !self.check_tok(cbrace)) {
@@ -3420,7 +3417,7 @@ istruc parser_t {
         // '{' blocks, '}' closers, and raw expressions have no top-level meaning.
         if (self.check_tok(obrace)) {
             let mut err_ln3: i32= self.peek_line();
-            printf("error at line %d: unexpected '{' at top level\n", err_ln3);
+            aprint("error at line %d: unexpected '{' at top level\n", .{ err_ln3 });
             self.had_parse_error = true;
             let mut skip_depth: i32= 1; self.advance_tok();
             while (skip_depth > 0 && !self.is_at_end_p()) {
@@ -3483,8 +3480,7 @@ istruc parser_t {
         if (!self.check_tok(id)) {
             {
                 let mut got_name: *i8= lexer.tok_type_name(self.peek_type());
-                printf("error at line %d: expected variable name; got %s\n",
-                        self.peek_line(), got_name);
+                aprint("error at line %d: expected variable name; got %s\n", .{ self.peek_line(), got_name });
             }
             self.had_parse_error = true;
         }
@@ -3927,7 +3923,7 @@ istruc parser_t {
                 self.advance_tok(); // consume second ':'
                 let mut var_tok2: lexer.token_t= self.advance_tok(); // variant name
                 let mut combined: [512]i8;
-                snprintf(combined, (u64)512, "%s__%s", pname2, var_tok2.value);
+                afmt(combined, (u64)512, "%s__%s", .{ pname2, var_tok2.value });
                 pname2 = lexer.str_dup(combined);
             }
 
@@ -4047,7 +4043,7 @@ istruc parser_t {
         }
 
         // Unknown — skip and return wildcard
-        printf("error at line %d: expected pattern\n", (i32)tok_line2);
+        aprint("error at line %d: expected pattern\n", .{ (i32)tok_line2 });
         self.had_parse_error = true;
         self.advance_tok();
         let mut punk: *pat_node= self.alloc_pat_node();
@@ -4233,8 +4229,7 @@ istruc parser_t {
         }
 
         if (self.check_tok(kw_static)) {
-            printf("error at line %d: 'static' before 'let' is invalid; use 'let name: static Type'\n",
-                   self.peek_line());
+            aprint("error at line %d: 'static' before 'let' is invalid; use 'let name: static Type'\n", .{ self.peek_line() });
             self.had_parse_error = true;
             // Recover: skip 'static' and continue parsing the rest as a normal let
             self.advance_tok();
@@ -4398,7 +4393,7 @@ istruc parser_t {
             let mut lt_next_is_name: bool= (lt_next == id || lt_next == ast);
             if (lt_is_prim && lt_next_is_name) {
                 let mut err_ln2: i32= self.peek_line();
-                printf("error at line %d: leading-type declarations are not allowed; use 'let mut name: Type = ...' instead\n", err_ln2);
+                aprint("error at line %d: leading-type declarations are not allowed; use 'let mut name: Type = ...' instead\n", .{ err_ln2 });
                 self.had_parse_error = true;
                 while (!self.is_at_end_p() && !self.check_tok(sm) && !self.check_tok(cbrace)) {
                     self.advance_tok();
@@ -4747,7 +4742,7 @@ istruc parser_t {
             let mut variant_name: *i8= (i8*)0;
             if (!self.check_tok(dot)) {
                 // Emit clear diagnostic instead of silently producing a broken AST node
-                printf("error at line %d: expected '.' after 'error' (use 'error.VariantName' syntax)\n", (i32)ln);
+                aprint("error at line %d: expected '.' after 'error' (use 'error.VariantName' syntax)\n", .{ (i32)ln });
                 // Synchronize: skip to end of statement
                 let mut n: *expr_node= alloc_expr_node();
                 n.kind = ek_error_lit; n.line = ln;
@@ -4760,7 +4755,7 @@ istruc parser_t {
                 // e.g. `error .{}` — without a name there is no variant to construct,
                 // and leaving the following tokens stranded produces cascade errors far
                 // from the real mistake.
-                printf("error at line %d: expected a variant name after 'error.' (use 'error.VariantName')\n", (i32)ln);
+                aprint("error at line %d: expected a variant name after 'error.' (use 'error.VariantName')\n", .{ (i32)ln });
                 self.had_parse_error = true;
                 let mut nb: *expr_node= alloc_expr_node();
                 nb.kind = ek_error_lit; nb.line = ln;
@@ -4774,8 +4769,7 @@ istruc parser_t {
             } else if (self.check_tok(obrace) || self.check_tok(dot)) {
                 // `error.Name {}` / `error.Name .{}` — only the parenthesised payload
                 // form is supported. Say so rather than leaving the braces stranded.
-                printf("error at line %d: error payload must use parentheses: 'error.%s(expr)'\n",
-                       (i32)ln, variant_name);
+                aprint("error at line %d: error payload must use parentheses: 'error.%s(expr)'\n", .{ (i32)ln, variant_name });
                 self.had_parse_error = true;
                 let mut nc: *expr_node= alloc_expr_node();
                 nc.kind = ek_error_lit; nc.line = ln; nc.str_val = variant_name;
@@ -5092,7 +5086,7 @@ istruc parser_t {
                     param_names[param_len] = lexer.str_dup(self.advance_value_get());
                 } else {
                     let mut pname: [32]i8;
-                    snprintf(pname, (u64)32, "__lp%d", param_len);
+                    afmt(pname, (u64)32, "__lp%d", .{ param_len });
                     param_names[param_len] = lexer.str_dup(pname);
                 }
             }
@@ -5223,7 +5217,7 @@ istruc parser_t {
                 } else {
                     // Positional field: val — use "__N" as synthetic name
                     let mut pos_name: [32]i8;
-                    snprintf(pos_name, (u64)32, "__%d", af_idx);
+                    afmt(pos_name, (u64)32, "__%d", .{ af_idx });
                     let mut afv2: *expr_node= self.parse_expr();
                     str_vec_push(&af_names, lexer.str_dup(pos_name));
                     expr_ptr_vec_push(&af_vals, afv2);
@@ -5638,9 +5632,9 @@ istruc parser_t {
             let mut tok_name: *i8= lexer.tok_type_name(tt);
             let mut tok_val: *i8= tok.value;
             if (tt == id && tok_val != (i8*)0 && tok_val[0] != 0) {
-                printf("error at line %d: unexpected %s '%s' in expression\n", (i32)ln, tok_name, tok_val);
+                aprint("error at line %d: unexpected %s '%s' in expression\n", .{ (i32)ln, tok_name, tok_val });
             } else {
-                printf("error at line %d: unexpected %s in expression\n", (i32)ln, tok_name);
+                aprint("error at line %d: unexpected %s in expression\n", .{ (i32)ln, tok_name });
             }
         }
         self.had_parse_error = true;

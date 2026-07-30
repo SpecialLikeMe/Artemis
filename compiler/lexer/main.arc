@@ -457,7 +457,7 @@ istruc lexer_t {
             }
             self.advance_char();
         }
-        printf("error at line %d: unterminated block comment (opened here)\n", start_line);
+        aprint("error at line %d: unterminated block comment (opened here)\n", .{ start_line });
     }
 
     // Read escape sequence (after backslash)

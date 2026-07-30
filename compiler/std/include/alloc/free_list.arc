@@ -91,7 +91,7 @@ memstr free_list {
         }
     }
 
-    fn deinit(self: *free_list) void { free(self.base); }
+    fn deinit(self: *free_list) !void { free(self.base); }
 }
 
 } // alloc

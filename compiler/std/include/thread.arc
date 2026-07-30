@@ -197,7 +197,7 @@ istruc thread_pool {
 
     fn __construct__(thread_pool* self, i32 n, void*(void*)* fn_ref, void* arg, &memstr a) void {
         self.count   = n;
-        self.threads = (thread_t*)a.mmap((u64)(sizeof(thread_t) * n));
+        self.threads = (thread_t*)a.mmap((u64)(sizeof(thread_t) * n)) catch |e| { };
         for (let mut i: i32 = 0; i < n; i = i + 1) {
             self.threads[i].__construct__();
             self.threads[i].spawn(fn_ref, arg);

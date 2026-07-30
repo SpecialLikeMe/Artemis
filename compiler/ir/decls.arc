@@ -21,6 +21,7 @@ fn visit_struct_decl(d: *parser.struct_decl, ctx: *ir_context) void {
     let mut field_types_arr: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)nfields);
 
     let mut sm: struct_meta;
+    struct_meta_init(&sm);
     sm.name = d.name;
     sm.is_union = d.is_union;
     sm.is_istruc = ctx.current_ns_is_istruc;
@@ -49,7 +50,7 @@ fn visit_struct_decl(d: *parser.struct_decl, ctx: *ir_context) void {
             // Store fully-qualified pointee name for forward-reference resolution at use time
             if (ctx.current_namespace != (i8*)0) {
                 let mut qn: [512]i8;
-                snprintf(qn, (u64)512, "%s__NS_%s", ctx.current_namespace, f.type.name);
+                afmt(qn, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, f.type.name });
                 pointee_n = lexer.str_dup(qn);
             } else {
                 pointee_n = f.type.name;
@@ -141,6 +142,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
         st_map_set(&ctx.struct_types, d.name, adt_struct_t);
         // Register field metadata: __tag (index 0) and __payload (index 1)
         let mut sm: struct_meta;
+        struct_meta_init(&sm);
         sm.name = lexer.str_dup(d.name);
         name_list_init(&sm.field_names);
         type_list_init(&sm.field_types);
@@ -172,7 +174,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
             let mut fc: i32= (d.variant_field_counts != (i32*)0) ? d.variant_field_counts[vi] : 0;
             if ((vkind == 1 || vkind == 2 || vkind == 3) && fc > 0 && d.variant_field_type_flat != (i8**)0) {
                 let mut vqname: [512]i8;
-                snprintf(vqname, (u64)512, "%s__%s", d.name, d.variant_names[vi]);
+                afmt(vqname, (u64)512, "%s__%s", .{ d.name, d.variant_names[vi] });
                 // Create LLVM struct type for this variant's payload fields
                 // so that emit_pat_match can load the payload as the variant struct type.
                 let mut vfts: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)fc);
@@ -188,6 +190,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
                 st_map_set(&ctx.struct_types, lexer.str_dup(vqname), vstruct_ty);
                 // Register struct_meta for field access in emit_pat_match
                 let mut vsm: struct_meta;
+                struct_meta_init(&vsm);
                 vsm.name = lexer.str_dup(vqname);
                 name_list_init(&vsm.field_names);
                 type_list_init(&vsm.field_types);
@@ -201,7 +204,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
                     let mut ft: *parser.type_node= (parser.type_node*)d.variant_field_type_flat[vi * 8 + fi];
                     let mut flt: *i8= (ft != (parser.type_node*)0) ? llvm_type_of(ft, ctx) : i32t;
                     let mut fname: *i8= (d.variant_field_names_flat != (i8**)0) ? d.variant_field_names_flat[vi * 8 + fi] : (i8*)0;
-                    if (fname == (i8*)0) { let mut tmp: [16]i8; snprintf(tmp, (u64)16, "_f%d", fi); fname = lexer.str_dup(tmp); }
+                    if (fname == (i8*)0) { let mut tmp: [16]i8; afmt(tmp, (u64)16, "_f%d", .{ fi }); fname = lexer.str_dup(tmp); }
                     name_list_push(&vsm.field_names, fname);
                     type_list_push(&vsm.field_types, flt);
                     bool_list_push(&vsm.field_unsigned, false);
@@ -234,7 +237,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
                     let mut mfd: *parser.func_decl= (parser.func_decl*)d.variant_method_flat[vi * 8 + mi];
                     if (mfd != (parser.func_decl*)0) {
                         let mut mt_name: [512]i8;
-                        snprintf(mt_name, (u64)512, "%s__NS_%s__MT_%s", d.name, vname, mfd.name);
+                        afmt(mt_name, (u64)512, "%s__NS_%s__MT_%s", .{ d.name, vname, mfd.name });
                         let mut saved_name: *i8= mfd.name;
                         mfd.name = lexer.str_dup(mt_name);
                         visit_func_decl_prototype(mfd, ctx);
@@ -254,7 +257,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
     while (i < d.variants_len) {
         if (d.variant_has_val[i]) { next_val = d.variant_vals[i]; }
         let mut qname: [512]i8;
-        snprintf(qname, (u64)512, "%s__%s", d.name, d.variant_names[i]);
+        afmt(qname, (u64)512, "%s__%s", .{ d.name, d.variant_names[i] });
         let mut gv: *i8= LLVMAddGlobal(ctx.llvm_mod, i32t, qname);
         LLVMSetInitializer(gv, LLVMConstInt(i32t, (u64)next_val, 1));
         LLVMSetGlobalConstant(gv, 1);
@@ -263,7 +266,7 @@ fn visit_enum_decl(d: *parser.enum_decl, ctx: *ir_context) void {
         sv_map_set(&ctx.global_vars, d.variant_names[i], gv);
         // Also register with __NS_ separator so `EnumName.variant` resolves via member-access chain
         let mut ns_qname: [512]i8;
-        snprintf(ns_qname, (u64)512, "%s__NS_%s", d.name, d.variant_names[i]);
+        afmt(ns_qname, (u64)512, "%s__NS_%s", .{ d.name, d.variant_names[i] });
         sv_map_set(&ctx.global_vars, lexer.str_dup(ns_qname), gv);
         next_val = next_val + 1;
         i = i + 1;
@@ -547,16 +550,25 @@ fn visit_func_decl(fd: *parser.func_decl, ctx: *ir_context) void {
     // Ensure terminator
     if (!ctx_is_terminated(ctx)) {
         let mut rv: *i8= ctx.current_ret_type;
-        // !void error-union: falling off the end is implicit success (return 0)
+        // !void error-union: reaching the end is implicit success (return 0).
+        // pointer_depth must be 0 — `!*void` is a *value*-carrying error union whose
+        // payload happens to be a void pointer. Treating it as !void emitted a bare
+        // `ret i32 0` out of a function typed { i32, ptr }.
         let mut eu_void: bool= fd.is_error_union && (
             fd.ret_type == (parser.type_node*)0 ||
-            (fd.ret_type.has_prim && fd.ret_type.prim == (i32)void_t));
+            (fd.ret_type.has_prim && fd.ret_type.prim == (i32)void_t &&
+             fd.ret_type.pointer_depth == 0 && !fd.ret_type.is_func_ptr));
         if (rv == (i8*)0 || LLVMGetTypeKind(rv) == LLVMVoidTypeKind) {
             LLVMBuildRetVoid(ctx.llvm_builder);
         } else if (eu_void) {
             LLVMBuildRet(ctx.llvm_builder, LLVMConstInt(LLVMInt32TypeInContext(ctx.llvm_ctx), 0, 0));
         } else if (ctx.current_func_eu_is_value) {
-            // !T error-union: falling off end = implicit success { 0, undef }
+            // !T carries a payload, so there is no value to imply here. This used to
+            // return success with an undef payload, which handed the caller garbage that
+            // passed every error check. Falling off the end is a missing return.
+            let mut eu_fname: *i8= fd.name != (i8*)0 ? fd.name : "<anonymous>";
+            aprint("error: function '%s' may not return on all paths (line %d)\n", .{ eu_fname, (i32)fd.line });
+            ctx.had_error = true;
             let mut i32t_fb: *i8= LLVMInt32TypeInContext(ctx.llvm_ctx);
             let mut eu_fb: *i8= LLVMGetUndef(rv);
             eu_fb = LLVMBuildInsertValue(ctx.llvm_builder, eu_fb, LLVMConstInt(i32t_fb, 0, 0), 0, "eu_ok_fb");
@@ -565,7 +577,7 @@ fn visit_func_decl(fd: *parser.func_decl, ctx: *ir_context) void {
         } else {
             // Non-void function fell off end — compile error
             let mut fname: *i8= fd.name != (i8*)0 ? fd.name : "<anonymous>";
-            printf("error: function '%s' may not return on all paths (line %d)\n", fname, (i32)fd.line);
+            aprint("error: function '%s' may not return on all paths (line %d)\n", .{ fname, (i32)fd.line });
             ctx.had_error = true;
             LLVMBuildRet(ctx.llvm_builder, LLVMConstNull(rv));
         }
@@ -589,7 +601,7 @@ fn ir_get_or_monomorphize_generic_class(t: *parser.type_node, ctx: *ir_context) 
 
     // Build mono_name: base__G_<arg1>_<arg2>...
     let mut mono_name: [512]i8;
-    let mut mn_off: i32= snprintf(mono_name, (u64)512, "%s__G", base_name);
+    let mut mn_off: i32= afmt(mono_name, (u64)512, "%s__G", .{ base_name });
     let mut tai: i32= 0;
     while (tai < t.type_args_len) {
         let mut ta: *parser.type_node= (parser.type_node*)t.type_args[tai];
@@ -680,6 +692,7 @@ fn ir_get_or_monomorphize_generic_class(t: *parser.type_node, ctx: *ir_context) 
 
     // Build field types and struct_meta
     let mut sm: struct_meta;
+    struct_meta_init(&sm);
     sm.name = mono_name_dup;
     sm.is_union = gnd.is_union;
     sm.is_istruc = gnd.is_istruc;
@@ -710,7 +723,7 @@ fn ir_get_or_monomorphize_generic_class(t: *parser.type_node, ctx: *ir_context) 
                 // Store fully-qualified pointee name for forward-reference resolution at use time
                 if (ctx.current_namespace != (i8*)0) {
                     let mut qn2: [512]i8;
-                    snprintf(qn2, (u64)512, "%s__NS_%s", ctx.current_namespace, f.type.name);
+                    afmt(qn2, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, f.type.name });
                     pointee_n = lexer.str_dup(qn2);
                 } else {
                     pointee_n = f.type.name;
@@ -771,7 +784,7 @@ fn ir_get_or_monomorphize_generic_class(t: *parser.type_node, ctx: *ir_context) 
         if (pd != (parser.ast_node*)0 && pd.kind == nd_func_decl) {
             let mut pfd: *parser.func_decl= (parser.func_decl*)pd;
             let mut base: [512]i8;
-            snprintf(base, (u64)512, "%s__NS_%s", mono_name_dup, pfd.name);
+            afmt(base, (u64)512, "%s__NS_%s", .{ mono_name_dup, pfd.name });
             ol_qnames[pre] = lexer.str_dup(base);
             if (pfd.has_body) {
                 let mut already_seen: bool= false;
@@ -781,8 +794,8 @@ fn ir_get_or_monomorphize_generic_class(t: *parser.type_node, ctx: *ir_context) 
                     si = si + 1;
                 }
                 if (already_seen) {
-                    printf("error: duplicate function name '%s'; overloading is not supported
-", pfd.name);
+                    aprint("error: duplicate function name '%s'; overloading is not supported
+", .{ pfd.name });
                     ctx.had_error = true;
                 } else if (seen_len < 64) {
                     seen_names[seen_len] = lexer.str_dup(base);
@@ -879,34 +892,54 @@ fn ensure_memstr_types(ctx: *ir_context) void {
     st_map_set(&ctx.struct_types, lexer.str_dup("__vtable__"), ctx.memstr_vtable_type);
     // struct_meta for __vtable__ field-name access (mmap/rsmap/rmap/free/destroy).
     let mut svm: struct_meta;
+    struct_meta_init(&svm);
     svm.name = "__vtable__"; svm.is_union = false; svm.is_istruc = false;
     name_list_init(&svm.field_names); type_list_init(&svm.field_types);
     bool_list_init(&svm.field_unsigned); type_list_init(&svm.field_pointee);
     // field_pointee must hold each slot's *function* type, not null: that is what the
     // fn-ptr-field call path reads to build the call. With null here, `self.vtable.mmap(..)`
     // inside memstr's own methods silently lowers to undef.
-    let mut i64_t_v: *i8= LLVMInt64TypeInContext(ctx.llvm_ctx);
-    let mut i1_t_v:  *i8= LLVMInt1TypeInContext(ctx.llvm_ctx);
-    let mut void_t_v: *i8= LLVMVoidTypeInContext(ctx.llvm_ctx);
-    // mmap: (meta, size) -> ptr
-    let mut mmap_ps: [2]*i8; mmap_ps[0] = ptr_t; mmap_ps[1] = i64_t_v;
-    let mut mmap_ft: *i8= LLVMFunctionType(ptr_t, mmap_ps, 2, 0);
-    // rsmap: (meta, data, size) -> i1
-    let mut rsmap_ps: [3]*i8; rsmap_ps[0] = ptr_t; rsmap_ps[1] = ptr_t; rsmap_ps[2] = i64_t_v;
-    let mut rsmap_ft: *i8= LLVMFunctionType(i1_t_v, rsmap_ps, 3, 0);
-    // rmap: (meta, data, size) -> ptr
-    let mut rmap_ft: *i8= LLVMFunctionType(ptr_t, rsmap_ps, 3, 0);
-    // free: (meta, data) -> void
-    let mut free_ps: [2]*i8; free_ps[0] = ptr_t; free_ps[1] = ptr_t;
-    let mut free_ft: *i8= LLVMFunctionType(void_t_v, free_ps, 2, 0);
-    // destroy: (meta) -> void
-    let mut dtor_ps: [1]*i8; dtor_ps[0] = ptr_t;
-    let mut dtor_ft: *i8= LLVMFunctionType(void_t_v, dtor_ps, 1, 0);
+    //
+    // These must mirror __vtable__ in compiler/builtin/struct.arc exactly:
+    //   mmap    : (ptr meta, usize align, usize size)            -> !*void  = {i32, ptr}
+    //   rsmap   : (ptr meta, ptr data, iofs size)                -> bool    = i8
+    //   (usize = i64, iofs = i65, bool = i8)
+    //   rmap    : (ptr meta, usize align, ptr data, iofs size)   -> !*void  = {i32, ptr}
+    //   free    : (ptr meta, ptr data)                           -> !void   = i32
+    //   destroy : (ptr meta)                                     -> !void   = i32
+    let mut i64_t_v: *i8= LLVMInt64TypeInContext(ctx.llvm_ctx);      // usize
+    let mut iofs_t_v: *i8= LLVMIntTypeInContext(ctx.llvm_ctx, 65);   // iofs = ptr_bits + 1
+    let mut i32_t_v: *i8= LLVMInt32TypeInContext(ctx.llvm_ctx);
+    let mut i8_t_v:  *i8= LLVMInt8TypeInContext(ctx.llvm_ctx);   // Arc bool lowers to i8
+    // !*void lowers to { i32 is_err, ptr value }
+    let mut eu_ptr_flds: [2]*i8; eu_ptr_flds[0] = i32_t_v; eu_ptr_flds[1] = ptr_t;
+    let mut eu_ptr_t: *i8= LLVMStructTypeInContext(ctx.llvm_ctx, eu_ptr_flds, 2, 0);
+    // !void lowers to a bare i32 error code
+    let mut eu_void_t: *i8= i32_t_v;
+
+    let mut mmap_ps: [3]*i8;  mmap_ps[0] = ptr_t; mmap_ps[1] = i64_t_v; mmap_ps[2] = i64_t_v;
+    let mut mmap_ft: *i8= LLVMFunctionType(eu_ptr_t, mmap_ps, 3, 0);
+    let mut rsmap_ps: [3]*i8; rsmap_ps[0] = ptr_t; rsmap_ps[1] = ptr_t; rsmap_ps[2] = iofs_t_v;
+    let mut rsmap_ft: *i8= LLVMFunctionType(i8_t_v, rsmap_ps, 3, 0);
+    let mut rmap_ps: [4]*i8;  rmap_ps[0] = ptr_t; rmap_ps[1] = i64_t_v; rmap_ps[2] = ptr_t; rmap_ps[3] = iofs_t_v;
+    let mut rmap_ft: *i8= LLVMFunctionType(eu_ptr_t, rmap_ps, 4, 0);
+    let mut free_ps: [2]*i8;  free_ps[0] = ptr_t; free_ps[1] = ptr_t;
+    let mut free_ft: *i8= LLVMFunctionType(eu_void_t, free_ps, 2, 0);
+    let mut dtor_ps: [1]*i8;  dtor_ps[0] = ptr_t;
+    let mut dtor_ft: *i8= LLVMFunctionType(eu_void_t, dtor_ps, 1, 0);
+
     name_list_push(&svm.field_names, "mmap");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, mmap_ft);
     name_list_push(&svm.field_names, "rsmap");   type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, rsmap_ft);
     name_list_push(&svm.field_names, "rmap");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, rmap_ft);
     name_list_push(&svm.field_names, "free");    type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, free_ft);
     name_list_push(&svm.field_names, "destroy"); type_list_push(&svm.field_types, ptr_t); bool_list_push(&svm.field_unsigned, false); type_list_push(&svm.field_pointee, dtor_ft);
+    // Remembered so the vtable builder can reject a memstr whose method does not match
+    // its slot, instead of storing a mismatched pointer that crashes at the call.
+    ctx.memstr_slot_types[0] = mmap_ft;
+    ctx.memstr_slot_types[1] = rsmap_ft;
+    ctx.memstr_slot_types[2] = rmap_ft;
+    ctx.memstr_slot_types[3] = free_ft;
+    ctx.memstr_slot_types[4] = dtor_ft;
     struct_meta_vec_push(&ctx.struct_meta_tbl, svm);
 
     // memstr fat pointer — { ptr data, ptr vtable }.
@@ -925,6 +958,7 @@ fn ensure_memstr_types(ctx: *ir_context) void {
     // struct_meta for memstr field-name access (ptr/vtable).
     // memstr is now an istruc (is_istruc = true) with field name "ptr" (not "data").
     let mut smm: struct_meta;
+    struct_meta_init(&smm);
     smm.name = "memstr"; smm.is_union = false; smm.is_istruc = true;
     name_list_init(&smm.field_names); type_list_init(&smm.field_types);
     bool_list_init(&smm.field_unsigned); type_list_init(&smm.field_pointee);
@@ -939,7 +973,7 @@ fn ensure_memstr_types(ctx: *ir_context) void {
 fn emit_memstr_vtable(nd: *parser.namespace_decl, qual_name: *i8, ctx: *ir_context) void {
     ensure_memstr_types(ctx);
     let mut vtname: [512]i8;
-    snprintf(vtname, (u64)512, "%s__vtable__", nd.name);
+    afmt(vtname, (u64)512, "%s__vtable__", .{ nd.name });
     // 5-slot vtable: mmap, rsmap, rmap, free, destroy
     // Try qualified name first (e.g. std__NS_arena__NS_mmap), then simple name (arena__NS_mmap).
     let mut slots: [5]*i8;
@@ -952,25 +986,49 @@ fn emit_memstr_vtable(nd: *parser.namespace_decl, qual_name: *i8, ctx: *ir_conte
         let mut fn_ref: *i8= (i8*)0;
         // Try qualified name first
         let mut qbuf: [512]i8;
-        snprintf(qbuf, (u64)512, "%s__NS_%s", qual_name, methods[si]);
+        afmt(qbuf, (u64)512, "%s__NS_%s", .{ qual_name, methods[si] });
         fn_ref = LLVMGetNamedFunction(ctx.llvm_mod, qbuf);
         // Fall back to simple name
         if (fn_ref == (i8*)0) {
             let mut sbuf: [512]i8;
-            snprintf(sbuf, (u64)512, "%s__NS_%s", nd.name, methods[si]);
+            afmt(sbuf, (u64)512, "%s__NS_%s", .{ nd.name, methods[si] });
             fn_ref = LLVMGetNamedFunction(ctx.llvm_mod, sbuf);
         }
         // destroy slot also accepts 'deinit' as canonical name
         if (fn_ref == (i8*)0 && si == 4) {
-            snprintf(qbuf, (u64)512, "%s__NS_deinit", qual_name);
+            afmt(qbuf, (u64)512, "%s__NS_deinit", .{ qual_name });
             fn_ref = LLVMGetNamedFunction(ctx.llvm_mod, qbuf);
             if (fn_ref == (i8*)0) {
                 let mut sbuf2: [512]i8;
-                snprintf(sbuf2, (u64)512, "%s__NS_deinit", nd.name);
+                afmt(sbuf2, (u64)512, "%s__NS_deinit", .{ nd.name });
                 fn_ref = LLVMGetNamedFunction(ctx.llvm_mod, sbuf2);
             }
         }
-        if (fn_ref != (i8*)0) { slots[si] = fn_ref; }
+        if (fn_ref != (i8*)0) {
+            // Verify the method matches its slot. The slot is an opaque pointer in LLVM,
+            // so a wrong signature would otherwise be stored happily and blow up at the
+            // call — which is exactly how the old `rmap`-used-as-free bug hid.
+            let mut want: *i8= ctx.memstr_slot_types[si];
+            let mut got: *i8= LLVMGlobalGetValueType(fn_ref);
+            if (want != (i8*)0 && got != (i8*)0 && got != want) {
+                let mut sig_msg: [512]i8;
+                afmt(sig_msg, (u64)512, "memstr '%s': method '%s' does not match its allocator slot signature", .{ nd.name != (i8*)0 ? nd.name : "?", methods[si] });
+                aprint("error: %s
+", .{ sig_msg });
+                aprint("note: expected  mmap(self, align: usize, size: usize) !*void
+", .{});
+                aprint("note:           rsmap(self, data: *void, size: iofs) bool
+", .{});
+                aprint("note:           rmap(self, align: usize, data: *void, size: iofs) !*void
+", .{});
+                aprint("note:           free(self, data: *void) !void
+", .{});
+                aprint("note:           destroy(self) !void
+", .{});
+                ctx.had_error = true;
+            }
+            slots[si] = fn_ref;
+        }
         else               { slots[si] = LLVMConstPointerNull(ptr_t); }
         si = si + 1;
     }
@@ -996,7 +1054,7 @@ fn constexpr_eval_expr(e: *parser.expr_node, ctx: *ir_context, out: *i64) bool {
         if (cv != (i8*)0) { *out = (i64)cv; return true; }
         if (ctx.current_namespace != (i8*)0) {
             let mut fqn: [512]i8;
-            snprintf(fqn, (u64)512, "%s__NS_%s", ctx.current_namespace, e.str_val);
+            afmt(fqn, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, e.str_val });
             cv = sv_map_get(&ctx.constexpr_int_vals_map, fqn);
             if (cv != (i8*)0) { *out = (i64)cv; return true; }
         }
@@ -1048,7 +1106,7 @@ fn register_constexpr(pvd: *parser.var_decl, ctx: *ir_context) void {
     sv_map_set(&ctx.constexpr_int_vals_map, lexer.str_dup(pvd.name), (i8*)iv);
     if (ctx.current_namespace != (i8*)0) {
         let mut qn: [512]i8;
-        snprintf(qn, (u64)512, "%s__NS_%s", ctx.current_namespace, pvd.name);
+        afmt(qn, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, pvd.name });
         sv_map_set(&ctx.constexpr_int_vals_map, lexer.str_dup(qn), (i8*)iv);
     }
 }
@@ -1062,9 +1120,9 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
     let mut saved_is_interface: bool= ctx.current_ns_is_interface;
     let mut ns_buf: [256]i8;
     if (saved_ns != (i8*)0) {
-        snprintf(ns_buf, (u64)256, "%s__NS_%s", saved_ns, nd.name);
+        afmt(ns_buf, (u64)256, "%s__NS_%s", .{ saved_ns, nd.name });
     } else {
-        snprintf(ns_buf, (u64)256, "%s", nd.name);
+        afmt(ns_buf, (u64)256, "%s", .{ nd.name });
     }
     ctx.current_namespace       = lexer.str_dup(ns_buf);
     ctx.current_ns_is_istruc    = nd.is_istruc;
@@ -1100,7 +1158,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
         if (pd != (parser.ast_node*)0 && pd.kind == nd_func_decl) {
             let mut pfd: *parser.func_decl= (parser.func_decl*)pd;
             let mut base: [512]i8;
-            snprintf(base, (u64)512, "%s__NS_%s", nd.name, pfd.name);
+            afmt(base, (u64)512, "%s__NS_%s", .{ nd.name, pfd.name });
             ol_qnames[pre] = lexer.str_dup(base);
             // Check for duplicate definitions (not forward declarations)
             if (pfd.has_body) {
@@ -1111,7 +1169,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                     si = si + 1;
                 }
                 if (already_seen) {
-                    printf("error: duplicate function name '%s'; overloading is not supported\n", pfd.name);
+                    aprint("error: duplicate function name '%s'; overloading is not supported\n", .{ pfd.name });
                     ctx.had_error = true;
                 } else if (seen_len < 64) {
                     seen_names[seen_len] = lexer.str_dup(base);
@@ -1136,11 +1194,11 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                 if (constexpr_eval_expr(pvd.init, ctx, &iv)) {
                     sv_map_set(&ctx.constexpr_int_vals_map, lexer.str_dup(pvd.name), (i8*)iv);
                     let mut pre_qn: [512]i8;
-                    snprintf(pre_qn, (u64)512, "%s__NS_%s", nd.name, pvd.name);
+                    afmt(pre_qn, (u64)512, "%s__NS_%s", .{ nd.name, pvd.name });
                     sv_map_set(&ctx.constexpr_int_vals_map, lexer.str_dup(pre_qn), (i8*)iv);
                     if (saved_ns != (i8*)0) {
                         let mut pre_fq: [512]i8;
-                        snprintf(pre_fq, (u64)512, "%s__NS_%s__NS_%s", saved_ns, nd.name, pvd.name);
+                        afmt(pre_fq, (u64)512, "%s__NS_%s__NS_%s", .{ saved_ns, nd.name, pvd.name });
                         sv_map_set(&ctx.constexpr_int_vals_map, lexer.str_dup(pre_fq), (i8*)iv);
                     }
                 }
@@ -1161,7 +1219,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                 // Also register the struct under the namespace-qualified name so that
                 // external code can look it up as "ns__NS_StructName".
                 let mut ns_sname: [512]i8;
-                snprintf(ns_sname, (u64)512, "%s__NS_%s", nd.name, sd.name);
+                afmt(ns_sname, (u64)512, "%s__NS_%s", .{ nd.name, sd.name });
                 let mut bare_st: *i8= st_map_get(&ctx.struct_types, sd.name);
                 if (bare_st != (i8*)0) {
                     st_map_set(&ctx.struct_types, lexer.str_dup(ns_sname), bare_st);
@@ -1169,12 +1227,12 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                     // as "shapes__NS_Circle" so qualified type "shapes.Circle" resolves.
                     if (saved_ns != (i8*)0) {
                         let mut fq_sname: [512]i8;
-                        snprintf(fq_sname, (u64)512, "%s__NS_%s", saved_ns, sd.name);
+                        afmt(fq_sname, (u64)512, "%s__NS_%s", .{ saved_ns, sd.name });
                         st_map_set(&ctx.struct_types, lexer.str_dup(fq_sname), bare_st);
                         // Also register fully-qualified 3-level path:
                         // saved_ns__NS_nd.name__NS_sd.name (e.g. std__NS_typeinfo__NS_type_info)
                         let mut fq3_sname: [512]i8;
-                        snprintf(fq3_sname, (u64)512, "%s__NS_%s__NS_%s", saved_ns, nd.name, sd.name);
+                        afmt(fq3_sname, (u64)512, "%s__NS_%s__NS_%s", .{ saved_ns, nd.name, sd.name });
                         st_map_set(&ctx.struct_types, lexer.str_dup(fq3_sname), bare_st);
                     }
                 }
@@ -1195,14 +1253,14 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                         let mut inner_st: *i8= st_map_get(&ctx.struct_types, inner_sd.name);
                         if (inner_st != (i8*)0) {
                             let mut inner_qn: [512]i8;
-                            snprintf(inner_qn, (u64)512, "%s__NS_%s", nd.name, inner_sd.name);
+                            afmt(inner_qn, (u64)512, "%s__NS_%s", .{ nd.name, inner_sd.name });
                             st_map_set(&ctx.struct_types, lexer.str_dup(inner_qn), inner_st);
                             if (saved_ns != (i8*)0) {
                                 let mut outer_qn: [512]i8;
-                                snprintf(outer_qn, (u64)512, "%s__NS_%s", saved_ns, inner_sd.name);
+                                afmt(outer_qn, (u64)512, "%s__NS_%s", .{ saved_ns, inner_sd.name });
                                 st_map_set(&ctx.struct_types, lexer.str_dup(outer_qn), inner_st);
                                 let mut full3_qn: [512]i8;
-                                snprintf(full3_qn, (u64)512, "%s__NS_%s__NS_%s", saved_ns, nd.name, inner_sd.name);
+                                afmt(full3_qn, (u64)512, "%s__NS_%s__NS_%s", .{ saved_ns, nd.name, inner_sd.name });
                                 st_map_set(&ctx.struct_types, lexer.str_dup(full3_qn), inner_st);
                             }
                         }
@@ -1231,7 +1289,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                     // Register FQ alias for multi-level namespace access
                     if (saved_ns != (i8*)0) {
                         let mut fq_proto: [512]i8;
-                        snprintf(fq_proto, (u64)512, "%s__NS_%s", ctx.current_namespace, orig_name);
+                        afmt(fq_proto, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, orig_name });
                         let mut fn_p: *i8= sv_map_get(&ctx.global_funcs, fd.is_extern_c ? orig_name : qname_dup);
                         let mut ft_p: *i8= st_map_get(&ctx.global_func_types, fd.is_extern_c ? orig_name : qname_dup);
                         if (fn_p != (i8*)0) { sv_map_set(&ctx.global_funcs, lexer.str_dup(fq_proto), fn_p); }
@@ -1257,9 +1315,9 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                 // Static istruc members have already been mangled to TYPENAME__static_FIELD;
                 // emit them with the bare mangled name, not namespace-prefixed.
                 if (vd.is_static) {
-                    snprintf(qname, (u64)512, "%s", vd.name);
+                    afmt(qname, (u64)512, "%s", .{ vd.name });
                 } else {
-                    snprintf(qname, (u64)512, "%s__NS_%s", nd.name, vd.name);
+                    afmt(qname, (u64)512, "%s__NS_%s", .{ nd.name, vd.name });
                 }
                 let mut gt: *i8= llvm_type_of(vd.type, ctx);
                 let mut gv: *i8= LLVMAddGlobal(ctx.llvm_mod, gt, qname);
@@ -1290,14 +1348,14 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                     let mut vn_len: i32= (i32)strlen(vd.name);
                     if (vn_len > skip) {
                         let mut ns_alias: [512]i8;
-                        snprintf(ns_alias, (u64)512, "%s__NS_%s", nd.name, vd.name + skip);
+                        afmt(ns_alias, (u64)512, "%s__NS_%s", .{ nd.name, vd.name + skip });
                         sv_map_set(&ctx.global_vars, lexer.str_dup(ns_alias), gv);
                     }
                 }
                 // Also register under fully-qualified namespace name for multi-level access (e.g. std.hash.X)
                 if (!vd.is_static && saved_ns != (i8*)0) {
                     let mut fq_vname: [512]i8;
-                    snprintf(fq_vname, (u64)512, "%s__NS_%s", ctx.current_namespace, vd.name);
+                    afmt(fq_vname, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, vd.name });
                     sv_map_set(&ctx.global_vars, lexer.str_dup(fq_vname), gv);
                 }
             }
@@ -1312,7 +1370,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
                     // Register FQ alias for multi-level namespace access (e.g. std.hash.func())
                     if (saved_ns != (i8*)0) {
                         let mut fq_fn: [512]i8;
-                        snprintf(fq_fn, (u64)512, "%s__NS_%s", ctx.current_namespace, fd.name);
+                        afmt(fq_fn, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, fd.name });
                         let mut fn_ref: *i8= sv_map_get(&ctx.global_funcs, qname_dup);
                         let mut ft_ref: *i8= st_map_get(&ctx.global_func_types, qname_dup);
                         if (fn_ref != (i8*)0) { sv_map_set(&ctx.global_funcs, lexer.str_dup(fq_fn), fn_ref); }
@@ -1357,7 +1415,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
             let mut ptr_t: *i8= LLVMPointerTypeInContext(ctx.llvm_ctx, 0);
             // Create vtable struct type: %IFaceName__vtable = { ptr, ptr, ... }
             let mut vtbl_sname: [256]i8;
-            snprintf(vtbl_sname, (u64)256, "%s__vtable", nd.name);
+            afmt(vtbl_sname, (u64)256, "%s__vtable", .{ nd.name });
             let mut vtbl_ty: *i8= LLVMStructCreateNamed(ctx.llvm_ctx, lexer.str_dup(vtbl_sname));
             let mut vtbl_flds: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)nm);
             let mut vi: i32= 0;
@@ -1403,7 +1461,7 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
             while (si < nmeth) {
                 let mut mname: *i8= base_sm.iface_method_names.data[si];
                 let mut fn_qn: [512]i8;
-                snprintf(fn_qn, (u64)512, "%s__NS_%s", nd.name, mname);
+                afmt(fn_qn, (u64)512, "%s__NS_%s", .{ nd.name, mname });
                 let mut fn_ref: *i8= sv_map_get(&ctx.global_funcs, fn_qn);
                 slots[si] = (fn_ref != (i8*)0) ? fn_ref : LLVMConstPointerNull(ptr_t);
                 si = si + 1;
@@ -1411,13 +1469,13 @@ fn visit_namespace_decl(nd: *parser.namespace_decl, ctx: *ir_context) void {
             let mut vtbl_init: *i8= LLVMConstNamedStruct(vtbl_ty, slots, (u32)nmeth);
             arc_free((i8*)slots);
             let mut vtbl_gname: [512]i8;
-            snprintf(vtbl_gname, (u64)512, "%s__IFACE__%s__vtable", nd.name, base_name);
+            afmt(vtbl_gname, (u64)512, "%s__IFACE__%s__vtable", .{ nd.name, base_name });
             let mut vtbl_gname_dup: *i8= lexer.str_dup(vtbl_gname);
             let mut vtbl_gv: *i8= LLVMAddGlobal(ctx.llvm_mod, vtbl_ty, vtbl_gname_dup);
             LLVMSetInitializer(vtbl_gv, vtbl_init);
             LLVMSetGlobalConstant(vtbl_gv, 1);
             let mut iface_key: [512]i8;
-            snprintf(iface_key, (u64)512, "%s__IFACE__%s", nd.name, base_name);
+            afmt(iface_key, (u64)512, "%s__IFACE__%s", .{ nd.name, base_name });
             sv_map_set(&ctx.iface_concrete_vtables, lexer.str_dup(iface_key), vtbl_gv);
             bi = bi + 1;
         }

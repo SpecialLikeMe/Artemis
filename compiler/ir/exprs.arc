@@ -158,7 +158,7 @@ fn resolve_struct_base(obj: *parser.expr_node, ctx: *ir_context, out_struct_type
         if (fidx < 0) {
             if (ctx.current_namespace != (i8*)0) {
                 let mut ns_pname: [512]i8;
-                snprintf(ns_pname, (u64)512, "%s__NS_%s", ctx.current_namespace, pname);
+                afmt(ns_pname, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, pname });
                 fidx = ctx_field_index(ctx, ns_pname, obj.member_name);
                 if (fidx >= 0) { pname = lexer.str_dup(ns_pname); parent_st = st_map_get(&ctx.struct_types, pname); }
             }
@@ -328,7 +328,7 @@ fn adt_tuple_field_type(adt_ed: *parser.enum_decl, fidx: i32, ctx: *ir_context) 
     }
     if (first_tvi < 0) { return (i8*)0; }
     if (tuple_variant_count > 1) {
-        printf("warning: ADT subscript on multi-variant enum uses first variant layout — may be wrong for other variants\n");
+        aprint("warning: ADT subscript on multi-variant enum uses first variant layout — may be wrong for other variants\n", .{});
     }
     let mut fc: i32= (adt_ed.variant_field_counts != (i32*)0) ? adt_ed.variant_field_counts[first_tvi] : 0;
     if (fidx >= 0 && fidx < fc && adt_ed.variant_field_type_flat != (i8**)0) {
@@ -402,7 +402,7 @@ fn lvalue_elem_type(e: *parser.expr_node, ctx: *ir_context) *i8 {
         if (fidx < 0) {
             if (ctx.current_namespace != (i8*)0) {
                 let mut ns_sname: [512]i8;
-                snprintf(ns_sname, (u64)512, "%s__NS_%s", ctx.current_namespace, sname);
+                afmt(ns_sname, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, sname });
                 fidx = ctx_field_index(ctx, ns_sname, e.member_name);
                 if (fidx >= 0) { sname = lexer.str_dup(ns_sname); }
             }
@@ -600,11 +600,11 @@ fn find_func(name: *i8, ctx: *ir_context) *i8 {
 
     if (ctx.current_namespace != (i8*)0) {
         let mut ns_work: [512]i8;
-        snprintf(ns_work, (u64)512, "%s", ctx.current_namespace);
+        afmt(ns_work, (u64)512, "%s", .{ ctx.current_namespace });
         let mut ns_len: i32= (i32)strlen(ns_work);
         while (ns_len > 0) {
             let mut ns_name: [512]i8;
-            snprintf(ns_name, (u64)512, "%s__NS_%s", ns_work, name);
+            afmt(ns_name, (u64)512, "%s__NS_%s", .{ ns_work, name });
             fn_ref = sv_map_get(&ctx.global_funcs, ns_name);
             if (fn_ref != (i8*)0) { return fn_ref; }
             // Strip last __NS_ component to walk up to parent namespace
@@ -632,11 +632,11 @@ fn find_func_type(name: *i8, ctx: *ir_context) *i8 {
 
     if (ctx.current_namespace != (i8*)0) {
         let mut ns_work2: [512]i8;
-        snprintf(ns_work2, (u64)512, "%s", ctx.current_namespace);
+        afmt(ns_work2, (u64)512, "%s", .{ ctx.current_namespace });
         let mut ns_len2: i32= (i32)strlen(ns_work2);
         while (ns_len2 > 0) {
             let mut ns_name2: [512]i8;
-            snprintf(ns_name2, (u64)512, "%s__NS_%s", ns_work2, name);
+            afmt(ns_name2, (u64)512, "%s__NS_%s", .{ ns_work2, name });
             ft = st_map_get(&ctx.global_func_types, ns_name2);
             if (ft != (i8*)0) { return ft; }
             let mut split2: i32= -1;
@@ -658,7 +658,7 @@ fn find_func_type(name: *i8, ctx: *ir_context) *i8 {
         let mut ubuf2: [512]i8;
         let mut ui2: i32= 0;
         while (ui2 < ctx.using_ns_map.len) {
-            snprintf(ubuf2, (u64)512, "%s%s", ctx.using_ns_map.data[ui2].key, name);
+            afmt(ubuf2, (u64)512, "%s%s", .{ ctx.using_ns_map.data[ui2].key, name });
             ft = st_map_get(&ctx.global_func_types, ubuf2);
             if (ft != (i8*)0) { return ft; }
             ui2 = ui2 + 1;
@@ -673,13 +673,13 @@ fn build_ns_name_from_chain(e: *parser.expr_node, buf: *i8, buf_size: i32) bool 
     if (e == (parser.expr_node*)0) { return false; }
     if (e.kind == ek_identifier) {
         if (e.str_val == (i8*)0) { return false; }
-        snprintf(buf, (u64)buf_size, "%s", e.str_val);
+        afmt(buf, (u64)buf_size, "%s", .{ e.str_val });
         return true;
     }
     if (e.kind == ek_member && e.member_name != (i8*)0) {
         let mut prefix: [512]i8;
         if (!build_ns_name_from_chain(e.object, prefix, 512)) { return false; }
-        snprintf(buf, (u64)buf_size, "%s__NS_%s", prefix, e.member_name);
+        afmt(buf, (u64)buf_size, "%s__NS_%s", .{ prefix, e.member_name });
         return true;
     }
     return false;
@@ -702,6 +702,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
         st_map_set(&ctx.struct_types, "type_info_field", tif);
         st_map_set(&ctx.struct_types, "std__NS_typeinfo__NS_type_info_field", tif);
         let mut smf: struct_meta;
+        struct_meta_init(&smf);
         smf.name = "type_info_field"; smf.is_union = false; smf.is_istruc = false;
         name_list_init(&smf.field_names); type_list_init(&smf.field_types);
         bool_list_init(&smf.field_unsigned); type_list_init(&smf.field_pointee);
@@ -711,6 +712,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
         name_list_push(&smf.field_names, "align");  type_list_push(&smf.field_types, i32t); bool_list_push(&smf.field_unsigned, false); type_list_push(&smf.field_pointee, (i8*)0);
         struct_meta_vec_push(&ctx.struct_meta_tbl, smf);
         let mut smf2: struct_meta;
+        struct_meta_init(&smf2);
         smf2.name = "std__NS_typeinfo__NS_type_info_field"; smf2.is_union = false; smf2.is_istruc = false;
         name_list_init(&smf2.field_names); type_list_init(&smf2.field_types);
         bool_list_init(&smf2.field_unsigned); type_list_init(&smf2.field_pointee);
@@ -727,6 +729,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
         st_map_set(&ctx.struct_types, "type_info_method", tim);
         st_map_set(&ctx.struct_types, "std__NS_typeinfo__NS_type_info_method", tim);
         let mut smm: struct_meta;
+        struct_meta_init(&smm);
         smm.name = "type_info_method"; smm.is_union = false; smm.is_istruc = false;
         name_list_init(&smm.field_names); type_list_init(&smm.field_types);
         bool_list_init(&smm.field_unsigned); type_list_init(&smm.field_pointee);
@@ -748,6 +751,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_int, tii_flds, 2, 0);
             st_map_set(&ctx.struct_types, "type_info_int", ti_int);
             let mut sm_tii: struct_meta;
+            struct_meta_init(&sm_tii);
             sm_tii.name = "type_info_int"; sm_tii.is_union = false; sm_tii.is_istruc = false;
             name_list_init(&sm_tii.field_names); type_list_init(&sm_tii.field_types);
             bool_list_init(&sm_tii.field_unsigned); type_list_init(&sm_tii.field_pointee);
@@ -763,6 +767,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_flt, tif2_flds, 1, 0);
             st_map_set(&ctx.struct_types, "type_info_float", ti_flt);
             let mut sm_tiflt: struct_meta;
+            struct_meta_init(&sm_tiflt);
             sm_tiflt.name = "type_info_float"; sm_tiflt.is_union = false; sm_tiflt.is_istruc = false;
             name_list_init(&sm_tiflt.field_names); type_list_init(&sm_tiflt.field_types);
             bool_list_init(&sm_tiflt.field_unsigned); type_list_init(&sm_tiflt.field_pointee);
@@ -777,6 +782,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_ptr2, tip_flds, 3, 0);
             st_map_set(&ctx.struct_types, "type_info_pointer", ti_ptr2);
             let mut sm_tip: struct_meta;
+            struct_meta_init(&sm_tip);
             sm_tip.name = "type_info_pointer"; sm_tip.is_union = false; sm_tip.is_istruc = false;
             name_list_init(&sm_tip.field_names); type_list_init(&sm_tip.field_types);
             bool_list_init(&sm_tip.field_unsigned); type_list_init(&sm_tip.field_pointee);
@@ -793,6 +799,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_arr2, tia_flds, 2, 0);
             st_map_set(&ctx.struct_types, "type_info_array", ti_arr2);
             let mut sm_tia: struct_meta;
+            struct_meta_init(&sm_tia);
             sm_tia.name = "type_info_array"; sm_tia.is_union = false; sm_tia.is_istruc = false;
             name_list_init(&sm_tia.field_names); type_list_init(&sm_tia.field_types);
             bool_list_init(&sm_tia.field_unsigned); type_list_init(&sm_tia.field_pointee);
@@ -808,6 +815,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_slc, tis_flds, 2, 0);
             st_map_set(&ctx.struct_types, "type_info_slice", ti_slc);
             let mut sm_tis: struct_meta;
+            struct_meta_init(&sm_tis);
             sm_tis.name = "type_info_slice"; sm_tis.is_union = false; sm_tis.is_istruc = false;
             name_list_init(&sm_tis.field_names); type_list_init(&sm_tis.field_types);
             bool_list_init(&sm_tis.field_unsigned); type_list_init(&sm_tis.field_pointee);
@@ -823,12 +831,13 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_str, tistr_flds, 7, 0);
             st_map_set(&ctx.struct_types, "type_info_struct", ti_str);
             let mut sm_tistr: struct_meta;
+            struct_meta_init(&sm_tistr);
             sm_tistr.name = "type_info_struct"; sm_tistr.is_union = false; sm_tistr.is_istruc = false;
             name_list_init(&sm_tistr.field_names); type_list_init(&sm_tistr.field_types);
             bool_list_init(&sm_tistr.field_unsigned); type_list_init(&sm_tistr.field_pointee);
             name_list_init(&sm_tistr.field_pointee_names);
             name_list_push(&sm_tistr.field_names, "name");        type_list_push(&sm_tistr.field_types, ptrt); bool_list_push(&sm_tistr.field_unsigned, false); type_list_push(&sm_tistr.field_pointee, (i8*)0); name_list_push(&sm_tistr.field_pointee_names, (i8*)0);
-            name_list_push(&sm_tistr.field_names, "fields");      type_list_push(&sm_tistr.field_types, ptrt); bool_list_push(&sm_tistr.field_unsigned, false); type_list_push(&sm_tistr.field_pointee, (i8*)0); name_list_push(&sm_tistr.field_pointee_names, (i8*)0);
+            name_list_push(&sm_tistr.field_names, "fields");      type_list_push(&sm_tistr.field_types, ptrt); bool_list_push(&sm_tistr.field_unsigned, false); type_list_push(&sm_tistr.field_pointee, st_map_get(&ctx.struct_types, "type_info_field")); name_list_push(&sm_tistr.field_pointee_names, (i8*)0);
             name_list_push(&sm_tistr.field_names, "field_count"); type_list_push(&sm_tistr.field_types, i64t); bool_list_push(&sm_tistr.field_unsigned, false); type_list_push(&sm_tistr.field_pointee, (i8*)0); name_list_push(&sm_tistr.field_pointee_names, (i8*)0);
             name_list_push(&sm_tistr.field_names, "size_bytes");  type_list_push(&sm_tistr.field_types, i64t); bool_list_push(&sm_tistr.field_unsigned, false); type_list_push(&sm_tistr.field_pointee, (i8*)0); name_list_push(&sm_tistr.field_pointee_names, (i8*)0);
             name_list_push(&sm_tistr.field_names, "align_bytes"); type_list_push(&sm_tistr.field_types, i64t); bool_list_push(&sm_tistr.field_unsigned, false); type_list_push(&sm_tistr.field_pointee, (i8*)0); name_list_push(&sm_tistr.field_pointee_names, (i8*)0);
@@ -843,14 +852,15 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_istr, tiis_flds, 9, 0);
             st_map_set(&ctx.struct_types, "type_info_istruc", ti_istr);
             let mut sm_tiis: struct_meta;
+            struct_meta_init(&sm_tiis);
             sm_tiis.name = "type_info_istruc"; sm_tiis.is_union = false; sm_tiis.is_istruc = false;
             name_list_init(&sm_tiis.field_names); type_list_init(&sm_tiis.field_types);
             bool_list_init(&sm_tiis.field_unsigned); type_list_init(&sm_tiis.field_pointee);
             name_list_init(&sm_tiis.field_pointee_names);
             name_list_push(&sm_tiis.field_names, "name");            type_list_push(&sm_tiis.field_types, ptrt); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
-            name_list_push(&sm_tiis.field_names, "fields");          type_list_push(&sm_tiis.field_types, ptrt); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
+            name_list_push(&sm_tiis.field_names, "fields");          type_list_push(&sm_tiis.field_types, ptrt); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, st_map_get(&ctx.struct_types, "type_info_field")); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
             name_list_push(&sm_tiis.field_names, "field_count");     type_list_push(&sm_tiis.field_types, i64t); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
-            name_list_push(&sm_tiis.field_names, "methods");         type_list_push(&sm_tiis.field_types, ptrt); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
+            name_list_push(&sm_tiis.field_names, "methods");         type_list_push(&sm_tiis.field_types, ptrt); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, st_map_get(&ctx.struct_types, "type_info_method")); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
             name_list_push(&sm_tiis.field_names, "method_count");    type_list_push(&sm_tiis.field_types, i64t); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
             name_list_push(&sm_tiis.field_names, "interfaces");      type_list_push(&sm_tiis.field_types, ptrt); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
             name_list_push(&sm_tiis.field_names, "interface_count"); type_list_push(&sm_tiis.field_types, i64t); bool_list_push(&sm_tiis.field_unsigned, false); type_list_push(&sm_tiis.field_pointee, (i8*)0); name_list_push(&sm_tiis.field_pointee_names, (i8*)0);
@@ -865,6 +875,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_uni, tiu_flds, 5, 0);
             st_map_set(&ctx.struct_types, "type_info_union", ti_uni);
             let mut sm_tiu: struct_meta;
+            struct_meta_init(&sm_tiu);
             sm_tiu.name = "type_info_union"; sm_tiu.is_union = false; sm_tiu.is_istruc = false;
             name_list_init(&sm_tiu.field_names); type_list_init(&sm_tiu.field_types);
             bool_list_init(&sm_tiu.field_unsigned); type_list_init(&sm_tiu.field_pointee);
@@ -883,6 +894,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_enu, tie_flds, 4, 0);
             st_map_set(&ctx.struct_types, "type_info_enum", ti_enu);
             let mut sm_tie: struct_meta;
+            struct_meta_init(&sm_tie);
             sm_tie.name = "type_info_enum"; sm_tie.is_union = false; sm_tie.is_istruc = false;
             name_list_init(&sm_tie.field_names); type_list_init(&sm_tie.field_types);
             bool_list_init(&sm_tie.field_unsigned); type_list_init(&sm_tie.field_pointee);
@@ -900,6 +912,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_ade, tiade_flds, 4, 0);
             st_map_set(&ctx.struct_types, "type_info_adt_enum", ti_ade);
             let mut sm_tiade: struct_meta;
+            struct_meta_init(&sm_tiade);
             sm_tiade.name = "type_info_adt_enum"; sm_tiade.is_union = false; sm_tiade.is_istruc = false;
             name_list_init(&sm_tiade.field_names); type_list_init(&sm_tiade.field_types);
             bool_list_init(&sm_tiade.field_unsigned); type_list_init(&sm_tiade.field_pointee);
@@ -917,6 +930,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_iface, tiiface_flds, 3, 0);
             st_map_set(&ctx.struct_types, "type_info_interface", ti_iface);
             let mut sm_tiiface: struct_meta;
+            struct_meta_init(&sm_tiiface);
             sm_tiiface.name = "type_info_interface"; sm_tiiface.is_union = false; sm_tiiface.is_istruc = false;
             name_list_init(&sm_tiiface.field_names); type_list_init(&sm_tiiface.field_types);
             bool_list_init(&sm_tiiface.field_unsigned); type_list_init(&sm_tiiface.field_pointee);
@@ -933,6 +947,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_fn2, tifn_flds, 7, 0);
             st_map_set(&ctx.struct_types, "type_info_fn", ti_fn2);
             let mut sm_tifn: struct_meta;
+            struct_meta_init(&sm_tifn);
             sm_tifn.name = "type_info_fn"; sm_tifn.is_union = false; sm_tifn.is_istruc = false;
             name_list_init(&sm_tifn.field_names); type_list_init(&sm_tifn.field_types);
             bool_list_init(&sm_tifn.field_unsigned); type_list_init(&sm_tifn.field_pointee);
@@ -953,6 +968,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_eu, tieu_flds, 1, 0);
             st_map_set(&ctx.struct_types, "type_info_error_union", ti_eu);
             let mut sm_tieu: struct_meta;
+            struct_meta_init(&sm_tieu);
             sm_tieu.name = "type_info_error_union"; sm_tieu.is_union = false; sm_tieu.is_istruc = false;
             name_list_init(&sm_tieu.field_names); type_list_init(&sm_tieu.field_types);
             bool_list_init(&sm_tieu.field_unsigned); type_list_init(&sm_tieu.field_pointee);
@@ -967,6 +983,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             LLVMStructSetBody(ti_opt, tiopt_flds, 1, 0);
             st_map_set(&ctx.struct_types, "type_info_optional", ti_opt);
             let mut sm_tiopt: struct_meta;
+            struct_meta_init(&sm_tiopt);
             sm_tiopt.name = "type_info_optional"; sm_tiopt.is_union = false; sm_tiopt.is_istruc = false;
             name_list_init(&sm_tiopt.field_names); type_list_init(&sm_tiopt.field_types);
             bool_list_init(&sm_tiopt.field_unsigned); type_list_init(&sm_tiopt.field_pointee);
@@ -989,6 +1006,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
         let mut sni: i32= 0;
         while (sni < 2) {
             let mut smti: struct_meta;
+            struct_meta_init(&smti);
             smti.name = smti_names[sni]; smti.is_union = false; smti.is_istruc = false;
             name_list_init(&smti.field_names); type_list_init(&smti.field_types);
             bool_list_init(&smti.field_unsigned); type_list_init(&smti.field_pointee);
@@ -1047,7 +1065,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
         while (vi2 < 23) {
             // Register tag constant: type_info__VarName and type_info__NS_VarName
             let mut tag_qname: [512]i8;
-            snprintf(tag_qname, (u64)512, "type_info__%s", var_names[vi2]);
+            afmt(tag_qname, (u64)512, "type_info__%s", .{ var_names[vi2] });
             let mut tag_gv: *i8= LLVMAddGlobal(ctx.llvm_mod, i32t, tag_qname);
             LLVMSetInitializer(tag_gv, LLVMConstInt(i32t, (u64)vi2, 0));
             LLVMSetGlobalConstant(tag_gv, 1);
@@ -1055,7 +1073,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
             sv_map_set(&ctx.global_vars, lexer.str_dup(tag_qname), tag_gv);
             sv_map_set(&ctx.global_vars, var_names[vi2], tag_gv);
             let mut tag_ns_qname: [512]i8;
-            snprintf(tag_ns_qname, (u64)512, "type_info__NS_%s", var_names[vi2]);
+            afmt(tag_ns_qname, (u64)512, "type_info__NS_%s", .{ var_names[vi2] });
             sv_map_set(&ctx.global_vars, lexer.str_dup(tag_ns_qname), tag_gv);
             // Register variant alias struct type in ctx.struct_types
             if (pay_names[vi2] != (i8*)0) {
@@ -1066,6 +1084,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
                     let mut base_sm: *struct_meta= struct_meta_find(&ctx.struct_meta_tbl, pay_names[vi2]);
                     if (base_sm != (struct_meta*)0) {
                         let mut alias_sm: struct_meta;
+                        struct_meta_init(&alias_sm);
                         alias_sm.name = lexer.str_dup(tag_qname);
                         alias_sm.is_union = base_sm.is_union;
                         alias_sm.is_istruc = base_sm.is_istruc;
@@ -1107,7 +1126,7 @@ fn ensure_typeinfo_types(ctx: *ir_context) void {
 }
 
 fn typeinfo_type_name(t: *parser.type_node, buf: *i8, buf_size: i32) void {
-    if (t == (parser.type_node*)0) { snprintf(buf, (u64)buf_size, "void"); return; }
+    if (t == (parser.type_node*)0) { afmt(buf, (u64)buf_size, "void", .{}); return; }
     // Array type: generates name like "i32_5arr"
     if (t.array_size_ptr != (i8*)0) {
         let mut sz_expr: *parser.expr_node= (parser.expr_node*)t.array_size_ptr;
@@ -1117,29 +1136,29 @@ fn typeinfo_type_name(t: *parser.type_node, buf: *i8, buf_size: i32) void {
         base_tn.array_size_ptr = (i8*)0;
         let mut base_buf: [128]i8;
         typeinfo_type_name(&base_tn, base_buf, 128);
-        snprintf(buf, (u64)buf_size, "%s_%darr", base_buf, n);
+        afmt(buf, (u64)buf_size, "%s_%darr", .{ base_buf, n });
         return;
     }
     // Function pointer type
     if (t.is_func_ptr) {
-        snprintf(buf, (u64)buf_size, "fnptr");
+        afmt(buf, (u64)buf_size, "fnptr", .{});
         return;
     }
     if (t.is_primitive && t.has_prim) {
         let mut p: i32= t.prim;
         let mut bw: u32= t.bit_width;
         let mut bits: i32= (i32)(bw == 0 ? (u32)32 : bw);
-        if (p == (i32)void_t)    { snprintf(buf, (u64)buf_size, "void"); }
-        else if (p == (i32)char_t)    { snprintf(buf, (u64)buf_size, "i8"); }
-        else if (p == (i32)arb_int)   { snprintf(buf, (u64)buf_size, "i%d", bits); }
-        else if (p == (i32)arb_uint)  { snprintf(buf, (u64)buf_size, "u%d", bits); }
-        else if (p == (i32)arb_bool)  { snprintf(buf, (u64)buf_size, "b%d", bits); }
-        else if (p == (i32)arb_float) { snprintf(buf, (u64)buf_size, "f%d", bits); }
-        else { snprintf(buf, (u64)buf_size, "prim"); }
+        if (p == (i32)void_t)    { afmt(buf, (u64)buf_size, "void", .{}); }
+        else if (p == (i32)char_t)    { afmt(buf, (u64)buf_size, "i8", .{}); }
+        else if (p == (i32)arb_int)   { afmt(buf, (u64)buf_size, "i%d", .{ bits }); }
+        else if (p == (i32)arb_uint)  { afmt(buf, (u64)buf_size, "u%d", .{ bits }); }
+        else if (p == (i32)arb_bool)  { afmt(buf, (u64)buf_size, "b%d", .{ bits }); }
+        else if (p == (i32)arb_float) { afmt(buf, (u64)buf_size, "f%d", .{ bits }); }
+        else { afmt(buf, (u64)buf_size, "prim", .{}); }
     } else if (t.name != (i8*)0) {
-        snprintf(buf, (u64)buf_size, "%s", t.name);
+        afmt(buf, (u64)buf_size, "%s", .{ t.name });
     } else {
-        snprintf(buf, (u64)buf_size, "unknown");
+        afmt(buf, (u64)buf_size, "unknown", .{});
     }
     let mut pd: i32= t.pointer_depth;
     while (pd > 0) {
@@ -1252,13 +1271,71 @@ fn typeinfo_init_tag_only(ctx: *ir_context, gv: *i8, tag: i32) void {
     LLVMDisposeBuilder(b);
 }
 
-fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
+// Turn a resolved LLVM type back into a type_node.
+//
+// Needed because @typeinfo works from the AST type, while the only thing known about an
+// `anytype` parameter (or any local) at this point is its LLVM type. Only the shapes that
+// round-trip unambiguously are produced; anything else returns null and the caller keeps
+// the original node.
+fn type_node_from_llvm(lt: *i8, ctx: *ir_context) *parser.type_node {
+    if (lt == (i8*)0) { return (parser.type_node*)0; }
+    let mut k: i32= LLVMGetTypeKind(lt);
+    let mut t: *parser.type_node= parser.alloc_type_node();
+    if (k == LLVMStructTypeKind) {
+        let mut sn: *i8= LLVMGetStructName(lt);
+        if (sn == (i8*)0) { return (parser.type_node*)0; }
+        t.name         = lexer.str_dup(sn);
+        t.is_primitive = false;
+        return t;
+    }
+    if (k == LLVMIntegerTypeKind) {
+        let mut bw: u32= LLVMGetIntTypeWidth(lt);
+        t.is_primitive = true; t.has_prim = true;
+        t.prim         = (i32)arb_int;
+        t.bit_width    = bw;
+        t.is_signed    = true;
+        return t;
+    }
+    if (k == LLVMDoubleTypeKind || k == LLVMFloatTypeKind) {
+        t.is_primitive = true; t.has_prim = true;
+        t.prim         = (i32)arb_float;
+        t.bit_width    = (k == LLVMDoubleTypeKind) ? 64u : 32u;
+        return t;
+    }
+    if (k == LLVMPointerTypeKind) {
+        t.is_primitive   = true; t.has_prim = true;
+        t.prim           = (i32)void_t;
+        t.pointer_depth  = 1;
+        return t;
+    }
+    return (parser.type_node*)0;
+}
+
+// Resolve `@typeof(expr)` in type position to the expression's actual type.
+//
+// The parser records is_typeof/typeof_expr and marks the node is_auto, but nothing ever
+// consumed it, so `@typeinfo(@typeof(x))` silently reported Void for every x. Resolution
+// covers the case that matters: an identifier bound to an anytype parameter or a local.
+fn resolve_typeof_type(t: *parser.type_node, ctx: *ir_context) *parser.type_node {
+    if (t == (parser.type_node*)0 || !t.is_typeof) { return t; }
+    let mut te: *parser.expr_node= (parser.expr_node*)t.typeof_expr;
+    if (te == (parser.expr_node*)0 || te.kind != ek_identifier || te.str_val == (i8*)0) { return t; }
+    // anytype parameters are bound to their instantiated type at the call site.
+    let mut lt: *i8= st_map_get(&ctx.anytype_param_bindings, te.str_val);
+    if (lt == (i8*)0) { lt = ctx_lookup_local_type(ctx, te.str_val); }
+    if (lt == (i8*)0) { return t; }
+    let mut rt: *parser.type_node= type_node_from_llvm(lt, ctx);
+    return (rt != (parser.type_node*)0) ? rt : t;
+}
+
+fn emit_typeinfo_global(t_in: *parser.type_node, ctx: *ir_context) *i8 {
+    let mut t: *parser.type_node= resolve_typeof_type(t_in, ctx);
     if (t == (parser.type_node*)0) { return (i8*)0; }
 
     let mut tname: [256]i8;
     typeinfo_type_name(t, tname, 256);
     let mut gname: [512]i8;
-    snprintf(gname, (u64)512, "__typeinfo_%s", tname);
+    afmt(gname, (u64)512, "__typeinfo_%s", .{ tname });
 
     let mut existing_ti: *i8= LLVMGetNamedGlobal(ctx.llvm_mod, gname);
     if (existing_ti != (i8*)0) { return existing_ti; }
@@ -1369,7 +1446,7 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                 if (enum_d.is_adt) {
                     // AdtEnum variant (tag=16): type_info_adt_enum { name, variants, variant_count, is_exhaustive }
                     let mut name_gname2: [512]i8;
-                    snprintf(name_gname2, (u64)512, "__typeinfo_nm_%s", tname);
+                    afmt(name_gname2, (u64)512, "__typeinfo_nm_%s", .{ tname });
                     let mut name_gv2: *i8= make_typeinfo_str_global(t.name, name_gname2, ctx);
                     typeinfo_init_store_ptr(ctx, gv, 16, 0, name_gv2);
                     typeinfo_init_store_i64(ctx, gv, 16, 16, (i64)enum_d.variants_len);
@@ -1377,7 +1454,7 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                 } else {
                     // Simple Enum variant (tag=15): type_info_enum { name, fields, field_count, is_exhaustive }
                     let mut name_gname3: [512]i8;
-                    snprintf(name_gname3, (u64)512, "__typeinfo_nm_%s", tname);
+                    afmt(name_gname3, (u64)512, "__typeinfo_nm_%s", .{ tname });
                     let mut name_gv3: *i8= make_typeinfo_str_global(t.name, name_gname3, ctx);
                     typeinfo_init_store_ptr(ctx, gv, 15, 0, name_gv3);
                     typeinfo_init_store_i64(ctx, gv, 15, 16, (i64)enum_d.variants_len);
@@ -1389,17 +1466,41 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                 if (sm_ti != (struct_meta*)0) {
                     let mut tag_v: i32= sm_ti.is_istruc ? 13 : 12;  // Istruc=13, Struct=12
                     let mut field_count_v: i64= (i64)sm_ti.field_names.len;
-                    // Compute size by summing field sizes
+                    // Rebuild the struct's layout from its field types and ask the data
+                    // layout for the real numbers. Summing field sizes ignores alignment
+                    // padding, so { ptr, i32, i64 } reported size 20 / offsets 0,8,12
+                    // where the layout is 24 / 0,8,16 — every consumer reading a field at
+                    // the reported offset landed in the middle of it.
+                    let mut td_ti: *i8= LLVMGetModuleDataLayout(ctx.llvm_mod);
+                    let mut host_st: *i8= (i8*)0;
+                    if (sm_ti.field_types.len > 0 && !sm_ti.is_union) {
+                        let mut ok_lt: bool= true;
+                        let mut ck: i32= 0;
+                        while (ck < sm_ti.field_types.len) {
+                            if (sm_ti.field_types.data[ck] == (i8*)0) { ok_lt = false; }
+                            ck = ck + 1;
+                        }
+                        if (ok_lt) {
+                            host_st = LLVMStructTypeInContext(ctx.llvm_ctx, sm_ti.field_types.data,
+                                                              (u32)sm_ti.field_types.len, 0);
+                        }
+                    }
                     let mut size_v: i64= 0;
-                    let mut sfi2: i32= 0;
-                    while (sfi2 < sm_ti.field_types.len) {
-                        let mut fty2: *i8= sm_ti.field_types.data[sfi2];
-                        if (fty2 != (i8*)0) { size_v = size_v + (i64)llvm_type_byte_size(fty2); }
-                        sfi2 = sfi2 + 1;
+                    let mut align_v: i64= 0;
+                    if (host_st != (i8*)0 && td_ti != (i8*)0) {
+                        size_v  = (i64)LLVMABISizeOfType(td_ti, host_st);
+                        align_v = (i64)LLVMABIAlignmentOfType(td_ti, host_st);
+                    } else {
+                        let mut sfi2: i32= 0;
+                        while (sfi2 < sm_ti.field_types.len) {
+                            let mut fty2: *i8= sm_ti.field_types.data[sfi2];
+                            if (fty2 != (i8*)0) { size_v = size_v + (i64)llvm_type_byte_size(fty2); }
+                            sfi2 = sfi2 + 1;
+                        }
                     }
                     // Name global
                     let mut name_gname4: [512]i8;
-                    snprintf(name_gname4, (u64)512, "__typeinfo_nm_%s", tname);
+                    afmt(name_gname4, (u64)512, "__typeinfo_nm_%s", .{ tname });
                     let mut name_gv4: *i8= make_typeinfo_str_global(t.name, name_gname4, ctx);
                     // Build type_info_field array for fields
                     let mut fields_gv: *i8= (i8*)0;
@@ -1409,11 +1510,22 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                         let mut fci2: i32= 0;
                         while (fci2 < (i32)field_count_v) {
                             let mut fn_gname2: [512]i8;
-                            snprintf(fn_gname2, (u64)512, "__typeinfo_fn_%s_%d", tname, fci2);
+                            afmt(fn_gname2, (u64)512, "__typeinfo_fn_%s_%d", .{ tname, fci2 });
                             let mut fn_gv2: *i8= make_typeinfo_str_global(sm_ti.field_names.data[fci2], fn_gname2, ctx);
                             let mut fty3: *i8= (fci2 < sm_ti.field_types.len) ? sm_ti.field_types.data[fci2] : (i8*)0;
-                            let mut fsize2: i32= (fty3 != (i8*)0) ? (i32)llvm_type_byte_size(fty3) : 0;
-                            let mut falign2: i32= (fsize2 > 0) ? fsize2 : 1;
+                            let mut fsize2: i32= 0;
+                            let mut falign2: i32= 1;
+                            if (fty3 != (i8*)0 && td_ti != (i8*)0) {
+                                fsize2  = (i32)LLVMABISizeOfType(td_ti, fty3);
+                                falign2 = (i32)LLVMABIAlignmentOfType(td_ti, fty3);
+                            } else if (fty3 != (i8*)0) {
+                                fsize2  = (i32)llvm_type_byte_size(fty3);
+                                falign2 = (fsize2 > 0) ? fsize2 : 1;
+                            }
+                            if (falign2 <= 0) { falign2 = 1; }
+                            if (td_ti != (i8*)0 && host_st != (i8*)0 && fci2 < sm_ti.field_types.len) {
+                                byte_off2 = (i32)LLVMOffsetOfElement(td_ti, host_st, (u32)fci2);
+                            }
                             let mut tif_flds2: [4]*i8;
                             tif_flds2[0] = fn_gv2;
                             tif_flds2[1] = LLVMConstInt(i32ty, (u64)byte_off2, 1);
@@ -1426,7 +1538,7 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                         let mut arr_const2: *i8= LLVMConstArray(tif_ty, fld_consts2, (u32)field_count_v);
                         arc_free((i8*)fld_consts2);
                         let mut flds_gname2: [512]i8;
-                        snprintf(flds_gname2, (u64)512, "__typeinfo_flds_%s", tname);
+                        afmt(flds_gname2, (u64)512, "__typeinfo_flds_%s", .{ tname });
                         let mut arr_ty2: *i8= LLVMTypeOf(arr_const2);
                         let mut arr_gv2: *i8= LLVMAddGlobal(ctx.llvm_mod, arr_ty2, flds_gname2);
                         LLVMSetInitializer(arr_gv2, arr_const2);
@@ -1439,7 +1551,7 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                     let mut tim_ty2: *i8= st_map_get(&ctx.struct_types, "type_info_method");
                     if (tim_ty2 != (i8*)0 && t.name != (i8*)0) {
                         let mut prefix2: [256]i8;
-                        snprintf(prefix2, (u64)256, "%s__NS_", t.name);
+                        afmt(prefix2, (u64)256, "%s__NS_", .{ t.name });
                         let mut prefix_len2: i32= (i32)strlen(prefix2);
                         let mut meth_cap2: i32= 32;
                         let mut meth_consts2: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)meth_cap2);
@@ -1457,7 +1569,7 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                                     let mut ret_ty_mi2: *i8= (fn_ty_mi2 != (i8*)0) ? LLVMGetReturnType(fn_ty_mi2) : (i8*)0;
                                     let mut ret_kind_mi2: i32= (ret_ty_mi2 != (i8*)0) ? (i32)LLVMGetTypeKind(ret_ty_mi2) : 0;
                                     let mut mn_gname2: [512]i8;
-                                    snprintf(mn_gname2, (u64)512, "__typeinfo_mn_%s_%d", tname, mi2);
+                                    afmt(mn_gname2, (u64)512, "__typeinfo_mn_%s_%d", .{ tname, mi2 });
                                     let mut mn_gv2: *i8= make_typeinfo_str_global(method_base2, mn_gname2, ctx);
                                     let mut tim_flds2: [3]*i8;
                                     tim_flds2[0] = mn_gv2;
@@ -1477,7 +1589,7 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                         if (mi2 > 0) {
                             let mut marr_const2: *i8= LLVMConstArray(tim_ty2, meth_consts2, (u32)mi2);
                             let mut meth_gname2: [512]i8;
-                            snprintf(meth_gname2, (u64)512, "__typeinfo_meths_%s", tname);
+                            afmt(meth_gname2, (u64)512, "__typeinfo_meths_%s", .{ tname });
                             let mut marr_ty2: *i8= LLVMTypeOf(marr_const2);
                             let mut marr_gv2: *i8= LLVMAddGlobal(ctx.llvm_mod, marr_ty2, meth_gname2);
                             LLVMSetInitializer(marr_gv2, marr_const2);
@@ -1500,11 +1612,13 @@ fn emit_typeinfo_global(t: *parser.type_node, ctx: *ir_context) *i8 {
                         if (methods_gv != (i8*)0) { typeinfo_init_store_ptr(ctx, gv, 13, 24, methods_gv); }
                         typeinfo_init_store_i64(ctx, gv, 13, 32, method_count_v);
                         typeinfo_init_store_i64(ctx, gv, 13, 56, size_v);
+                        typeinfo_init_store_i64(ctx, gv, 13, 64, align_v);
                     } else {
                         typeinfo_init_store_ptr(ctx, gv, 12, 0,  name_gv4);
                         if (fields_gv != (i8*)0) { typeinfo_init_store_ptr(ctx, gv, 12, 8, fields_gv); }
                         typeinfo_init_store_i64(ctx, gv, 12, 16, field_count_v);
                         typeinfo_init_store_i64(ctx, gv, 12, 24, size_v);
+                        typeinfo_init_store_i64(ctx, gv, 12, 32, align_v);
                     }
                 } else {
                     // Unknown named type: use Void
@@ -1527,11 +1641,11 @@ fn find_global_var(name: *i8, ctx: *ir_context) *i8 {
 
     if (ctx.current_namespace != (i8*)0) {
         let mut ns_work: [512]i8;
-        snprintf(ns_work, (u64)512, "%s", ctx.current_namespace);
+        afmt(ns_work, (u64)512, "%s", .{ ctx.current_namespace });
         let mut ns_len: i32= (i32)strlen(ns_work);
         while (ns_len > 0) {
             let mut ns_name: [512]i8;
-            snprintf(ns_name, (u64)512, "%s__NS_%s", ns_work, name);
+            afmt(ns_name, (u64)512, "%s__NS_%s", .{ ns_work, name });
             gv = sv_map_get(&ctx.global_vars, ns_name);
             if (gv != (i8*)0) { return gv; }
             let mut split: i32= -1;
@@ -1867,7 +1981,7 @@ fn visit_lvalue(e: *parser.expr_node, ctx: *ir_context) *i8 {
         if (field_idx < 0) {
             if (ctx.current_namespace != (i8*)0) {
                 let mut ns_sname: [512]i8;
-                snprintf(ns_sname, (u64)512, "%s__NS_%s", ctx.current_namespace, sname);
+                afmt(ns_sname, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, sname });
                 field_idx = ctx_field_index(ctx, ns_sname, e.member_name);
                 if (field_idx >= 0) {
                     sname = lexer.str_dup(ns_sname);
@@ -1979,7 +2093,7 @@ fn coerce_args_full(fn_ty: *i8, args: **i8, nargs: i32, ctx: *ir_context) void {
                     let mut sname_ca: *i8= LLVMGetStructName(src_ty_ca);
                     let mut iface_key_ca: [512]i8;
                     if (sname_ca != (i8*)0) {
-                        snprintf(iface_key_ca, (u64)512, "%s__IFACE__%s", sname_ca, pt_sname);
+                        afmt(iface_key_ca, (u64)512, "%s__IFACE__%s", .{ sname_ca, pt_sname });
                     } else {
                         iface_key_ca[0] = 0;
                     }
@@ -2038,7 +2152,7 @@ fn visit_binary(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 else if (bop == bop_gte)  { op_str = "operator>="; }
                 if (op_str != (i8*)0) {
                     let mut op_fn_name: [512]i8;
-                    snprintf(op_fn_name, (u64)512, "%s__NS_%s", sname, op_str);
+                    afmt(op_fn_name, (u64)512, "%s__NS_%s", .{ sname, op_str });
                     let mut fn_ref: *i8= sv_map_get(&ctx.global_funcs,      op_fn_name);
                     let mut fn_ty: *i8= st_map_get(&ctx.global_func_types, op_fn_name);
                     if (fn_ref != (i8*)0 && fn_ty != (i8*)0) {
@@ -2136,8 +2250,7 @@ fn visit_binary(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 let mut op_ic: i32= e.bop;
                 if (op_ic == bop_add || op_ic == bop_sub || op_ic == bop_mul ||
                         op_ic == bop_div || op_ic == bop_mod) {
-                    printf("error at line %llu: implicit integer cast: cannot mix %d-bit and %d-bit integers in arithmetic without explicit cast (use 'as')\n",
-                           e.line, lw, rw);
+                    aprint("error at line %llu: implicit integer cast: cannot mix %d-bit and %d-bit integers in arithmetic without explicit cast (use 'as')\n", .{ e.line, lw, rw });
                     ctx.had_error = true;
                 }
             }
@@ -2361,8 +2474,7 @@ fn visit_assign(e: *parser.expr_node, ctx: *ir_context) *i8 {
         if (lhs_e.kind == ek_unary && lhs_e.uop == uop_deref &&
                 lhs_e.operand != (parser.expr_node*)0 && lhs_e.operand.kind == ek_identifier) {
             if (ctx_is_local_const_ptr(ctx, lhs_e.operand.str_val)) {
-                printf("error at line %llu: write through *const pointer '%s'\n",
-                       (u64)e.line, lhs_e.operand.str_val);
+                aprint("error at line %llu: write through *const pointer '%s'\n", .{ (u64)e.line, lhs_e.operand.str_val });
                 ctx.had_error = true;
                 return (i8*)0;
             }
@@ -2371,8 +2483,7 @@ fn visit_assign(e: *parser.expr_node, ctx: *ir_context) *i8 {
         if (lhs_e.kind == ek_member && lhs_e.object != (parser.expr_node*)0 &&
                 lhs_e.object.kind == ek_identifier) {
             if (ctx_is_local_const_ptr(ctx, lhs_e.object.str_val)) {
-                printf("error at line %llu: write to field through *const pointer '%s'\n",
-                       (u64)e.line, lhs_e.object.str_val);
+                aprint("error at line %llu: write to field through *const pointer '%s'\n", .{ (u64)e.line, lhs_e.object.str_val });
                 ctx.had_error = true;
                 return (i8*)0;
             }
@@ -2381,8 +2492,7 @@ fn visit_assign(e: *parser.expr_node, ctx: *ir_context) *i8 {
         if (lhs_e.kind == ek_subscript && lhs_e.object != (parser.expr_node*)0 &&
                 lhs_e.object.kind == ek_identifier) {
             if (ctx_is_local_const_ptr(ctx, lhs_e.object.str_val)) {
-                printf("error at line %llu: write through *const pointer subscript '%s'\n",
-                       (u64)e.line, lhs_e.object.str_val);
+                aprint("error at line %llu: write through *const pointer subscript '%s'\n", .{ (u64)e.line, lhs_e.object.str_val });
                 ctx.had_error = true;
                 return (i8*)0;
             }
@@ -2530,6 +2640,32 @@ fn emit_sync_builtin(name: *i8, e: *parser.expr_node, ctx: *ir_context) *i8 {
     return (i8*)0;
 }
 
+// A call argument denotes a *type* (comptime type parameter) rather than a value.
+// Primitives lex into ek_cstype; a user-defined type arrives as a plain identifier
+// that happens to name a registered struct/istruc/enum, so both must be recognised.
+fn ct_arg_is_type(a: *parser.expr_node, ctx: *ir_context) bool {
+    if (a == (parser.expr_node*)0) { return false; }
+    if (a.kind == ek_cstype) { return true; }
+    if (a.kind == ek_identifier && a.str_val != (i8*)0) {
+        if (st_map_get(&ctx.struct_types, a.str_val) != (i8*)0) { return true; }
+        if (sv_map_get(&ctx.adt_enum_decls, a.str_val) != (i8*)0) { return true; }
+    }
+    return false;
+}
+
+// The LLVM type such an argument refers to, or null.
+fn ct_arg_llvm_type(a: *parser.expr_node, ctx: *ir_context) *i8 {
+    if (a == (parser.expr_node*)0) { return (i8*)0; }
+    if (a.kind == ek_cstype) {
+        if (a.cast_type != (parser.type_node*)0) { return llvm_type_of(a.cast_type, ctx); }
+        return (i8*)0;
+    }
+    if (a.kind == ek_identifier && a.str_val != (i8*)0) {
+        return st_map_get(&ctx.struct_types, a.str_val);
+    }
+    return (i8*)0;
+}
+
 fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
     if (e.callee == (parser.expr_node*)0) { return (i8*)0; }
 
@@ -2601,7 +2737,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                         let mut slot_ptr: *i8= LLVMBuildStructGEP2(ctx.llvm_builder, iface_vtbl_ty, iface_vtbl, (u32)vslot_iv, "slot_p");
                         let mut fn_ptr_iv: *i8= LLVMBuildLoad2(ctx.llvm_builder, ptr_t_iv, slot_ptr, "fn_p");
                         let mut iface_fn_name: [512]i8;
-                        snprintf(iface_fn_name, (u64)512, "%s__NS_%s", struct_name, method_name);
+                        afmt(iface_fn_name, (u64)512, "%s__NS_%s", .{ struct_name, method_name });
                         let mut iface_fn_ty: *i8= st_map_get(&ctx.global_func_types, iface_fn_name);
                         if (iface_fn_ty != (i8*)0) {
                             let mut nargs_iv: i32= e.args_len + 1;
@@ -2620,16 +2756,100 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 }
             }
 
+            // A concrete allocator (`let a: MyAlloc; a.mmap(n)`) presents the same API as
+            // a `&memstr`: rewrite the receiver to memstr's fat pointer so the helper
+            // layer applies. The type's own methods are the raw slot ABI (they take an
+            // alignment and the metadata pointer) and are an implementation detail.
+            //
+            // Inside the allocator's own methods this must NOT happen: there `self` is the
+            // metadata pointer and `self.mmap(align, n)` is the raw slot being implemented.
+            // Coercing it would route the allocator back through the helper that calls it,
+            // i.e. straight into infinite recursion.
+            let mut ms_own_method: bool= ctx.current_namespace != (i8*)0 && struct_name != (i8*)0 &&
+                                          strcmp(ctx.current_namespace, struct_name) == 0;
+            if (ctx.memstr_fat_type != (i8*)0 && struct_name != (i8*)0 && !ms_own_method &&
+                    strcmp(struct_name, "memstr") != 0) {
+                let mut ms_vtbl_g: *i8= sv_map_get(&ctx.memstr_vtables, struct_name);
+                if (ms_vtbl_g != (i8*)0) {
+                    let mut ms_mname: [512]i8;
+                    afmt(ms_mname, (u64)512, "memstr__NS_%s", .{ method_name });
+                    if (sv_map_get(&ctx.global_funcs, ms_mname) != (i8*)0 ||
+                        sv_map_get(&ctx.generic_funcs, ms_mname) != (i8*)0) {
+                        let mut fat_tmp: *i8= LLVMBuildAlloca(ctx.llvm_builder, ctx.memstr_fat_type, "ms_recv");
+                        let mut fat_v0: *i8= LLVMGetUndef(ctx.memstr_fat_type);
+                        fat_v0 = LLVMBuildInsertValue(ctx.llvm_builder, fat_v0, obj_ptr, 0, "ms_d");
+                        fat_v0 = LLVMBuildInsertValue(ctx.llvm_builder, fat_v0, ms_vtbl_g, 1, "ms_v");
+                        LLVMBuildStore(ctx.llvm_builder, fat_v0, fat_tmp);
+                        obj_ptr     = fat_tmp;
+                        struct_name = "memstr";
+                    }
+                }
+            }
+
             let mut mt_name: [512]i8;
-            snprintf(mt_name, (u64)512, "%s__MT_%s", struct_name, method_name);
+            afmt(mt_name, (u64)512, "%s__MT_%s", .{ struct_name, method_name });
             let mut fn_ref: *i8= sv_map_get(&ctx.global_funcs,      mt_name);
             let mut fn_ty: *i8= st_map_get(&ctx.global_func_types, mt_name);
 
             // Fallback: try __NS_ prefix (istruc/namespace methods)
             if (fn_ref == (i8*)0 || fn_ty == (i8*)0) {
-                snprintf(mt_name, (u64)512, "%s__NS_%s", struct_name, method_name);
+                afmt(mt_name, (u64)512, "%s__NS_%s", .{ struct_name, method_name });
                 fn_ref    = sv_map_get(&ctx.global_funcs,      mt_name);
                 fn_ty = st_map_get(&ctx.global_func_types, mt_name);
+            }
+
+            // Generic method (`fn m(self: *T, comptime U: type) ...`): the prototype was
+            // deferred for lazy monomorphization, so nothing is in global_funcs yet.
+            // Instantiate it for this call's type arguments, then resolve again.
+            if (fn_ref == (i8*)0 || fn_ty == (i8*)0) {
+                let mut gm_ptr: *i8= sv_map_get(&ctx.generic_funcs, mt_name);
+                if (gm_ptr != (i8*)0) {
+                    let mut gm: *parser.func_decl= (parser.func_decl*)gm_ptr;
+                    let mut gm_mono: [512]i8;
+                    let mut gm_off: i32= afmt(gm_mono, (u64)512, "%s__mono", .{ mt_name });
+                    let mut gm_ok: bool= true;
+                    let mut gm_tp: i32= 0;
+                    let mut gm_i: i32= 0;
+                    while (gm_i < e.args_len && gm_tp < gm.type_params_len) {
+                        if (ct_arg_is_type(e.args[gm_i], ctx)) {
+                            let mut gm_llvm: *i8= ct_arg_llvm_type(e.args[gm_i], ctx);
+                            if (gm_llvm == (i8*)0) { gm_ok = false; }
+                            else {
+                                st_map_set(&ctx.type_param_bindings, gm.type_params[gm_tp], gm_llvm);
+                                let mut gm_sfx: *i8= mangle_llvm_type(gm_llvm);
+                                let mut gm_tmp: [512]i8;
+                                afmt(gm_tmp, (u64)512, "%s_%s", .{ gm_mono, gm_sfx });
+                                afmt(gm_mono, (u64)512, "%s", .{ gm_tmp });
+                                arc_free(gm_sfx);
+                                gm_tp = gm_tp + 1;
+                            }
+                        }
+                        gm_i = gm_i + 1;
+                    }
+                    if (gm_ok && gm_tp == gm.type_params_len) {
+                        let mut gm_dup: *i8= lexer.str_dup(gm_mono);
+                        if (sv_map_get(&ctx.global_funcs, gm_dup) == (i8*)0) {
+                            // Emit the instance under its mangled name with the generic
+                            // guard suppressed, exactly as the free-function path does.
+                            let mut gm_on: *i8= gm.name;
+                            let mut gm_om: *i8= gm.mangled_name;
+                            let mut gm_otl: i32= gm.type_params_len;
+                            let mut gm_sf: *i8= ctx.current_func;
+                            let mut gm_sft: *i8= ctx.current_func_type;
+                            let mut gm_srt: *i8= ctx.current_ret_type;
+                            let mut gm_sbb: *i8= LLVMGetInsertBlock(ctx.llvm_builder);
+                            gm.name = gm_dup; gm.mangled_name = (i8*)0; gm.type_params_len = 0;
+                            visit_func_decl_prototype(gm, ctx);
+                            visit_func_decl(gm, ctx);
+                            gm.name = gm_on; gm.mangled_name = gm_om; gm.type_params_len = gm_otl;
+                            ctx.current_func = gm_sf; ctx.current_func_type = gm_sft;
+                            ctx.current_ret_type = gm_srt;
+                            if (gm_sbb != (i8*)0) { LLVMPositionBuilderAtEnd(ctx.llvm_builder, gm_sbb); }
+                        }
+                        fn_ref = sv_map_get(&ctx.global_funcs,      gm_dup);
+                        fn_ty  = st_map_get(&ctx.global_func_types, gm_dup);
+                    }
+                }
             }
 
             if (fn_ref != (i8*)0 && fn_ty != (i8*)0) {
@@ -2650,9 +2870,15 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 }
                 args[0]   = self_arg;
                 let mut i: i32= 0;
+                // `slot` tracks the argument position actually passed. Comptime type
+                // arguments are consumed by monomorphization and must not occupy a slot,
+                // otherwise the type would be passed as a value and shift every later arg.
+                let mut slot: i32= 1;
                 while (i < e.args_len) {
+                    if (ct_arg_is_type(e.args[i], ctx)) { i = i + 1; continue; }
                     let mut av: *i8= visit_expr(e.args[i], ctx);
-                    let mut pi: i32= i + 1;
+                    let mut pi: i32= slot;
+                    slot = slot + 1;
                     if (av != (i8*)0 && (u32)pi < nparams) {
                         let mut param_kind: i32= LLVMGetTypeKind(param_ts[pi]);
                         let mut av_ty: *i8= LLVMTypeOf(av);
@@ -2688,11 +2914,11 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                             av = coerce_int_val(av, param_ts[pi], ctx.llvm_builder);
                         }
                     }
-                    args[i + 1] = av;
+                    args[pi] = av;
                     i = i + 1;
                 }
                 arc_free((i8*)param_ts);
-                let mut result: *i8= LLVMBuildCall2(ctx.llvm_builder, fn_ty, fn_ref, args, nargs, "");
+                let mut result: *i8= LLVMBuildCall2(ctx.llvm_builder, fn_ty, fn_ref, args, slot, "");
                 arc_free((i8*)args);
                 return result;
             }
@@ -2708,7 +2934,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                     let mut vkind_vm: i32= (adt_ed_vm.variant_kinds != (i32*)0) ? adt_ed_vm.variant_kinds[vi_vm] : 0;
                     if (vkind_vm == 2 || vkind_vm == 3) {
                         let mut adtmt_name: [512]i8;
-                        snprintf(adtmt_name, (u64)512, "%s__NS_%s__MT_%s", struct_name, adt_ed_vm.variant_names[vi_vm], method_name);
+                        afmt(adtmt_name, (u64)512, "%s__NS_%s__MT_%s", .{ struct_name, adt_ed_vm.variant_names[vi_vm], method_name });
                         let mut fn_vm: *i8= sv_map_get(&ctx.global_funcs,      adtmt_name);
                         let mut fn_ty_vm: *i8= st_map_get(&ctx.global_func_types, adtmt_name);
                         if (fn_vm != (i8*)0 && fn_ty_vm != (i8*)0) {
@@ -2783,7 +3009,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
         if (obj_expr != (parser.expr_node*)0 && obj_expr.kind == ek_identifier &&
                 obj_expr.str_val != (i8*)0 && method_name != (i8*)0) {
             let mut ns_fn_name: [512]i8;
-            snprintf(ns_fn_name, (u64)512, "%s__NS_%s", obj_expr.str_val, method_name);
+            afmt(ns_fn_name, (u64)512, "%s__NS_%s", .{ obj_expr.str_val, method_name });
             let mut ns_fn: *i8= sv_map_get(&ctx.global_funcs,      ns_fn_name);
             let mut ns_fn_ty: *i8= st_map_get(&ctx.global_func_types, ns_fn_name);
             if (ns_fn != (i8*)0 && ns_fn_ty != (i8*)0) {
@@ -2902,7 +3128,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
             // Try as method in current class
             if (ctx.current_class_name != (i8*)0) {
                 let mut mt_name: [512]i8;
-                snprintf(mt_name, (u64)512, "%s__MT_%s", ctx.current_class_name, callee_name);
+                afmt(mt_name, (u64)512, "%s__MT_%s", .{ ctx.current_class_name, callee_name });
                 fn_ref    = sv_map_get(&ctx.global_funcs,      mt_name);
                 fn_ty = st_map_get(&ctx.global_func_types, mt_name);
             }
@@ -3040,27 +3266,27 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
             let mut gfd: *parser.func_decl= (parser.func_decl*)gfd_ptr;
             // Build specialized name: callee__mono_T1_T2
             let mut mono_name: [512]i8;
-            let mut mn_off: i32= snprintf(mono_name, (u64)512, "%s__mono", callee_name);
+            let mut mn_off: i32= afmt(mono_name, (u64)512, "%s__mono", .{ callee_name });
             let mut tai: i32= 0;
             while (tai < e.type_args_len) {
                 let mut ta: *parser.type_node= e.type_args[tai];
                 let mut ta_str: [64]i8;
                 if (ta != (parser.type_node*)0 && ta.is_primitive) {
                     if (ta.prim == (i32)arb_int) {
-                        snprintf(ta_str, (u64)64, "_i%d", (i32)ta.bit_width);
+                        afmt(ta_str, (u64)64, "_i%d", .{ (i32)ta.bit_width });
                     } else if (ta.prim == (i32)arb_uint) {
-                        snprintf(ta_str, (u64)64, "_u%d", (i32)ta.bit_width);
+                        afmt(ta_str, (u64)64, "_u%d", .{ (i32)ta.bit_width });
                     } else if (ta.prim == (i32)arb_float) {
-                        snprintf(ta_str, (u64)64, "_f%d", (i32)ta.bit_width);
+                        afmt(ta_str, (u64)64, "_f%d", .{ (i32)ta.bit_width });
                     } else if (ta.prim == (i32)arb_bool) {
-                        snprintf(ta_str, (u64)64, "_b%d", (i32)ta.bit_width);
+                        afmt(ta_str, (u64)64, "_b%d", .{ (i32)ta.bit_width });
                     } else {
-                        snprintf(ta_str, (u64)64, "_p%d", (i32)ta.prim);
+                        afmt(ta_str, (u64)64, "_p%d", .{ (i32)ta.prim });
                     }
                 } else if (ta != (parser.type_node*)0 && ta.name != (i8*)0) {
-                    snprintf(ta_str, (u64)64, "_%s", ta.name);
+                    afmt(ta_str, (u64)64, "_%s", .{ ta.name });
                 } else {
-                    snprintf(ta_str, (u64)64, "_T");
+                    afmt(ta_str, (u64)64, "_T", .{});
                 }
                 let mut tl: i32= (i32)strlen(ta_str);
                 if (mn_off + tl < 510) {
@@ -3147,7 +3373,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
             let mut ct_type_count: i32= 0;
             let mut ct_i: i32= 0;
             while (ct_i < e.args_len) {
-                if (e.args[ct_i] != (parser.expr_node*)0 && e.args[ct_i].kind == ek_cstype) {
+                if (ct_arg_is_type(e.args[ct_i], ctx)) {
                     ct_type_count = ct_type_count + 1;
                 }
                 ct_i = ct_i + 1;
@@ -3158,16 +3384,14 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
             if (ct_type_count > 0 && ct_type_count <= gfd_ct.type_params_len) {
                 // Build mono name and bind type params from ek_cstype args
                 let mut ct_mono: [512]i8;
-                let mut ct_off: i32= snprintf(ct_mono, (u64)512, "%s__mono", callee_name);
+                let mut ct_off: i32= afmt(ct_mono, (u64)512, "%s__mono", .{ callee_name });
                 let mut ct_ok: bool= true;
                 let mut tp_ct: i32= 0;
                 ct_i = 0;
                 while (ct_i < e.args_len && tp_ct < gfd_ct.type_params_len) {
-                    if (e.args[ct_i] != (parser.expr_node*)0 && e.args[ct_i].kind == ek_cstype) {
-                        let mut ct_tn: *parser.type_node= e.args[ct_i].cast_type;
-                        if (ct_tn == (parser.type_node*)0) { ct_ok = false; }
-                        else {
-                            let mut ct_llvm: *i8= llvm_type_of(ct_tn, ctx);
+                    if (ct_arg_is_type(e.args[ct_i], ctx)) {
+                        let mut ct_llvm: *i8= ct_arg_llvm_type(e.args[ct_i], ctx);
+                        {
                             if (ct_llvm == (i8*)0) { ct_ok = false; }
                             else {
                                 let mut tpname_ct: *i8= gfd_ct.type_params[tp_ct];
@@ -3177,19 +3401,19 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                                 let mut ts_ct: [64]i8;
                                 if (tk_ct == LLVMIntegerTypeKind) {
                                     let mut bw_ct: u32= LLVMGetIntTypeWidth(ct_llvm);
-                                    snprintf(ts_ct, (u64)64, "_i%d", (i32)bw_ct);
+                                    afmt(ts_ct, (u64)64, "_i%d", .{ (i32)bw_ct });
                                 } else if (tk_ct == LLVMFloatTypeKind) {
-                                    snprintf(ts_ct, (u64)64, "_f32");
+                                    afmt(ts_ct, (u64)64, "_f32", .{});
                                 } else if (tk_ct == LLVMDoubleTypeKind) {
-                                    snprintf(ts_ct, (u64)64, "_f64");
+                                    afmt(ts_ct, (u64)64, "_f64", .{});
                                 } else if (tk_ct == LLVMPointerTypeKind) {
-                                    snprintf(ts_ct, (u64)64, "_ptr");
+                                    afmt(ts_ct, (u64)64, "_ptr", .{});
                                 } else if (tk_ct == LLVMStructTypeKind) {
                                     let mut sn_ct: *i8= LLVMGetStructName(ct_llvm);
-                                    if (sn_ct != (i8*)0) { snprintf(ts_ct, (u64)64, "_%s", sn_ct); }
-                                    else { snprintf(ts_ct, (u64)64, "_struct"); }
+                                    if (sn_ct != (i8*)0) { afmt(ts_ct, (u64)64, "_%s", .{ sn_ct }); }
+                                    else { afmt(ts_ct, (u64)64, "_struct", .{}); }
                                 } else {
-                                    snprintf(ts_ct, (u64)64, "_T");
+                                    afmt(ts_ct, (u64)64, "_T", .{});
                                 }
                                 let mut tl_ct: i32= (i32)strlen(ts_ct);
                                 if (ct_off + tl_ct < 510) {
@@ -3262,7 +3486,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                             let mut rai: i32= 0;
                             ct_i = 0;
                             while (ct_i < e.args_len) {
-                                if (e.args[ct_i] == (parser.expr_node*)0 || e.args[ct_i].kind != ek_cstype) {
+                                if (!ct_arg_is_type(e.args[ct_i], ctx)) {
                                     ct_real_args[rai] = visit_expr(e.args[ct_i], ctx);
                                     rai = rai + 1;
                                 }
@@ -3304,7 +3528,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
             }
             // Build mono_name by matching type params to arg types
             let mut mono_name_inf: [512]i8;
-            let mut mn_off_inf: i32= snprintf(mono_name_inf, (u64)512, "%s__mono", callee_name);
+            let mut mn_off_inf: i32= afmt(mono_name_inf, (u64)512, "%s__mono", .{ callee_name });
             let mut tp_i: i32= 0;
             let mut infer_ok: bool= gfd.type_params_len > 0;
             while (tp_i < gfd.type_params_len) {
@@ -3331,15 +3555,15 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                     let mut ta_s: [64]i8;
                     if (tk == LLVMIntegerTypeKind) {
                         let mut bw: u32= LLVMGetIntTypeWidth(inferred_ty);
-                        snprintf(ta_s, (u64)64, "_i%d", (i32)bw);
+                        afmt(ta_s, (u64)64, "_i%d", .{ (i32)bw });
                     } else if (tk == LLVMFloatTypeKind) {
-                        snprintf(ta_s, (u64)64, "_f32");
+                        afmt(ta_s, (u64)64, "_f32", .{});
                     } else if (tk == LLVMDoubleTypeKind) {
-                        snprintf(ta_s, (u64)64, "_f64");
+                        afmt(ta_s, (u64)64, "_f64", .{});
                     } else if (tk == LLVMPointerTypeKind) {
-                        snprintf(ta_s, (u64)64, "_ptr");
+                        afmt(ta_s, (u64)64, "_ptr", .{});
                     } else {
-                        snprintf(ta_s, (u64)64, "_T");
+                        afmt(ta_s, (u64)64, "_T", .{});
                     }
                     let mut tl: i32= (i32)strlen(ta_s);
                     if (mn_off_inf + tl < 510) {
@@ -3415,8 +3639,14 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
         }
     }
 
-    // anytype monomorphization: compile specialized version per concrete arg type
-    if (fn_ref == (i8*)0 && callee_name != (i8*)0 && !ctx.in_anytype_mono) {
+    // anytype monomorphization: compile specialized version per concrete arg type.
+    //
+    // This used to be skipped entirely while already compiling a specialization, so an
+    // anytype function calling another one emitted no call at all — the result silently
+    // became a zero. It is re-entrant instead: the callee's prototype is registered
+    // before its body is walked, so a self-recursive call finds the prototype and simply
+    // emits a call rather than recursing forever.
+    if (fn_ref == (i8*)0 && callee_name != (i8*)0) {
         let mut atfd_ptr: *i8= sv_map_get(&ctx.anytype_funcs, callee_name);
         if (atfd_ptr != (i8*)0) {
             let mut atfd: *parser.func_decl= (parser.func_decl*)atfd_ptr;
@@ -3432,8 +3662,24 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 }
             }
             // Build mangled mono name: funcname__at_paramname_TYPE...
+            //
+            // Bindings are keyed by parameter *name*, so a nested specialization whose
+            // parameter shares a name with the enclosing one would overwrite it. Remember
+            // what each name was bound to and put it back afterwards.
+            let mut at_saved_binds: **i8= (i8**)0;
+            if (atfd.params_len > 0) {
+                at_saved_binds = (i8**)arc_malloc(sizeof(i8*) * (u64)atfd.params_len);
+                let mut sbi: i32= 0;
+                while (sbi < atfd.params_len) {
+                    let mut sp: parser.param_decl= atfd.params[sbi];
+                    at_saved_binds[sbi] = (sp.type != (parser.type_node*)0 && sp.type.is_anytype &&
+                                           sp.name != (i8*)0)
+                        ? st_map_get(&ctx.anytype_param_bindings, sp.name) : (i8*)0;
+                    sbi = sbi + 1;
+                }
+            }
             let mut at_mono_name: [512]i8;
-            let mut at_off: i32= snprintf(at_mono_name, (u64)512, "%s", callee_name);
+            let mut at_off: i32= afmt(at_mono_name, (u64)512, "%s", .{ callee_name });
             let mut atpi2: i32= 0;
             while (atpi2 < atfd.params_len) {
                 let mut ap: parser.param_decl= atfd.params[atpi2];
@@ -3442,23 +3688,14 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                     let mut at_ty: *i8= av != (i8*)0 ? LLVMTypeOf(av) : (i8*)0;
                     if (at_ty != (i8*)0 && ap.name != (i8*)0) {
                         st_map_set(&ctx.anytype_param_bindings, ap.name, at_ty);
-                        // Append suffix based on LLVM type kind
-                        let mut tk2: i32= LLVMGetTypeKind(at_ty);
+                        // Key the instantiation on the *resolved* type, not its kind.
+                        // Kind alone collapsed every struct to "__at_<p>_struct", so two
+                        // calls passing different anonymous structs shared one instance and
+                        // the second one's field GEPs indexed the first one's layout.
+                        let mut at_tm: *i8= mangle_llvm_type(at_ty);
                         let mut ts2: [64]i8;
-                        if (tk2 == LLVMIntegerTypeKind) {
-                            let mut bw2: u32= LLVMGetIntTypeWidth(at_ty);
-                            snprintf(ts2, (u64)64, "__at_%s_i%d", ap.name, (i32)bw2);
-                        } else if (tk2 == LLVMFloatTypeKind) {
-                            snprintf(ts2, (u64)64, "__at_%s_f32", ap.name);
-                        } else if (tk2 == LLVMDoubleTypeKind) {
-                            snprintf(ts2, (u64)64, "__at_%s_f64", ap.name);
-                        } else if (tk2 == LLVMPointerTypeKind) {
-                            snprintf(ts2, (u64)64, "__at_%s_ptr", ap.name);
-                        } else if (tk2 == LLVMStructTypeKind) {
-                            snprintf(ts2, (u64)64, "__at_%s_struct", ap.name);
-                        } else {
-                            snprintf(ts2, (u64)64, "__at_%s_T", ap.name);
-                        }
+                        afmt(ts2, (u64)64, "__at_%s_%s", .{ ap.name, at_tm });
+                        arc_free(at_tm);
                         let mut tslen: i32= (i32)strlen(ts2);
                         if (at_off + tslen < 510) {
                             let mut ci2: i32= 0;
@@ -3486,12 +3723,30 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 let mut saved_at_eu_isval: bool= ctx.current_func_eu_is_value;
                 let mut saved_at_eu_valty: *i8= ctx.current_eu_value_type;
                 let mut saved_at_cls: *i8= ctx.current_class_name;
+                let mut saved_at_ns: *i8= ctx.current_namespace;
+                let mut saved_at_ns_is: bool= ctx.current_ns_is_istruc;
+                let mut saved_at_ns_if: bool= ctx.current_ns_is_interface;
                 atfd.name         = at_mname;
                 atfd.mangled_name = (i8*)0;
+                // The specialization is a free function, so emit it in a neutral context.
+                // It was previously emitted with whatever class/namespace was current at
+                // the call, which is how a call inside an istruc method produced a
+                // specialization carrying an implicit `self` — the call then passed one
+                // argument too few, against a signature shifted by one.
+                ctx.current_class_name      = (i8*)0;
+                ctx.current_namespace       = (i8*)0;
+                ctx.current_ns_is_istruc    = false;
+                ctx.current_ns_is_interface = false;
+                let mut saved_at_inmono: bool= ctx.in_anytype_mono;
                 ctx.in_anytype_mono = true;
                 visit_func_decl_prototype(atfd, ctx);
                 visit_func_decl(atfd, ctx);
-                ctx.in_anytype_mono = false;
+                // Restore rather than clear: an inner specialization must not tell the
+                // outer one that it has finished specializing.
+                ctx.in_anytype_mono = saved_at_inmono;
+                ctx.current_namespace       = saved_at_ns;
+                ctx.current_ns_is_istruc    = saved_at_ns_is;
+                ctx.current_ns_is_interface = saved_at_ns_if;
                 atfd.name         = saved_atname;
                 atfd.mangled_name = saved_at_mangle;
                 ctx.current_func              = saved_at_func;
@@ -3506,15 +3761,17 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 fn_ref = sv_map_get(&ctx.global_funcs, at_mname);
                 fn_ty  = st_map_get(&ctx.global_func_types, at_mname);
             }
-            // Clear anytype param bindings for next call
+            // Put back whatever these names were bound to before this call.
             atpi2 = 0;
             while (atpi2 < atfd.params_len) {
                 let mut ap2: parser.param_decl= atfd.params[atpi2];
                 if (ap2.type != (parser.type_node*)0 && ap2.type.is_anytype && ap2.name != (i8*)0) {
-                    st_map_set(&ctx.anytype_param_bindings, ap2.name, (i8*)0);
+                    st_map_set(&ctx.anytype_param_bindings, ap2.name,
+                               (at_saved_binds != (i8**)0) ? at_saved_binds[atpi2] : (i8*)0);
                 }
                 atpi2 = atpi2 + 1;
             }
+            if (at_saved_binds != (i8**)0) { arc_free((i8*)at_saved_binds); }
             if (fn_ref != (i8*)0 && fn_ty != (i8*)0) {
                 if (at_vals != (i8**)0) {
                     coerce_args_to_fn(fn_ty, at_vals, at_nargs, ctx.llvm_builder);
@@ -3598,7 +3855,7 @@ fn visit_call(e: *parser.expr_node, ctx: *ir_context) *i8 {
                             }
                             if (concrete_name != (i8*)0) {
                                 let mut vtbl_key: [512]i8;
-                                snprintf(vtbl_key, (u64)512, "%s__IFACE__%s", concrete_name, pt_ifc.name);
+                                afmt(vtbl_key, (u64)512, "%s__IFACE__%s", .{ concrete_name, pt_ifc.name });
                                 let mut vtbl_gv: *i8= sv_map_get(&ctx.iface_concrete_vtables, vtbl_key);
                                 if (vtbl_gv != (i8*)0) {
                                     let mut iface_st_ty: *i8= st_map_get(&ctx.struct_types, pt_ifc.name);
@@ -3636,6 +3893,7 @@ fn get_error_struct_type(ctx: *ir_context, i32_t: *i8) *i8 {
         LLVMStructSetBody(err_struct_t, flds, 2, 0);
         st_map_set(&ctx.struct_types, "__artemis_error_t", err_struct_t);
         let mut esm: struct_meta;
+        struct_meta_init(&esm);
         esm.name = "__artemis_error_t";
         esm.is_union = false;
         esm.is_istruc = false;
@@ -4040,7 +4298,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
             let mut cfi: i32= ctx_field_index(ctx, csn, e.member_name);
             if (cfi < 0 && ctx.current_namespace != (i8*)0) {
                 let mut ns_csn: [512]i8;
-                snprintf(ns_csn, (u64)512, "%s__NS_%s", ctx.current_namespace, csn);
+                afmt(ns_csn, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, csn });
                 cfi = ctx_field_index(ctx, ns_csn, e.member_name);
             }
             if (cfi < 0) { return (i8*)0; }
@@ -4125,7 +4383,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
         let mut fidx: i32= ctx_field_index(ctx, sname, e.member_name);
         if (fidx < 0 && ctx.current_namespace != (i8*)0) {
             let mut ns_sname: [512]i8;
-            snprintf(ns_sname, (u64)512, "%s__NS_%s", ctx.current_namespace, sname);
+            afmt(ns_sname, (u64)512, "%s__NS_%s", .{ ctx.current_namespace, sname });
             fidx = ctx_field_index(ctx, ns_sname, e.member_name);
             if (fidx >= 0) { sname = lexer.str_dup(ns_sname); }
         }
@@ -4229,21 +4487,21 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 let mut cop_fn_ty: *i8= (i8*)0;
                 if (tkind == LLVMIntegerTypeKind) {
                     let mut cop_bw: u32= LLVMGetIntTypeWidth(target_t);
-                    snprintf(cop_name, (u64)512, "%s__NS_operator_i%d", sn, (i32)cop_bw);
+                    afmt(cop_name, (u64)512, "%s__NS_operator_i%d", .{ sn, (i32)cop_bw });
                     cop_fn    = sv_map_get(&ctx.global_funcs,      cop_name);
                     cop_fn_ty = st_map_get(&ctx.global_func_types, cop_name);
                     if (cop_fn == (i8*)0 || cop_fn_ty == (i8*)0) {
-                        snprintf(cop_name, (u64)512, "%s__NS_operator_u%d", sn, (i32)cop_bw);
+                        afmt(cop_name, (u64)512, "%s__NS_operator_u%d", .{ sn, (i32)cop_bw });
                         cop_fn    = sv_map_get(&ctx.global_funcs,      cop_name);
                         cop_fn_ty = st_map_get(&ctx.global_func_types, cop_name);
                     }
                 }
                 if (llvm_is_float(target_t)) {
-                    snprintf(cop_name, (u64)512, "%s__NS_operator_f64", sn);
+                    afmt(cop_name, (u64)512, "%s__NS_operator_f64", .{ sn });
                     cop_fn    = sv_map_get(&ctx.global_funcs,      cop_name);
                     cop_fn_ty = st_map_get(&ctx.global_func_types, cop_name);
                     if (cop_fn == (i8*)0 || cop_fn_ty == (i8*)0) {
-                        snprintf(cop_name, (u64)512, "%s__NS_operator_f32", sn);
+                        afmt(cop_name, (u64)512, "%s__NS_operator_f32", .{ sn });
                         cop_fn    = sv_map_get(&ctx.global_funcs,      cop_name);
                         cop_fn_ty = st_map_get(&ctx.global_func_types, cop_name);
                     }
@@ -4631,7 +4889,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
                         LLVMBuildStore(ctx.llvm_builder, LLVMConstInt(i32t, (u64)var_idx, 0), tag_ptr);
                         // Store named fields into payload by looking up field order in variant metadata
                         let mut vqname: [512]i8;
-                        snprintf(vqname, (u64)512, "%s__%s", enum_name, variant_name);
+                        afmt(vqname, (u64)512, "%s__%s", .{ enum_name, variant_name });
                         let mut pay_ptr: *i8= LLVMBuildStructGEP2(ctx.llvm_builder, enum_st, alloca, 1, "adt_pay");
                         let mut i8t: *i8= LLVMInt8TypeInContext(ctx.llvm_ctx);
                         // Compute per-field byte offsets from variant field type metadata
@@ -4713,7 +4971,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
     // Annotations are compile-time only. Reaching here means the annotation appeared
     // in a value position (e.g. `let x = @foo(...)`), which is a compile error.
     if (kind == ek_annotation) {
-        printf("error: annotation used in value position (annotations have no runtime value)\n");
+        aprint("error: annotation used in value position (annotations have no runtime value)\n", .{});
         return (i8*)0;
     }
 
@@ -4917,7 +5175,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
             let mut sname: *i8= LLVMGetStructName(vt);
             if (sname != (i8*)0) {
                 let mut dc_name: [512]i8;
-                snprintf(dc_name, (u64)512, "%s__NS___deep_copy__", sname);
+                afmt(dc_name, (u64)512, "%s__NS___deep_copy__", .{ sname });
                 let mut dc_fn: *i8= sv_map_get(&ctx.global_funcs, dc_name);
                 if (dc_fn != (i8*)0) {
                     let mut dc_ty: *i8= st_map_get(&ctx.global_func_types, dc_name);
@@ -4999,7 +5257,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
         let mut lam_idx: i32= ctx.static_local_count;
         ctx.static_local_count = ctx.static_local_count + 1;
         let mut lam_name: [128]i8;
-        snprintf(lam_name, (u64)128, "__lambda_%d", lam_idx);
+        afmt(lam_name, (u64)128, "__lambda_%d", .{ lam_idx });
 
         // ---- STEP 1: at call site, create capture globals and store current values ----
         let mut call_site_bb: *i8= LLVMGetInsertBlock(ctx.llvm_builder);
@@ -5084,7 +5342,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
             let mut type_s: *i8= capinfo_types[ci_s];
             let mut gn_s: [256]i8;
             if (br_s != 0) {
-                snprintf(gn_s, (u64)256, "__lambda_%d_capref_%s", lam_idx, cn_s);
+                afmt(gn_s, (u64)256, "__lambda_%d_capref_%s", .{ lam_idx, cn_s });
                 let mut ptrt_s: *i8= LLVMPointerTypeInContext(ctx.llvm_ctx, 0);
                 let mut gv_s: *i8= sv_map_get(&ctx.global_vars, gn_s);
                 if (gv_s == (i8*)0) {
@@ -5095,7 +5353,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 }
                 LLVMBuildStore(ctx.llvm_builder, ptr_s, gv_s);
             } else {
-                snprintf(gn_s, (u64)256, "__lambda_%d_cap_%s", lam_idx, cn_s);
+                afmt(gn_s, (u64)256, "__lambda_%d_cap_%s", .{ lam_idx, cn_s });
                 let mut cur_val_s: *i8= LLVMBuildLoad2(ctx.llvm_builder, type_s, ptr_s, "cap_load");
                 let mut gv_s: *i8= sv_map_get(&ctx.global_vars, gn_s);
                 if (gv_s == (i8*)0) {
@@ -5162,7 +5420,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
             let mut br_b: i32= capinfo_byref[ci_b];
             let mut gn_b: [256]i8;
             if (br_b != 0) {
-                snprintf(gn_b, (u64)256, "__lambda_%d_capref_%s", lam_idx, cn_b);
+                afmt(gn_b, (u64)256, "__lambda_%d_capref_%s", .{ lam_idx, cn_b });
                 let mut ptrt_b: *i8= LLVMPointerTypeInContext(ctx.llvm_ctx, 0);
                 let mut gv_b: *i8= sv_map_get(&ctx.global_vars, gn_b);
                 if (gv_b != (i8*)0) {
@@ -5172,7 +5430,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
                     ctx_declare_local(ctx, cn_b, addr_b, deref_t_b, (i8*)0, false);
                 }
             } else {
-                snprintf(gn_b, (u64)256, "__lambda_%d_cap_%s", lam_idx, cn_b);
+                afmt(gn_b, (u64)256, "__lambda_%d_cap_%s", .{ lam_idx, cn_b });
                 let mut gv_b: *i8= sv_map_get(&ctx.global_vars, gn_b);
                 if (gv_b != (i8*)0) {
                     let mut gv_t_b: *i8= capinfo_types[ci_b];
@@ -5196,7 +5454,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
                 if (LLVMGetTypeKind(lret_t) == LLVMVoidTypeKind) {
                     LLVMBuildRetVoid(ctx.llvm_builder);
                 } else {
-                    printf("error: lambda may not return on all paths (line %d)\n", (i32)e.line);
+                    aprint("error: lambda may not return on all paths (line %d)\n", .{ (i32)e.line });
                     ctx.had_error = true;
                     LLVMBuildRet(ctx.llvm_builder, LLVMConstNull(lret_t));
                 }
@@ -5241,7 +5499,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
         let mut ptr_t_if: *i8= LLVMPointerTypeInContext(ctx.llvm_ctx, 0);
         let mut owner: *i8= ctx.current_namespace;
         if (owner == (i8*)0) {
-            printf("error: @ifield() is only valid inside a method of a struct or istruc\n");
+            aprint("error: @ifield() is only valid inside a method of a struct or istruc\n", .{});
             ctx.had_error = true;
             return LLVMConstPointerNull(ptr_t_if);
         }
@@ -5269,6 +5527,23 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
 
     // Anonymous struct literal: .{ .f=v, ... }
     // Synthesize an anonymous named struct type from field names+values and alloca it.
+    // `.{}` — the empty anonymous struct. It is the natural spelling for "no arguments"
+    // when passing an argument tuple, so it has to be a value like any other literal
+    // rather than an unsupported expression.
+    if (kind == ek_anon_struct && e.field_count == 0) {
+        let mut empty_st: *i8= LLVMGetTypeByName2(ctx.llvm_ctx, "__anon0");
+        if (empty_st == (i8*)0) {
+            empty_st = LLVMStructCreateNamed(ctx.llvm_ctx, "__anon0");
+            LLVMStructSetBody(empty_st, (i8**)0, 0, 0);
+        }
+        if (struct_meta_find(&ctx.struct_meta_tbl, "__anon0") == (struct_meta*)0) {
+            let mut esm0: struct_meta;
+            struct_meta_init(&esm0);
+            esm0.name = "__anon0";
+            struct_meta_vec_push(&ctx.struct_meta_tbl, esm0);
+        }
+        return LLVMGetUndef(empty_st);
+    }
     if (kind == ek_anon_struct && e.field_count > 0 && e.field_names != (i8**)0 && e.field_vals != (parser.expr_node**)0) {
         let mut nf: i32= e.field_count;
         let mut ftypes: **i8= (i8**)arc_malloc(sizeof(i8*) * (u64)nf);
@@ -5283,9 +5558,24 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
             fi2 = fi2 + 1;
         }
         if (!valid) { arc_free((i8*)ftypes); arc_free((i8*)fvals); return (i8*)0; }
-        // Build a unique anonymous struct type name: __anon_LINENO
-        let mut anon_name: [64]i8;
-        snprintf(anon_name, (u64)64, "__anon_%llu", e.line);
+        // Name the anonymous struct after its *shape*, not its source line.
+        // `__anon_<LINE>` collided whenever two literals of different shape appeared on
+        // one line — the second reused the first's body, and its field GEPs indexed a
+        // layout it did not have. A structural name also makes two literals of the same
+        // shape share one type, which is what makes @typeof(anon) a meaningful identity.
+        let mut anon_name: [256]i8;
+        let mut an_off: i32= afmt(anon_name, (u64)256, "__anon%d", .{ nf });
+        let mut fi_n: i32= 0;
+        while (fi_n < nf) {
+            let mut fm: *i8= mangle_llvm_type(ftypes[fi_n]);
+            if (fm != (i8*)0) {
+                if (an_off < 240) {
+                    an_off = an_off + afmt(anon_name + an_off, (u64)(256 - an_off), "_%s", .{ fm });
+                }
+                arc_free(fm);
+            }
+            fi_n = fi_n + 1;
+        }
         let mut anon_st: *i8= LLVMGetTypeByName2(ctx.llvm_ctx, anon_name);
         if (anon_st == (i8*)0) {
             anon_st = LLVMStructCreateNamed(ctx.llvm_ctx, anon_name);
@@ -5302,6 +5592,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
         // Register field metadata so .field access resolves correctly
         if (struct_meta_find(&ctx.struct_meta_tbl, anon_name) == (struct_meta*)0) {
             let mut anon_sm: struct_meta;
+            struct_meta_init(&anon_sm);
             anon_sm.name = lexer.str_dup(anon_name);
             name_list_init(&anon_sm.field_names);
             type_list_init(&anon_sm.field_types);
@@ -5329,7 +5620,7 @@ fn visit_expr(e: *parser.expr_node, ctx: *ir_context) *i8 {
     // Any expression kind reaching here has no codegen rule. Falling through with a
     // bare null would surface later as a null LLVM operand at some unrelated
     // instruction, so report the real location instead.
-    printf("error at line %llu: unsupported expression (kind %d) in value position\n", (u64)e.line, kind);
+    aprint("error at line %llu: unsupported expression (kind %d) in value position\n", .{ (u64)e.line, kind });
     ctx.had_error = true;
     return (i8*)0;
 }

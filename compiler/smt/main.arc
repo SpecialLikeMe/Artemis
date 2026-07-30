@@ -170,7 +170,7 @@ fn smt_pmap_set(m: *smt_pmap, name: *i8, state: i32) void {
         m.alias_of[m.len] = (i8*)0;
         m.len = m.len + 1;
     } else {
-        printf("SMT warning: pointer map full (256 entries); '%s' will not be tracked\n", name);
+        aprint("SMT warning: pointer map full (256 entries); '%s' will not be tracked\n", .{ name });
     }
 }
 
@@ -228,7 +228,7 @@ fn smt_asz_set(m: *smt_asz, name: *i8, sz: i32) void {
     if (m.len >= 64) {
         // Dropping silently would leave the array untracked and its subscripts
         // unchecked, which looks identical to "proven safe". Say so instead.
-        printf("SMT warning: array-size table full (64 entries); bounds of '%s' will not be checked\n", name);
+        aprint("SMT warning: array-size table full (64 entries); bounds of '%s' will not be checked\n", .{ name });
         return;
     }
     m.names[m.len] = name;
@@ -263,7 +263,7 @@ fn smt_iter_check(s: *smt_iter, name: *i8) bool {
 fn smt_iter_add(s: *smt_iter, name: *i8) void {
     if (name == (i8*)0 || smt_iter_check(s, name)) { return; }
     if (s.len >= 32) {
-        printf("SMT warning: iterator table full (32 entries); '%s' will not be checked for invalidation\n", name);
+        aprint("SMT warning: iterator table full (32 entries); '%s' will not be checked for invalidation\n", .{ name });
         return;
     }
     s.names[s.len] = name;
@@ -311,9 +311,9 @@ fn smt_ctx_init(ctx: *smt_ctx, fn_ref: *i8) void {
 fn smt_error(ctx: *smt_ctx, line: i32, msg: *i8, var: *i8) void {
     let mut fn_ref: *i8= ctx.func_name != (i8*)0 ? ctx.func_name : "<unknown>";
     if (var != (i8*)0) {
-        printf("SMT error: %s (line %d, func '%s', var '%s')\n", msg, line, fn_ref, var);
+        aprint("SMT error: %s (line %d, func '%s', var '%s')\n", .{ msg, line, fn_ref, var });
     } else {
-        printf("SMT error: %s (line %d, func '%s')\n", msg, line, fn_ref);
+        aprint("SMT error: %s (line %d, func '%s')\n", .{ msg, line, fn_ref });
     }
     ctx.error_count = ctx.error_count + 1;
     ctx.had_error  = true;
@@ -323,11 +323,9 @@ fn smt_error(ctx: *smt_ctx, line: i32, msg: *i8, var: *i8) void {
 fn smt_need_rtcheck(ctx: *smt_ctx, line: i32, msg: *i8, var: *i8) void {
     let mut fn_ref: *i8= ctx.func_name != (i8*)0 ? ctx.func_name : "<unknown>";
     if (var != (i8*)0) {
-        printf("SMT note: runtime check needed: %s (line %d, func '%s', var '%s')\n",
-               msg, line, fn_ref, var);
+        aprint("SMT note: runtime check needed: %s (line %d, func '%s', var '%s')\n", .{ msg, line, fn_ref, var });
     } else {
-        printf("SMT note: runtime check needed: %s (line %d, func '%s')\n",
-               msg, line, fn_ref);
+        aprint("SMT note: runtime check needed: %s (line %d, func '%s')\n", .{ msg, line, fn_ref });
     }
     ctx.rtcheck_count = ctx.rtcheck_count + 1;
 }
@@ -416,11 +414,11 @@ fn smt_check_ptr(e: *parser.expr_node, ctx: *smt_ctx, context: *i8) void {
         let mut st: i32= smt_pmap_get(&ctx.vars, vname);
         if (st == PTR_FREED || st == PTR_MOVED) {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256, "use-after-free in %s", context);
+            afmt(msg, (u64)256, "use-after-free in %s", .{ context });
             smt_error(ctx, (i32)e.line, msg, vname);
         } else {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256, "null dereference in %s", context);
+            afmt(msg, (u64)256, "null dereference in %s", .{ context });
             smt_error(ctx, (i32)e.line, msg, vname);
         }
     } else if (outcome == SMT_UNKNOWN) {
@@ -472,7 +470,7 @@ fn smt_expr(e: *parser.expr_node, ctx: *smt_ctx) void {
                     let mut iv: i64= e.index.int_val;
                     if (iv < 0 || iv >= (i64)arr_size) {
                         let mut msg: [128]i8;
-                        snprintf(msg, (u64)128, "array index out of bounds (index=%lld, size=%d)", (i64)iv, arr_size);
+                        afmt(msg, (u64)128, "array index out of bounds (index=%lld, size=%d)", .{ (i64)iv, arr_size });
                         smt_error(ctx, (i32)e.line, msg, arr_name);
                     }
                     // else GOOD: constant in bounds — no check needed.

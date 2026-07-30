@@ -21,7 +21,7 @@ istruc map<K, V> {
     let mut size_count: i32;
 
     fn make_node(self: *map, key: K, val: V, a: &memstr) *map_node<K,V> {
-        let mut n: *map_node<K,V>= (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>));
+        let mut n: *map_node<K,V>= (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>)) catch |e| { };
         (*n).key    = key;
         (*n).val    = val;
         (*n).color  = MAP_RED;
@@ -32,7 +32,7 @@ istruc map<K, V> {
     }
 
     fn __construct__(self: *map, a: &memstr) void {
-        self.nil_sentinel = (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>));
+        self.nil_sentinel = (map_node<K,V>*)a.mmap(sizeof(map_node<K,V>)) catch |e| { };
         (*self.nil_sentinel).color  = MAP_BLACK;
         (*self.nil_sentinel).left   = self.nil_sentinel;
         (*self.nil_sentinel).right  = self.nil_sentinel;

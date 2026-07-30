@@ -1,0 +1,248 @@
+; Artemis LIR
+
+func default_align {
+  entry:
+    self = alloca
+    %t0 = cast 16
+    ret %t0
+  dead0:
+    ret
+}
+
+func mmap {
+  entry:
+    self = alloca
+    size = alloca
+    %t0 = gep self
+    %t1 = gep %t0
+    %t2 = cast 0
+    %t3 = binop.5 %t1, %t2
+    cbr %t3, if_then0, if_else1
+  if_then0:
+    ret 0
+  dead3:
+    br if_merge2
+  if_else1:
+    br if_merge2
+  if_merge2:
+    ret 0
+  dead4:
+    ret
+}
+
+func mmap_aligned {
+  entry:
+    self = alloca
+    align = alloca
+    size = alloca
+    %t0 = gep self
+    %t1 = gep %t0
+    %t2 = cast 0
+    %t3 = binop.5 %t1, %t2
+    cbr %t3, if_then0, if_else1
+  if_then0:
+    ret 0
+  dead3:
+    br if_merge2
+  if_else1:
+    br if_merge2
+  if_merge2:
+    ret 0
+  dead4:
+    ret
+}
+
+func rsmap {
+  entry:
+    self = alloca
+    data = alloca
+    size = alloca
+    %t0 = gep self
+    %t1 = gep %t0
+    %t2 = cast 0
+    %t3 = binop.5 %t1, %t2
+    cbr %t3, if_then0, if_else1
+  if_then0:
+    ret 0
+  dead3:
+    br if_merge2
+  if_else1:
+    br if_merge2
+  if_merge2:
+    %t5 = gep self
+    %t4 = call ./3
+    ret %t4
+  dead4:
+    ret
+}
+
+func rmap {
+  entry:
+    self = alloca
+    data = alloca
+    size = alloca
+    %t0 = call self./2
+    cbr %t0, if_then0, if_else1
+  if_then0:
+    ret data
+  dead3:
+    br if_merge2
+  if_else1:
+    br if_merge2
+  if_merge2:
+    %t1 = gep self
+    %t2 = gep %t1
+    %t3 = cast 0
+    %t4 = binop.5 %t2, %t3
+    cbr %t4, if_then4, if_else5
+  if_then4:
+    ret 0
+  dead7:
+    br if_merge6
+  if_else5:
+    br if_merge6
+  if_merge6:
+    ret 0
+  dead8:
+    ret
+}
+
+func free {
+  entry:
+    self = alloca
+    data = alloca
+    %t0 = cast 0
+    %t1 = binop.5 data, %t0
+    cbr %t1, if_then0, if_else1
+  if_then0:
+    ret
+  dead3:
+    br if_merge2
+  if_else1:
+    br if_merge2
+  if_merge2:
+    %t2 = gep self
+    %t3 = gep %t2
+    %t4 = cast 0
+    %t5 = binop.5 %t3, %t4
+    cbr %t5, if_then4, if_else5
+  if_then4:
+    ret
+  dead7:
+    br if_merge6
+  if_else5:
+    br if_merge6
+  if_merge6:
+    ret
+}
+
+func destroy {
+  entry:
+    self = alloca
+    %t0 = gep self
+    %t1 = gep %t0
+    %t2 = cast 0
+    %t3 = binop.5 %t1, %t2
+    cbr %t3, if_then0, if_else1
+  if_then0:
+    ret
+  dead3:
+    br if_merge2
+  if_else1:
+    br if_merge2
+  if_merge2:
+    ret
+}
+
+func deinit {
+  entry:
+    self = alloca
+    ret
+}
+
+func create {
+  entry:
+    self = alloca
+    raw = alloca
+    store raw, 0
+    %t0 = cast raw
+    ret %t0
+  dead0:
+    ret
+}
+
+func create_n {
+  entry:
+    self = alloca
+    n = alloca
+    raw = alloca
+    store raw, 0
+    %t0 = cast raw
+    ret %t0
+  dead0:
+    ret
+}
+
+func zeroed {
+  entry:
+    self = alloca
+    size = alloca
+    p = alloca
+    store p, 0
+    b = alloca
+    %t0 = cast p
+    store b, %t0
+    i = alloca
+    store i, 0
+    br wh_cond0
+  wh_cond0:
+    %t1 = binop.7 i, size
+    cbr %t1, wh_body1, wh_exit2
+  wh_body1:
+    %t2 = cast 0
+    %t3 = gep b [i]
+    store %t3, %t2
+    %t4 = binop.0 i, 1
+    store i, %t4
+    br wh_cond0
+  wh_exit2:
+    ret p
+  dead3:
+    ret
+}
+
+func main {
+  entry:
+    a = alloca [4]
+    i = alloca
+    store i, 2
+    %t0 = gep a [i]
+    store %t0, 5
+    s = alloca
+    store s, 0
+    br wh_cond0
+  wh_cond0:
+    %t1 = binop.8 i, 0
+    cbr %t1, wh_body1, wh_exit2
+  wh_body1:
+    %t2 = gep a [i]
+    %t3 = load %t2
+    %t4 = binop.0 s, %t3
+    store s, %t4
+    %t5 = binop.1 i, 1
+    store i, %t5
+    br wh_cond0
+  wh_exit2:
+    %t6 = binop.8 s, 3
+    cbr %t6, if_then3, if_else4
+  if_then3:
+    ret 0
+  dead6:
+    br if_merge5
+  if_else4:
+    br if_merge5
+  if_merge5:
+    ret s
+  dead7:
+    ret
+}

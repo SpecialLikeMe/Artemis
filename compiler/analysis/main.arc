@@ -56,7 +56,7 @@ fn ana_enum_find(ctx: *ana_ctx, name: *i8) *parser.enum_decl {
 }
 
 fn ana_error(ctx: *ana_ctx, line: u64, msg: *i8) void {
-    printf("semantic error at line %d: %s\n", (i32)line, msg);
+    aprint("semantic error at line %d: %s\n", .{ (i32)line, msg });
     ctx.error_count = ctx.error_count + 1;
 }
 
@@ -65,6 +65,17 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void;
 fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void;
 fn ana_block(blk: *parser.block_stmt, ctx: *ana_ctx) void;
 fn analyze_unsafe(prog: *parser.program_node, unsafe_mode: bool) i32;
+
+// True when `name` denotes a type (struct/istruc/union/enum/interface) rather than a
+// value. Used to recognise a user-defined type passed as a comptime type argument:
+// primitives lex into ek_cstype, but a user type arrives as a plain identifier.
+fn ana_names_a_type(ctx: *ana_ctx, name: *i8) bool {
+    if (name == (i8*)0) { return false; }
+    // Plain `struct` declarations live in their own table, not the symbol table.
+    if (ctx.scope.lookup_struct(name) != (i8*)0) { return true; }
+    let mut k: i32= ctx.scope.lookup_kind(name);
+    return k == (i32)sym_type || k == (i32)sym_enum;
+}
 
 // Register all identifier bindings introduced by a pattern into the current scope.
 // Handles pk_binding (name @ sub), pk_ident (plain name), pk_tuple (fields), pk_struct (fields).
@@ -148,7 +159,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                 // Also check struct registry (e.g. sizeof(MyStruct) where MyStruct is expr)
                 if (ctx.scope.lookup_struct(e.str_val) == (i8*)0) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "undefined identifier '%s'", e.str_val);
+                    afmt(msg, (u64)256, "undefined identifier '%s'", .{ e.str_val });
                     ana_error(ctx, e.line, msg);
                 }
             }
@@ -173,7 +184,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                 // sym_func_ptr (=4) is a function pointer variable — callable, skip
                 if (callee_kind == (i32)sym_var) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "'%s' is not callable (declared as a variable)", fname);
+                    afmt(msg, (u64)256, "'%s' is not callable (declared as a variable)", .{ fname });
                     ana_error(ctx, e.line, msg);
                 } else if (callee_kind == (i32)sym_func) {
                     let mut is_var: bool= ctx.scope.lookup_is_variadic(fname);
@@ -184,14 +195,24 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                         let mut actual_args: i32= e.args_len;
                         let mut ct_ai: i32= 0;
                         while (ct_ai < e.args_len) {
-                            if (e.args[ct_ai] != (parser.expr_node*)0 && e.args[ct_ai].kind == (i32)ek_cstype) {
-                                actual_args = actual_args - 1;
+                            let mut cta: *parser.expr_node= e.args[ct_ai];
+                            if (cta != (parser.expr_node*)0) {
+                                if (cta.kind == (i32)ek_cstype) {
+                                    actual_args = actual_args - 1;
+                                } else if (cta.kind == (i32)ek_identifier && cta.str_val != (i8*)0 &&
+                                           ana_names_a_type(ctx, cta.str_val)) {
+                                    // A user-defined type passed as a comptime type argument
+                                    // arrives as a plain identifier — only primitives are
+                                    // lexed into ek_cstype. Without this, `f(MyStruct)` is
+                                    // counted as a value argument and rejected on arity.
+                                    actual_args = actual_args - 1;
+                                }
                             }
                             ct_ai = ct_ai + 1;
                         }
                         if (expected >= 0 && actual_args != expected) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "wrong number of arguments to '%s': expected %d, got %d", fname, expected, actual_args);
+                            afmt(msg, (u64)256, "wrong number of arguments to '%s': expected %d, got %d", .{ fname, expected, actual_args });
                             ana_error(ctx, e.line, msg);
                         }
                     }
@@ -204,7 +225,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                                            strcmp(fname, "free")    == 0);
                         if (is_heap_op) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "direct heap operation ('%s') not allowed outside a 'memstr' allocator type", fname);
+                            afmt(msg, (u64)256, "direct heap operation ('%s') not allowed outside a 'memstr' allocator type", .{ fname });
                             ana_error(ctx, e.line, msg);
                         }
                     }
@@ -220,9 +241,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                             let mut ufd: *parser.func_decl= (parser.func_decl*)ufd_ptr;
                             if (ufd.is_unsafe) {
                                 let mut msg: [256]i8;
-                                snprintf(msg, (u64)256,
-                                    "call to '@unsafe' function '%s' requires an unsafe context: wrap it in '@unsafe { ... }', or mark the caller '@unsafe fn'",
-                                    fname);
+                                afmt(msg, (u64)256, "call to '@unsafe' function '%s' requires an unsafe context: wrap it in '@unsafe { ... }', or mark the caller '@unsafe fn'", .{ fname });
                                 ana_error(ctx, e.line, msg);
                             }
                         }
@@ -244,7 +263,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                                         if (pd != (parser.param_decl*)0 && pd.type != (parser.type_node*)0) {
                                             if (!pd.type.is_nullable && pd.type.pointer_depth == 0 && !pd.type.is_func_ptr) {
                                                 let mut msg: [256]i8;
-                                                snprintf(msg, (u64)256, "cannot pass nullable value as non-nullable parameter '%s'", pd.name != (i8*)0 ? pd.name : "?");
+                                                afmt(msg, (u64)256, "cannot pass nullable value as non-nullable parameter '%s'", .{ pd.name != (i8*)0 ? pd.name : "?" });
                                                 ana_error(ctx, e.line, msg);
                                             }
                                         }
@@ -275,7 +294,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                                             }
                                             if (!arg_is_memstr) {
                                                 let mut msg: [256]i8;
-                                                snprintf(msg, (u64)256, "argument '%s' is not a 'memstr' allocator (parameter requires '&memstr')", arg_e.str_val);
+                                                afmt(msg, (u64)256, "argument '%s' is not a 'memstr' allocator (parameter requires '&memstr')", .{ arg_e.str_val });
                                                 ana_error(ctx, e.line, msg);
                                             }
                                         }
@@ -301,7 +320,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                 let mut obj_is_comptime: bool= ctx.scope.lookup_is_comptime(obj_name);
                 if (!obj_is_comptime) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "cannot call '__construct__' on '%s': variable was not declared with 'comptime'", obj_name);
+                    afmt(msg, (u64)256, "cannot call '__construct__' on '%s': variable was not declared with 'comptime'", .{ obj_name });
                     ana_error(ctx, e.line, msg);
                 }
             }
@@ -316,8 +335,18 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                         let mut ns_ptr_m: *i8= ctx.scope.lookup(type_name_m);
                         if (ns_ptr_m != (i8*)0 && ns_ptr_m != (i8*)1) {
                             let mut mns: *parser.namespace_decl= (parser.namespace_decl*)ns_ptr_m;
+                            // A concrete allocator's receiver is rewritten to memstr's fat
+                            // pointer during codegen, so `a.mmap(n)` is checked against
+                            // memstr's helper signature, not the raw slot method that the
+                            // allocator itself implements.
+                            let mut ms_recv: bool= mns.is_memstr &&
+                                (strcmp(meth_name, "mmap")    == 0 || strcmp(meth_name, "rsmap")  == 0 ||
+                                 strcmp(meth_name, "rmap")    == 0 || strcmp(meth_name, "free")   == 0 ||
+                                 strcmp(meth_name, "destroy") == 0 || strcmp(meth_name, "deinit") == 0 ||
+                                 strcmp(meth_name, "create")  == 0 || strcmp(meth_name, "create_n") == 0 ||
+                                 strcmp(meth_name, "zeroed")  == 0 || strcmp(meth_name, "mmap_aligned") == 0);
                             // Find the method in the namespace and count its non-self params
-                            let mut mdi: i32= 0;
+                            let mut mdi: i32= ms_recv ? mns.decls_len : 0;
                             while (mdi < mns.decls_len) {
                                 let mut mdchild: *parser.ast_node= (mns.decls != (parser.ast_node**)0) ? mns.decls[mdi] : (parser.ast_node*)0;
                                 if (mdchild != (parser.ast_node*)0 && mdchild.kind == nd_func_decl) {
@@ -335,9 +364,23 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                                                 }
                                             }
                                             let mut non_self: i32= first_is_self ? mfd2.params_len - 1 : mfd2.params_len;
-                                            if (e.args_len != non_self) {
+                                            // Comptime type arguments are not value params —
+                                            // they live in type_params. Exclude them, the same
+                                            // way the free-function arity check does.
+                                            let mut m_actual: i32= e.args_len;
+                                            let mut m_ci: i32= 0;
+                                            while (m_ci < e.args_len) {
+                                                let mut m_a: *parser.expr_node= e.args[m_ci];
+                                                if (m_a != (parser.expr_node*)0) {
+                                                    if (m_a.kind == (i32)ek_cstype) { m_actual = m_actual - 1; }
+                                                    else if (m_a.kind == (i32)ek_identifier && m_a.str_val != (i8*)0 &&
+                                                             ana_names_a_type(ctx, m_a.str_val)) { m_actual = m_actual - 1; }
+                                                }
+                                                m_ci = m_ci + 1;
+                                            }
+                                            if (m_actual != non_self) {
                                                 let mut msg: [256]i8;
-                                                snprintf(msg, (u64)256, "wrong number of arguments to method '%s': expected %d, got %d", meth_name, non_self, e.args_len);
+                                                afmt(msg, (u64)256, "wrong number of arguments to method '%s': expected %d, got %d", .{ meth_name, non_self, m_actual });
                                                 ana_error(ctx, e.line, msg);
                                             }
                                         }
@@ -358,7 +401,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
         if (!ctx.in_generic && e.cast_type != (parser.type_node*)0 && !is_type_known(e.cast_type, ctx)) {
             if (e.cast_type.name != (i8*)0) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "unknown type '%s' in sizeof", e.cast_type.name);
+                afmt(msg, (u64)256, "unknown type '%s' in sizeof", .{ e.cast_type.name });
                 ana_error(ctx, e.line, msg);
             }
         }
@@ -377,7 +420,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                     let mut asgn_vd: *parser.var_decl= (parser.var_decl*)vd_ptr;
                     if (!asgn_vd.is_mutable && !asgn_vd.is_constexpr) {
                         let mut msg: [256]i8;
-                        snprintf(msg, (u64)256, "cannot assign to immutable variable '%s' (declare with 'let mut')", asgn_name);
+                        afmt(msg, (u64)256, "cannot assign to immutable variable '%s' (declare with 'let mut')", .{ asgn_name });
                         ana_error(ctx, e.line, msg);
                     }
                 }
@@ -404,7 +447,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                     let mut cmp_vd: *parser.var_decl= (parser.var_decl*)vd_ptr2;
                     if (!cmp_vd.is_mutable && !cmp_vd.is_constexpr) {
                         let mut msg2: [256]i8;
-                        snprintf(msg2, (u64)256, "cannot assign to immutable variable '%s' (declare with 'let mut')", cmp_name);
+                        afmt(msg2, (u64)256, "cannot assign to immutable variable '%s' (declare with 'let mut')", .{ cmp_name });
                         ana_error(ctx, e.line, msg2);
                     }
                 }
@@ -430,7 +473,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                     if (dvd.type != (parser.type_node*)0 && dvd.type.pointer_depth == 0 &&
                         !dvd.type.is_func_ptr && dvd.type.is_primitive) {
                         let mut msg: [256]i8;
-                        snprintf(msg, (u64)256, "cannot dereference non-pointer variable '%s'", op_name);
+                        afmt(msg, (u64)256, "cannot dereference non-pointer variable '%s'", .{ op_name });
                         ana_error(ctx, e.line, msg);
                     }
                 }
@@ -454,7 +497,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
             let mut obj_is_nullable: bool= ctx.scope.lookup_is_nullable(e.object.str_val);
             if (obj_is_nullable) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "member access on nullable value '%s' — unwrap it first (e.g., '!%s' or null-check)", e.object.str_val, e.object.str_val);
+                afmt(msg, (u64)256, "member access on nullable value '%s' — unwrap it first (e.g., '!%s' or null-check)", .{ e.object.str_val, e.object.str_val });
                 ana_error(ctx, e.line, msg);
             }
         }
@@ -466,7 +509,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                 callee_e.str_val != (i8*)0) {
                 if (ctx.scope.lookup_is_void_ret(callee_e.str_val)) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "member access on void return type (function '%s' returns void)", callee_e.str_val);
+                    afmt(msg, (u64)256, "member access on void return type (function '%s' returns void)", .{ callee_e.str_val });
                     ana_error(ctx, e.line, msg);
                 }
             }
@@ -488,7 +531,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                         let mut is_compound_prim: bool= (prim_val == 6 || prim_val == 7); // arb_rational=6, arb_complex=7
                         if (vd.type.is_primitive && vd.type.pointer_depth == 0 && !vd.type.is_func_ptr && !is_compound_prim) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "member access on primitive type (no members)");
+                            afmt(msg, (u64)256, "member access on primitive type (no members)", .{});
                             ana_error(ctx, e.line, msg);
                         } else if (!vd.type.is_primitive && vd.type.name != (i8*)0) {
                             // Named type: check if member exists
@@ -543,11 +586,11 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
                             if (!member_found && ns_ptr != (i8*)0 && ns_ptr != (i8*)1) {
                                 // Known istruc type but member not found
                                 let mut msg: [256]i8;
-                                snprintf(msg, (u64)256, "no member '%s' in type '%s'", e.member_name, type_name);
+                                afmt(msg, (u64)256, "no member '%s' in type '%s'", .{ e.member_name, type_name });
                                 ana_error(ctx, e.line, msg);
                             } else if (!member_found && sd_ptr != (i8*)0) {
                                 let mut msg: [256]i8;
-                                snprintf(msg, (u64)256, "no field '%s' in struct/union '%s'", e.member_name, type_name);
+                                afmt(msg, (u64)256, "no field '%s' in struct/union '%s'", .{ e.member_name, type_name });
                                 ana_error(ctx, e.line, msg);
                             }
                         }
@@ -596,8 +639,7 @@ fn ana_expr(e: *parser.expr_node, ctx: *ana_ctx) void {
         // 'try' is only valid inside a function returning !T (error union)
         if (ctx.in_func && !ctx.cur_func_is_error_union && !ctx.in_generic) {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256, "'try' cannot be used in function '%s' which does not return an error union (!T)",
-                     ctx.cur_func_name != (i8*)0 ? ctx.cur_func_name : "?");
+            afmt(msg, (u64)256, "'try' cannot be used in function '%s' which does not return an error union (!T)", .{ ctx.cur_func_name != (i8*)0 ? ctx.cur_func_name : "?" });
             ana_error(ctx, e.line, msg);
         }
         if (e.operand != (parser.expr_node*)0) { ana_expr(e.operand, ctx); }
@@ -616,7 +658,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
         // comptime var cannot have constructor args at declaration site
         if (vd.is_constexpr && vd.has_ctor_parens && vd.ctor_args_len > 0 && !ctx.in_generic) {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256, "'comptime' variable '%s' cannot have constructor arguments at declaration", vd.name != (i8*)0 ? vd.name : "?");
+            afmt(msg, (u64)256, "'comptime' variable '%s' cannot have constructor arguments at declaration", .{ vd.name != (i8*)0 ? vd.name : "?" });
             ana_error(ctx, vd.line, msg);
         }
         // Validate float bit widths (must be IEEE-defined: 16, 32, 64, 80, 128)
@@ -626,7 +668,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
             let mut valid_fw: bool= (fw == 0 || fw == 16 || fw == 32 || fw == 64 || fw == 80 || fw == 128);
             if (!valid_fw) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "invalid float bit width %d: valid widths are 16, 32, 64, 80, 128", fw);
+                afmt(msg, (u64)256, "invalid float bit width %d: valid widths are 16, 32, 64, 80, 128", .{ fw });
                 ana_error(ctx, vd.line, msg);
             }
         }
@@ -634,7 +676,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
         if (!ctx.in_generic && vd.type != (parser.type_node*)0 && !is_type_known(vd.type, ctx)) {
             if (vd.type.name != (i8*)0) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "unknown type '%s'", vd.type.name);
+                afmt(msg, (u64)256, "unknown type '%s'", .{ vd.type.name });
                 ana_error(ctx, vd.line, msg);
             }
         }
@@ -644,7 +686,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
                 let mut dup: bool= ctx.scope.lookup_at_depth(vd.name);
                 if (dup) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "duplicate declaration of '%s' in same scope", vd.name);
+                    afmt(msg, (u64)256, "duplicate declaration of '%s' in same scope", .{ vd.name });
                     ana_error(ctx, vd.line, msg);
                 } else {
                     // Declare as sym_func_ptr if the type is a function pointer or init is lambda
@@ -664,9 +706,9 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
             if (init_is_nullable) {
                 let mut msg: [256]i8;
                 if (vd.name != (i8*)0) {
-                    snprintf(msg, (u64)256, "cannot assign nullable value to non-nullable variable '%s'", vd.name);
+                    afmt(msg, (u64)256, "cannot assign nullable value to non-nullable variable '%s'", .{ vd.name });
                 } else {
-                    snprintf(msg, (u64)256, "cannot assign nullable value to non-nullable type");
+                    afmt(msg, (u64)256, "cannot assign nullable value to non-nullable type", .{});
                 }
                 ana_error(ctx, vd.line, msg);
             }
@@ -680,9 +722,9 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
             if (!is_ptr && !is_nullable && !is_auto) {
                 let mut msg: [256]i8;
                 if (vd.name != (i8*)0) {
-                    snprintf(msg, (u64)256, "cannot assign null to non-pointer variable '%s'", vd.name);
+                    afmt(msg, (u64)256, "cannot assign null to non-pointer variable '%s'", .{ vd.name });
                 } else {
-                    snprintf(msg, (u64)256, "cannot assign null to non-pointer type");
+                    afmt(msg, (u64)256, "cannot assign null to non-pointer type", .{});
                 }
                 ana_error(ctx, vd.line, msg);
             }
@@ -698,8 +740,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
                                         pi == (i32)arb_iofs  || pi == (i32)char_t);
             if (is_int_prim) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "cannot assign float literal to integer type for variable '%s'",
-                         vd.name != (i8*)0 ? vd.name : "?");
+                afmt(msg, (u64)256, "cannot assign float literal to integer type for variable '%s'", .{ vd.name != (i8*)0 ? vd.name : "?" });
                 ana_error(ctx, vd.line, msg);
             }
         }
@@ -709,8 +750,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
             vd.type != (parser.type_node*)0 && vd.type.pointer_depth == 0 &&
             !vd.type.is_auto && vd.type.is_primitive) {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256, "cannot assign string literal to non-pointer type for variable '%s'",
-                     vd.name != (i8*)0 ? vd.name : "?");
+            afmt(msg, (u64)256, "cannot assign string literal to non-pointer type for variable '%s'", .{ vd.name != (i8*)0 ? vd.name : "?" });
             ana_error(ctx, vd.line, msg);
         }
         if (vd.init != (parser.expr_node*)0) { ana_expr(vd.init, ctx); }
@@ -736,8 +776,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
             ana_expr(rs.val, ctx);
             // Returning a value from a void function is an error
             if (ctx.cur_func_is_void) {
-                printf("error at line %llu: void function '%s' cannot return a value\n",
-                       rs.line, ctx.cur_func_name != (i8*)0 ? ctx.cur_func_name : "?");
+                aprint("error at line %llu: void function '%s' cannot return a value\n", .{ rs.line, ctx.cur_func_name != (i8*)0 ? ctx.cur_func_name : "?" });
                 ctx.error_count = ctx.error_count + 1;
             }
         }
@@ -770,7 +809,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
         if (!ctx.in_loop) {
             let mut kw: *i8= kind == nd_break_stmt ? "break" : "continue";
             let mut msg: [128]i8;
-            snprintf(msg, (u64)128, "'%s' used outside a loop", kw);
+            afmt(msg, (u64)128, "'%s' used outside a loop", .{ kw });
             ana_error(ctx, node.line, msg);
         }
         return;
@@ -783,8 +822,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
     if (kind == nd_asm_stmt) {
         if (!ana_in_unsafe_ctx(ctx)) {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256,
-                "'__asm__' requires an unsafe context: wrap it in '@unsafe { ... }', or mark the enclosing function '@unsafe fn'");
+            afmt(msg, (u64)256, "'__asm__' requires an unsafe context: wrap it in '@unsafe { ... }', or mark the enclosing function '@unsafe fn'", .{});
             ana_error(ctx, node.line, msg);
         }
         return;
@@ -860,8 +898,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
         // 'try' is only valid inside a function returning !T (error union)
         if (ctx.in_func && !ctx.cur_func_is_error_union && !ctx.in_generic) {
             let mut msg: [256]i8;
-            snprintf(msg, (u64)256, "'try' cannot be used in function '%s' which does not return an error union (!T)",
-                     ctx.cur_func_name != (i8*)0 ? ctx.cur_func_name : "?");
+            afmt(msg, (u64)256, "'try' cannot be used in function '%s' which does not return an error union (!T)", .{ ctx.cur_func_name != (i8*)0 ? ctx.cur_func_name : "?" });
             ana_error(ctx, (u64)0, msg);
         }
         let mut ts: *parser.try_expr_stmt= (parser.try_expr_stmt*)node;
@@ -877,7 +914,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
         // Simple check: a match with no arms is an error; a match with no wildcard arm emits a warning.
         if (ms.arms_len == 0 && !ctx.in_generic) {
             let mut msg: [128]i8;
-            snprintf(msg, (u64)128, "match expression has no arms — unreachable");
+            afmt(msg, (u64)128, "match expression has no arms — unreachable", .{});
             ana_error(ctx, node.line, msg);
         } else {
             let mut has_wildcard: bool= false;
@@ -944,9 +981,7 @@ fn ana_stmt(node: *parser.ast_node, ctx: *ana_ctx) void {
                                     }
                                     if (!covered) {
                                         let mut msg_ex: [256]i8;
-                                        snprintf(msg_ex, (u64)256,
-                                            "non-exhaustive match on '%s': variant '%s' is not handled (add it, or a '_' arm)",
-                                            ename, vn2);
+                                        afmt(msg_ex, (u64)256, "non-exhaustive match on '%s': variant '%s' is not handled (add it, or a '_' arm)", .{ ename, vn2 });
                                         ana_error(ctx, node.line, msg_ex);
                                     }
                                 }
@@ -1006,7 +1041,7 @@ fn ana_func(fd: *parser.func_decl, ctx: *ana_ctx) void {
 
     // Require main() to be marked pub
     if (is_main_func && !fd.is_pub) {
-        printf("error at line %llu: 'main' must be declared 'pub fn main()'\n", fd.line);
+        aprint("error at line %llu: 'main' must be declared 'pub fn main()'\n", .{ fd.line });
         ctx.error_count = ctx.error_count + 1;
     }
 
@@ -1112,7 +1147,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                 }
                 if (prior_has_body) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "duplicate definition of function '%s'", fd.name);
+                    afmt(msg, (u64)256, "duplicate definition of function '%s'", .{ fd.name });
                     ana_error(ctx, fd.line, msg);
                 } else {
                     ctx.scope.declare_func_v(fd.name, (i8*)fd, fd.params_len, fd.is_variadic, fd_is_void);
@@ -1146,7 +1181,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
         if (ed.name != (i8*)0) {
             if (ctx.scope.exists(ed.name)) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "redeclaration of enum '%s'", ed.name);
+                afmt(msg, (u64)256, "redeclaration of enum '%s'", .{ ed.name });
                 ana_error(ctx, ed.line, msg);
             } else {
                 ctx.scope.declare(ed.name, sym_enum, (i8*)0);
@@ -1187,7 +1222,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
         if (sd.name != (i8*)0) {
             if (ctx.scope.lookup_struct(sd.name) != (i8*)0) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "duplicate struct declaration '%s'", sd.name);
+                afmt(msg, (u64)256, "duplicate struct declaration '%s'", .{ sd.name });
                 ana_error(ctx, sd.line, msg);
             } else {
                 ctx.scope.declare_struct(sd.name, node);
@@ -1240,7 +1275,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                             if (strcmp(trait_name, "Hash") == 0)    { known = true; }
                             if (!known) {
                                 let mut msg: [256]i8;
-                                snprintf(msg, (u64)256, "unknown derive macro '%s'", trait_name);
+                                afmt(msg, (u64)256, "unknown derive macro '%s'", .{ trait_name });
                                 ana_error(ctx, nd.line, msg);
                             }
                         }
@@ -1255,7 +1290,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                 // istruc/interface: redeclaration is an error
                 if (ctx.scope.exists(nd.name) || ctx.scope.lookup_struct(nd.name) != (i8*)0) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "redeclaration of '%s'", nd.name);
+                    afmt(msg, (u64)256, "redeclaration of '%s'", .{ nd.name });
                     ana_error(ctx, nd.line, msg);
                 } else {
                     ctx.scope.declare(nd.name, sym_type, (i8*)nd);
@@ -1268,7 +1303,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                         // Check that base type is known
                         if (!ctx.scope.exists(bname) && ctx.scope.lookup_struct(bname) == (i8*)0) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "unknown base type '%s'", bname);
+                            afmt(msg, (u64)256, "unknown base type '%s'", .{ bname });
                             ana_error(ctx, nd.line, msg);
                         } else if (!nd.is_interface) {
                             // Non-interface istruc: check base
@@ -1277,7 +1312,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                                 let mut base_nd: *parser.namespace_decl= (parser.namespace_decl*)base_ptr;
                                 if (base_nd.is_istruc && !base_nd.is_interface) {
                                     let mut msg: [256]i8;
-                                    snprintf(msg, (u64)256, "cannot inherit from '%s': class inheritance is not supported", bname);
+                                    afmt(msg, (u64)256, "cannot inherit from '%s': class inheritance is not supported", .{ bname });
                                     ana_error(ctx, nd.line, msg);
                                 } else if (base_nd.is_interface) {
                                     // Check that this istruc implements all required methods from the interface
@@ -1302,7 +1337,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                                                 }
                                                 if (!found_impl) {
                                                     let mut msg: [256]i8;
-                                                    snprintf(msg, (u64)256, "'%s' does not implement '%s' required by interface '%s'", nd.name, ifd.name, bname);
+                                                    afmt(msg, (u64)256, "'%s' does not implement '%s' required by interface '%s'", .{ nd.name, ifd.name, bname });
                                                     ana_error(ctx, nd.line, msg);
                                                 }
                                             }
@@ -1343,7 +1378,7 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                         }
                         if (is_dup) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "method overloading is not supported: '%s' defined more than once", cfd.name);
+                            afmt(msg, (u64)256, "method overloading is not supported: '%s' defined more than once", .{ cfd.name });
                             ana_error(ctx, cfd.line, msg);
                         } else {
                             if (local_method_count < 128) {
@@ -1371,10 +1406,13 @@ fn collect_toplevel(node: *parser.ast_node, ctx: *ana_ctx) void {
                             // skipped. memstr's `free(self, p)` beside libc's `free(p)` is the
                             // case that matters. Method calls are checked against the type's
                             // own method table, so the bare name is never needed here.
+                            // str_dup is required: the symbol table borrows the name
+                            // pointer, so a stack buffer would dangle the moment this
+                            // function returns and the entry would then compare against
+                            // whatever later reused that stack slot.
                             let mut qn_m: [512]i8;
-                            snprintf(qn_m, (u64)512, "%s__NS_%s",
-                                     nd.name != (i8*)0 ? nd.name : "?", cfd.name);
-                            ctx.scope.declare_func_v(qn_m, (i8*)cfd, cfd.params_len, cfd.is_variadic, cfd_is_void);
+                            afmt(qn_m, (u64)512, "%s__NS_%s", .{ nd.name != (i8*)0 ? nd.name : "?", cfd.name });
+                            ctx.scope.declare_func_v(lexer.str_dup(qn_m), (i8*)cfd, cfd.params_len, cfd.is_variadic, cfd_is_void);
                         } else {
                             ctx.scope.declare_func_v(cfd.name, (i8*)cfd, cfd.params_len, cfd.is_variadic, cfd_is_void);
                         }
@@ -1421,7 +1459,7 @@ fn analyze_bodies(node: *parser.ast_node, ctx: *ana_ctx) void {
             if (fd.ret_type != (parser.type_node*)0 && !is_type_known(fd.ret_type, ctx)) {
                 if (fd.ret_type.name != (i8*)0) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "unknown return type '%s' in function '%s'", fd.ret_type.name, fd.name);
+                    afmt(msg, (u64)256, "unknown return type '%s' in function '%s'", .{ fd.ret_type.name, fd.name });
                     ana_error(ctx, fd.line, msg);
                 }
             }
@@ -1432,7 +1470,7 @@ fn analyze_bodies(node: *parser.ast_node, ctx: *ana_ctx) void {
                     if (!is_type_known(fd.params[pi].type, ctx)) {
                         if (fd.params[pi].type.name != (i8*)0) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "unknown param type '%s' in function '%s'", fd.params[pi].type.name, fd.name);
+                            afmt(msg, (u64)256, "unknown param type '%s' in function '%s'", .{ fd.params[pi].type.name, fd.name });
                             ana_error(ctx, fd.params[pi].line, msg);
                         }
                     }
@@ -1473,7 +1511,7 @@ fn analyze_bodies(node: *parser.ast_node, ctx: *ana_ctx) void {
                     if (fvd.type != (parser.type_node*)0 && !is_type_known(fvd.type, ctx)) {
                         if (fvd.type.name != (i8*)0) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "unknown type '%s' in field '%s'", fvd.type.name, fvd.name);
+                            afmt(msg, (u64)256, "unknown type '%s' in field '%s'", .{ fvd.type.name, fvd.name });
                             ana_error(ctx, fvd.line, msg);
                         }
                     }
@@ -1499,7 +1537,7 @@ fn analyze_bodies(node: *parser.ast_node, ctx: *ana_ctx) void {
                     if (f.type != (parser.type_node*)0 && !is_type_known(f.type, ctx)) {
                         if (f.type.name != (i8*)0) {
                             let mut msg: [256]i8;
-                            snprintf(msg, (u64)256, "unknown type '%s' in struct field '%s'", f.type.name, f.name);
+                            afmt(msg, (u64)256, "unknown type '%s' in struct field '%s'", .{ f.type.name, f.name });
                             ana_error(ctx, f.line, msg);
                         }
                     }
@@ -1515,7 +1553,7 @@ fn analyze_bodies(node: *parser.ast_node, ctx: *ana_ctx) void {
             if (!is_type_known(td.target, ctx)) {
                 if (td.target.name != (i8*)0) {
                     let mut msg: [256]i8;
-                    snprintf(msg, (u64)256, "unknown type '%s' in using/typedef declaration", td.target.name);
+                    afmt(msg, (u64)256, "unknown type '%s' in using/typedef declaration", .{ td.target.name });
                     ana_error(ctx, td.line, msg);
                 }
             }
@@ -1527,7 +1565,7 @@ fn analyze_bodies(node: *parser.ast_node, ctx: *ana_ctx) void {
         if (!ctx.in_generic && vd.type != (parser.type_node*)0 && !is_type_known(vd.type, ctx)) {
             if (vd.type.name != (i8*)0) {
                 let mut msg: [256]i8;
-                snprintf(msg, (u64)256, "unknown type '%s'", vd.type.name);
+                afmt(msg, (u64)256, "unknown type '%s'", .{ vd.type.name });
                 ana_error(ctx, vd.line, msg);
             }
         }
@@ -1566,17 +1604,11 @@ fn ana_check_foreign_decls(node: *parser.ast_node, ctx: *ana_ctx) void {
         let mut fn_name2: *i8= fd.name;
         let mut msg: [256]i8;
         if (fd.is_extern_c && !fd.is_extern_kw) {
-            snprintf(msg, (u64)256,
-                "'%s' is declared in an extern \"C\" block and requires '@unsafe': write '@unsafe extern \"C\" { ... }'",
-                fn_name2);
+            afmt(msg, (u64)256, "'%s' is declared in an extern \"C\" block and requires '@unsafe': write '@unsafe extern \"C\" { ... }'", .{ fn_name2 });
         } else if (fd.is_extern_kw) {
-            snprintf(msg, (u64)256,
-                "extern fn '%s' requires '@unsafe' prefix: '@unsafe extern fn %s(...)'",
-                fn_name2, fn_name2);
+            afmt(msg, (u64)256, "extern fn '%s' requires '@unsafe' prefix: '@unsafe extern fn %s(...)'", .{ fn_name2, fn_name2 });
         } else {
-            snprintf(msg, (u64)256,
-                "'%s' is declared without a body and requires '@unsafe': write '@unsafe extern fn %s(...)', or give it a body",
-                fn_name2, fn_name2);
+            afmt(msg, (u64)256, "'%s' is declared without a body and requires '@unsafe': write '@unsafe extern fn %s(...)', or give it a body", .{ fn_name2, fn_name2 });
         }
         ana_error(ctx, fd.line, msg);
         return;

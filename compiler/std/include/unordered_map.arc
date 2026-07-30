@@ -30,7 +30,7 @@ istruc unordered_map<K, V> {
     fn __construct__(self: *unordered_map, initial_cap: i32, a: &memstr) void {
         self.cap   = initial_cap;
         self.count = 0;
-        self.slots = (umap_slot<K,V>*)a.mmap((u64)(sizeof(umap_slot<K,V>) * (u64)initial_cap));
+        self.slots = (umap_slot<K,V>*)a.mmap((u64)(sizeof(umap_slot<K,V>) * (u64)initial_cap)) catch |e| { };
         for (let mut i: i32 = 0; i < initial_cap; i = i + 1)
             self.slots[i].hash = UMAP_EMPTY;
     }
@@ -39,7 +39,7 @@ istruc unordered_map<K, V> {
         let mut old_cap: i32= self.cap;
         let mut old_slots: *umap_slot<K,V>= self.slots;
         let mut new_cap: i32= old_cap == 0 ? 16 : old_cap * 2;
-        self.slots = (umap_slot<K,V>*)a.mmap((u64)(sizeof(umap_slot<K,V>) * (u64)new_cap));
+        self.slots = (umap_slot<K,V>*)a.mmap((u64)(sizeof(umap_slot<K,V>) * (u64)new_cap)) catch |e| { };
         for (let mut i: i32 = 0; i < new_cap; i = i + 1) self.slots[i].hash = UMAP_EMPTY;
         self.cap   = new_cap;
         self.count = 0;
@@ -47,7 +47,7 @@ istruc unordered_map<K, V> {
             if (old_slots[i].hash != UMAP_EMPTY && old_slots[i].hash != UMAP_DELETED)
                 self.insert(old_slots[i].key, old_slots[i].val, a);
         }
-        if (old_slots != (umap_slot<K,V>*)0) a.free((void*)old_slots);
+        if (old_slots != (umap_slot<K,V>*)0) a.free((void*)old_slots) catch |e| { };
     }
 
     fn insert(self: *unordered_map, key: K, val: V, a: &memstr) void {
@@ -117,7 +117,7 @@ istruc unordered_map<K, V> {
     }
 
     fn deinit(self: *unordered_map, a: &memstr) void {
-        if (self.slots != (umap_slot<K,V>*)0) a.free((void*)self.slots);
+        if (self.slots != (umap_slot<K,V>*)0) a.free((void*)self.slots) catch |e| { };
         self.slots = (umap_slot<K,V>*)0;
         self.count = 0; self.cap = 0;
     }
@@ -155,7 +155,7 @@ istruc str_unordered_map<V> {
     fn __construct__(self: *str_unordered_map, initial_cap: i32, a: &memstr) void {
         self.cap   = initial_cap;
         self.count = 0;
-        self.slots = (str_umap_slot<V>*)a.mmap((u64)(sizeof(str_umap_slot<V>) * (u64)initial_cap));
+        self.slots = (str_umap_slot<V>*)a.mmap((u64)(sizeof(str_umap_slot<V>) * (u64)initial_cap)) catch |e| { };
         for (let mut i: i32 = 0; i < initial_cap; i = i + 1)
             self.slots[i].hash = UMAP_EMPTY;
     }
@@ -164,7 +164,7 @@ istruc str_unordered_map<V> {
         let mut old_cap: i32= self.cap;
         let mut old_slots: *str_umap_slot<V>= self.slots;
         let mut new_cap: i32= old_cap == 0 ? 16 : old_cap * 2;
-        self.slots = (str_umap_slot<V>*)a.mmap((u64)(sizeof(str_umap_slot<V>) * (u64)new_cap));
+        self.slots = (str_umap_slot<V>*)a.mmap((u64)(sizeof(str_umap_slot<V>) * (u64)new_cap)) catch |e| { };
         for (let mut i: i32 = 0; i < new_cap; i = i + 1) self.slots[i].hash = UMAP_EMPTY;
         self.cap   = new_cap;
         self.count = 0;
@@ -173,7 +173,7 @@ istruc str_unordered_map<V> {
                 self.insert(old_slots[i].key, old_slots[i].val, a);
         }
         if (old_slots != (str_umap_slot<V>*)0)
-            a.free((void*)old_slots);
+            a.free((void*)old_slots) catch |e| { };
     }
 
     fn insert(self: *str_unordered_map, key: *i8, val: V, a: &memstr) void {
@@ -244,7 +244,7 @@ istruc str_unordered_map<V> {
 
     fn deinit(self: *str_unordered_map, a: &memstr) void {
         if (self.slots != (str_umap_slot<V>*)0)
-            a.free((void*)self.slots);
+            a.free((void*)self.slots) catch |e| { };
         self.slots = (str_umap_slot<V>*)0;
         self.count = 0; self.cap = 0;
     }

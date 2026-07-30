@@ -66,7 +66,7 @@ fn parse_string_raw(l: *lex, a: &memstr) *i8 {
     }
     (*l).next(); // consume closing "
     let mut n: i32= end - start;
-    let mut s: *i8= (i8*)a.mmap((u64)(n + 1));
+    let mut s: *i8= (i8*)a.mmap((u64)(n + 1)) catch |e| { };
     for (let mut i: i32 = 0; i < n; i = i + 1) s[i] = (*l).src[start + i];
     s[n] = 0;
     return s;
@@ -74,7 +74,7 @@ fn parse_string_raw(l: *lex, a: &memstr) *i8 {
 
 fn parse_array(l: *lex, a: &memstr) *json_val {
     (*l).next(); // consume [
-    let mut v: *json_val= (json_val*)a.mmap(sizeof(json_val));
+    let mut v: *json_val= (json_val*)a.mmap(sizeof(json_val)) catch |e| { };
     (*v).kind = JSON_ARRAY;
     (*v).arr_len = 0;
     (*v).arr_items = (json_val**)0;
@@ -84,13 +84,13 @@ fn parse_array(l: *lex, a: &memstr) *json_val {
     // arrays of any size parse correctly (a fixed stack buffer here would
     // overflow, and a fixed cap would reject valid documents).
     let mut cap: i32= 16;
-    let mut items: **json_val= (json_val**)a.mmap((u64)(sizeof(json_val*) * (u64)cap));
+    let mut items: **json_val= (json_val**)a.mmap((u64)(sizeof(json_val*) * (u64)cap)) catch |e| { };
     if (items == (json_val**)0) { return v; }
     let mut count: i32= 0;
     while (true) {
         if (count >= cap) {
             let mut ncap: i32= cap * 2;
-            let mut grown: **json_val= (json_val**)a.mmap((u64)(sizeof(json_val*) * (u64)ncap));
+            let mut grown: **json_val= (json_val**)a.mmap((u64)(sizeof(json_val*) * (u64)ncap)) catch |e| { };
             if (grown == (json_val**)0) { break; }
             for (let mut gi: i32 = 0; gi < count; gi = gi + 1) grown[gi] = items[gi];
             items = grown;
@@ -110,7 +110,7 @@ fn parse_array(l: *lex, a: &memstr) *json_val {
 
 fn parse_object(l: *lex, a: &memstr) *json_val {
     (*l).next(); // consume {
-    let mut v: *json_val= (json_val*)a.mmap(sizeof(json_val));
+    let mut v: *json_val= (json_val*)a.mmap(sizeof(json_val)) catch |e| { };
     (*v).kind = JSON_OBJECT;
     (*v).obj_len = 0;
     (*v).obj_pairs = (json_pair*)0;
@@ -118,13 +118,13 @@ fn parse_object(l: *lex, a: &memstr) *json_val {
     if ((*l).peek() == '}') { (*l).next(); return v; }
     // Allocator-backed and growable — see parse_array for the rationale.
     let mut cap: i32= 16;
-    let mut pairs: *json_pair= (json_pair*)a.mmap((u64)(sizeof(json_pair) * (u64)cap));
+    let mut pairs: *json_pair= (json_pair*)a.mmap((u64)(sizeof(json_pair) * (u64)cap)) catch |e| { };
     if (pairs == (json_pair*)0) { return v; }
     let mut count: i32= 0;
     while (true) {
         if (count >= cap) {
             let mut ncap: i32= cap * 2;
-            let mut grown: *json_pair= (json_pair*)a.mmap((u64)(sizeof(json_pair) * (u64)ncap));
+            let mut grown: *json_pair= (json_pair*)a.mmap((u64)(sizeof(json_pair) * (u64)ncap)) catch |e| { };
             if (grown == (json_pair*)0) { break; }
             for (let mut gi: i32 = 0; gi < count; gi = gi + 1) grown[gi] = pairs[gi];
             pairs = grown;
@@ -152,7 +152,7 @@ fn parse_object(l: *lex, a: &memstr) *json_val {
 fn parse_value(l: *lex, a: &memstr) *json_val {
     (*l).skip_ws();
     let mut c: i8= (*l).peek();
-    let mut v: *json_val= (json_val*)a.mmap(sizeof(json_val));
+    let mut v: *json_val= (json_val*)a.mmap(sizeof(json_val)) catch |e| { };
     if (c == '"') {
         (*v).kind  = JSON_STRING;
         (*v).s_val = parse_string_raw(l, a);

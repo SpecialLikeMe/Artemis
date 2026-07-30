@@ -41,12 +41,12 @@ memstr bump {
     fn alloc_bytes(self: *bump, n: u64) *void { return self.alloc_raw(n, (u64)8); }
 
     // &memstr interface: mmap allocates n bytes, rmap is a no-op (bump allocator can't free individually)
-    fn mmap(self: *bump, n: u64) *void { return self.alloc_raw(n, (u64)8); }
-    fn rmap(self: *bump, p: *void, n: u64) void { }
+    fn mmap(self: *bump, align: usize, n: usize) !*void { return self.alloc_raw(n, (u64)8); }
+    fn rmap(self: *bump, align: usize, p: *void, n: iofs) !*void { return error.Unsupported; }
 
     fn reset(self: *bump) void { self.used = 0; }
 
-    fn deinit(self: *bump) void { free(self.base); }
+    fn deinit(self: *bump) !void { free(self.base); }
 }
 
 } // alloc

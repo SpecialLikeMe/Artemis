@@ -29,7 +29,7 @@ fn diag_vec_push(v: *diag_vec, d: diagnostic_t) void {
         let mut nc: i32= v.cap == 0 ? 16 : v.cap * 2;
         let mut nd: *diagnostic_t= (diagnostic_t*)arc_realloc((i8*)v.data, sizeof(diagnostic_t) * (u64)nc);
         if (nd == (diagnostic_t*)0) {
-            printf("fatal: out of memory in diagnostic vector\n");
+            aprint("fatal: out of memory in diagnostic vector\n", .{});
             return;
         }
         v.data = nd;
@@ -92,12 +92,10 @@ istruc diag_engine {
             let mut lvl: *i8= "note";
             if (d.level == DIAG_ERROR)   { lvl = "error"; }
             if (d.level == DIAG_WARNING) { lvl = "warning"; }
-            printf("%s:%d:%d: %s: %s\n",
-                    d.filename, d.line, d.col, lvl, d.message);
+            aprint("%s:%d:%d: %s: %s\n", .{ d.filename, d.line, d.col, lvl, d.message });
         }
         if (self.err_count >= self.max_errors) {
-            printf("%s: fatal: too many errors (%d), stopping.\n",
-                    self.filename, self.err_count);
+            aprint("%s: fatal: too many errors (%d), stopping.\n", .{ self.filename, self.err_count });
         }
     }
 

@@ -39,7 +39,7 @@ memstr ring {
 
     fn reset(self: *ring) void { self.head = 0; }
 
-    fn deinit(self: *ring) void { free(self.base); }
+    fn deinit(self: *ring) !void { free(self.base); }
 }
 
 } // alloc

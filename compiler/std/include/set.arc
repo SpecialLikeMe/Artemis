@@ -19,7 +19,7 @@ istruc set<K> {
     let mut size_count: i32;
 
     fn __construct__(self: *set, a: &memstr) void {
-        self.nil       = (set_node<K>*)a.mmap(sizeof(set_node<K>));
+        self.nil       = (set_node<K>*)a.mmap(sizeof(set_node<K>)) catch |e| { };
         (*self.nil).color  = SET_BLACK;
         (*self.nil).left   = self.nil;
         (*self.nil).right  = self.nil;
@@ -87,7 +87,7 @@ istruc set<K> {
 
     fn insert(self: *set, key: K, a: &memstr) void {
         if (self.contains(key)) { return; }
-        let mut z: *set_node<K>= (set_node<K>*)a.mmap(sizeof(set_node<K>));
+        let mut z: *set_node<K>= (set_node<K>*)a.mmap(sizeof(set_node<K>)) catch |e| { };
         (*z).key    = key;
         (*z).color  = SET_RED;
         (*z).left   = self.nil; (*z).right = self.nil; (*z).parent = self.nil;

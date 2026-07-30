@@ -25,7 +25,7 @@ memstr Arena {
 
     fn reset(self: *Arena) void { self.used = 0; }
 
-    fn deinit(self: *Arena) void { free(self.base); }
+    fn deinit(self: *Arena) !void { free(self.base); }
 }
 
 pub fn main() i32 {

@@ -173,6 +173,10 @@
 @unsafe @link_name("LLVMCreateTargetDataLayout") extern fn raw_LLVMCreateTargetDataLayout(tm: *i8) *i8;
 @unsafe @link_name("LLVMCopyStringRepOfTargetData") extern fn raw_LLVMCopyStringRepOfTargetData(td: *i8) *i8;
 @unsafe @link_name("LLVMDisposeTargetData") extern fn raw_LLVMDisposeTargetData(td: *i8) void;
+@unsafe @link_name("LLVMGetModuleDataLayout") extern fn raw_LLVMGetModuleDataLayout(m: *i8) *i8;
+@unsafe @link_name("LLVMOffsetOfElement") extern fn raw_LLVMOffsetOfElement(td: *i8, st: *i8, elem: u32) u64;
+@unsafe @link_name("LLVMABISizeOfType") extern fn raw_LLVMABISizeOfType(td: *i8, ty: *i8) u64;
+@unsafe @link_name("LLVMABIAlignmentOfType") extern fn raw_LLVMABIAlignmentOfType(td: *i8, ty: *i8) u32;
 @unsafe @link_name("LLVMVerifyModule") extern fn raw_LLVMVerifyModule(mod: *i8, action: i32, msg_out: **i8) i32;
 @unsafe @link_name("LLVMTargetMachineEmitToFile") extern fn raw_LLVMTargetMachineEmitToFile(tm: *i8, mod: *i8, filename: *i8, filetype: i32, err_out: **i8) i32;
 @unsafe @link_name("LLVMPrintModuleToFile") extern fn raw_LLVMPrintModuleToFile(mod: *i8, filename: *i8, err_out: **i8) i32;
@@ -230,6 +234,9 @@
 @unsafe @link_name("strtoull") extern fn raw_strtoull(s: *i8, end: **i8, base: i32) u64;
 @unsafe @link_name("strtod") extern fn raw_strtod(s: *i8, end: **i8) f64;
 @unsafe @link_name("exit") extern fn raw_exit(code: i32) void;
+// clock() ticks. CLOCKS_PER_SEC is 1000 on this toolchain, so a tick is a millisecond;
+// clock_ms() divides by it rather than assuming, in case that changes.
+@unsafe @link_name("clock") extern fn raw_clock() i64;
 @unsafe @link_name("system") extern fn raw_system(cmd: *i8) i32;
 @unsafe @link_name("remove") extern fn raw_remove(path: *i8) i32;
 @unsafe @link_name("fopen") extern fn raw_fopen(path: *i8, mode: *i8) *void;
@@ -420,6 +427,10 @@
 @link_name("arc_LLVMCreateTargetDataLayout") fn LLVMCreateTargetDataLayout(tm: *i8) *i8 { let mut r: *i8; @unsafe { r = raw_LLVMCreateTargetDataLayout(tm); } return r; }
 @link_name("arc_LLVMCopyStringRepOfTargetData") fn LLVMCopyStringRepOfTargetData(td: *i8) *i8 { let mut r: *i8; @unsafe { r = raw_LLVMCopyStringRepOfTargetData(td); } return r; }
 @link_name("arc_LLVMDisposeTargetData") fn LLVMDisposeTargetData(td: *i8) void { @unsafe { raw_LLVMDisposeTargetData(td); } }
+@link_name("arc_LLVMGetModuleDataLayout") fn LLVMGetModuleDataLayout(m: *i8) *i8 { let mut r: *i8; @unsafe { r = raw_LLVMGetModuleDataLayout(m); } return r; }
+@link_name("arc_LLVMOffsetOfElement") fn LLVMOffsetOfElement(td: *i8, st: *i8, elem: u32) u64 { let mut r: u64; @unsafe { r = raw_LLVMOffsetOfElement(td, st, elem); } return r; }
+@link_name("arc_LLVMABISizeOfType") fn LLVMABISizeOfType(td: *i8, ty: *i8) u64 { let mut r: u64; @unsafe { r = raw_LLVMABISizeOfType(td, ty); } return r; }
+@link_name("arc_LLVMABIAlignmentOfType") fn LLVMABIAlignmentOfType(td: *i8, ty: *i8) u32 { let mut r: u32; @unsafe { r = raw_LLVMABIAlignmentOfType(td, ty); } return r; }
 @link_name("arc_LLVMVerifyModule") fn LLVMVerifyModule(mod: *i8, action: i32, msg_out: **i8) i32 { let mut r: i32; @unsafe { r = raw_LLVMVerifyModule(mod, action, msg_out); } return r; }
 @link_name("arc_LLVMTargetMachineEmitToFile") fn LLVMTargetMachineEmitToFile(tm: *i8, mod: *i8, filename: *i8, filetype: i32, err_out: **i8) i32 { let mut r: i32; @unsafe { r = raw_LLVMTargetMachineEmitToFile(tm, mod, filename, filetype, err_out); } return r; }
 @link_name("arc_LLVMPrintModuleToFile") fn LLVMPrintModuleToFile(mod: *i8, filename: *i8, err_out: **i8) i32 { let mut r: i32; @unsafe { r = raw_LLVMPrintModuleToFile(mod, filename, err_out); } return r; }
@@ -477,6 +488,10 @@
 @link_name("arc_strtoull") fn strtoull(s: *i8, end: **i8, base: i32) u64 { let mut r: u64; @unsafe { r = raw_strtoull(s, end, base); } return r; }
 @link_name("arc_strtod") fn strtod(s: *i8, end: **i8) f64 { let mut r: f64; @unsafe { r = raw_strtod(s, end); } return r; }
 @link_name("arc_exit") fn exit(code: i32) void { @unsafe { raw_exit(code); } }
+comptime i64 CLOCKS_PER_SEC = 1000;
+@link_name("arc_clock") fn clock() i64 { let mut r: i64; @unsafe { r = raw_clock(); } return r; }
+// Process CPU time in milliseconds.
+@link_name("arc_clock_ms") fn clock_ms() i64 { return clock() / (i64)(CLOCKS_PER_SEC / 1000); }
 @link_name("arc_system") fn system(cmd: *i8) i32 { let mut r: i32; @unsafe { r = raw_system(cmd); } return r; }
 @link_name("arc_remove") fn remove(path: *i8) i32 { let mut r: i32; @unsafe { r = raw_remove(path); } return r; }
 @link_name("arc_fopen") fn fopen(path: *i8, mode: *i8) *void { let mut r: *void; @unsafe { r = raw_fopen(path, mode); } return r; }

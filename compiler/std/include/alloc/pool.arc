@@ -54,7 +54,7 @@ memstr pool {
     fn empty(self: *pool) bool { return self.free_count == self.capacity; }
     fn used_count(self: *pool) i32 { return self.capacity - self.free_count; }
 
-    fn deinit(self: *pool) void {
+    fn deinit(self: *pool) !void {
         free(self.base);
         free(self.free_list);
     }
